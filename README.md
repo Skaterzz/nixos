@@ -55,6 +55,14 @@ there's no 1:1 mechanical conversion. What I did instead:
 - Things I could find no evidence you'd actually customized (e.g. almost all
   of `kglobalshortcutsrc`, which was stock KDE defaults) were left alone
   rather than guessed at.
+- **Per-machine profiles have no direct equivalent here.** The dotfiles repo
+  uses chezmoi templates (`.chezmoiignore`, `config.fish.tmpl`) to branch on
+  OS, username, and hostname — notably a shell-and-starship-only profile for
+  root and for `jrh`/`jrp` hostnames. In Nix that job belongs to separate
+  `nixosConfigurations.<host>` entries in `flake.nix` rather than to
+  in-file conditionals, so nothing was ported for it. If you want a minimal
+  laptop host that skips Plasma/gaming, that's a new host entry importing a
+  subset of `modules/nixos/`.
 
 ## Before you build this
 
@@ -68,8 +76,9 @@ there's no 1:1 mechanical conversion. What I did instead:
    (RTX 20xx) or newer, you can flip that to `true` to use the open kernel
    module instead.
 3. **Multi-monitor panel layout.** `home/joshr/plasma.nix` assumes the same
-   3-monitor arrangement as the original machine (`screen = 0/1/2` for the
-   dock, status bar, and two secondary bars). If this is a different machine,
+   monitor arrangement as the original machine: a dock and a status bar on
+   `screen = 0`, and one bar on `screen = 1`. (Screen 2 has a desktop but no
+   panel, matching the upstream dotfiles.) If this is a different machine,
    adjust or drop the `screen` numbers.
 4. **Git identity.** `home/joshr/home.nix` sets
    `programs.git.userEmail = "joshrandall8478@gmail.com"` — change it if

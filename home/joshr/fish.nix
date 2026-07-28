@@ -9,6 +9,8 @@
   programs.fish = {
     enable = true;
 
+    # Upstream config.fish.tmpl sources /usr/share/cachyos-fish-config behind an
+    # existence check; that path never exists on NixOS, so it's omitted here.
     interactiveShellInit = ''
       function fish_greeting
           fastfetch -c ~/.smallfetch.jsonc

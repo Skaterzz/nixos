@@ -124,23 +124,37 @@
           {
             kickoff = {
               icon = "/home/joshr/.local/share/icons/j-contrast.svg";
-              sidebarPosition = "right";
-              applicationsDisplayMode = "grid";
-              showButtonsFor = "powerAndSession";
+              sidebarPosition = "right"; # paneSwap=true
+              applicationsDisplayMode = "grid"; # applicationsDisplay=0
+              showButtonsFor = "powerAndSession"; # primaryActions=3
+              popupHeight = 526;
+              popupWidth = 1147;
             };
           }
           {
-            iconTasks.launchers = [
-              "applications:vivaldi-stable.desktop"
-              "applications:kitty.desktop"
-              "applications:org.kde.dolphin.desktop"
-              "applications:spotify.desktop"
-              "applications:discord.desktop"
-              "applications:signal.desktop"
-              "applications:steam.desktop"
-              "applications:code.desktop"
-              "applications:systemsettings.desktop"
-            ];
+            iconTasks = {
+              # Full launcher list from the dotfiles. Joplin, Shelly and
+              # Thunderbird are pinned there but aren't installed by this
+              # config, so those three will show as dead entries until you
+              # add the packages (or drop the lines).
+              launchers = [
+                "applications:vivaldi-stable.desktop"
+                "applications:kitty.desktop"
+                "applications:org.kde.dolphin.desktop"
+                "applications:spotify.desktop"
+                "applications:discord.desktop"
+                "applications:signal.desktop"
+                "applications:steam.desktop"
+                "applications:code.desktop"
+                "applications:net.cozic.joplin_desktop.desktop"
+                "applications:com.shellyorg.shelly.desktop"
+                "applications:org.mozilla.Thunderbird.desktop"
+                "applications:systemsettings.desktop"
+              ];
+              appearance.indicateAudioStreams = false;
+              # No dedicated option for this one yet.
+              settings.General.interactiveMute = false;
+            };
           }
           "org.kde.plasma.showdesktop"
         ];
@@ -158,7 +172,13 @@
         lengthMode = "fill";
         hiding = "normalpanel";
         widgets = [
-          { pager.general.displayedText = "desktopNumber"; }
+          {
+            pager.general = {
+              displayedText = "desktopNumber";
+              showOnlyCurrentScreen = true;
+              showApplicationIconsOnWindowOutlines = true;
+            };
+          }
           "org.kde.plasma.windowlist"
           "org.kde.plasma.panelspacer"
           {
@@ -176,6 +196,7 @@
                 "org.kde.plasma.bluetooth"
                 "org.kde.plasma.brightness"
                 "org.kde.plasma.battery"
+                "org.kde.plasma.notifications"
               ];
               extra = [
                 "org.kde.kdeconnect"
@@ -203,7 +224,20 @@
               };
             };
           }
-          "org.kde.plasma.lock_logout"
+          {
+            # No plasma-manager module for this widget, so raw config.
+            name = "org.kde.plasma.lock_logout";
+            config.General.actionsOrder = [
+              "lockScreen"
+              "switchUser"
+              "suspendToRam"
+              "requestReboot"
+              "requestShutDown"
+              "requestLogout"
+              "requestLogoutScreen"
+              "suspendToDisk"
+            ];
+          }
         ];
       }
 
@@ -219,7 +253,13 @@
         opacity = "adaptive";
         hiding = "normalpanel";
         widgets = [
-          { pager.general.displayedText = "desktopNumber"; }
+          {
+            pager.general = {
+              displayedText = "desktopNumber";
+              showOnlyCurrentScreen = true;
+              showApplicationIconsOnWindowOutlines = true;
+            };
+          }
           "org.kde.plasma.windowlist"
           "org.kde.plasma.panelspacer"
           {

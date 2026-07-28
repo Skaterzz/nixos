@@ -1,0 +1,132 @@
+{ config, lib, pkgs, ... }:
+
+let
+  # Ported from scripts/vscode-extensions.txt in the original dotfiles.
+  extensions = [
+    "aaron-bond.better-comments"
+    "anthropic.claude-code"
+    "astro-build.astro-vscode"
+    "bbenoist.qml"
+    "beardedbear.beardedtheme"
+    "brapifra.phpserver"
+    "catppuccin.catppuccin-vsc"
+    "cweijan.dbclient-jdbc"
+    "cweijan.vscode-database-client2"
+    "davidanson.vscode-markdownlint"
+    "esbenp.prettier-vscode"
+    "github.copilot"
+    "github.copilot-chat"
+    "github.github-vscode-theme"
+    "github.vscode-github-actions"
+    "github.vscode-pull-request-github"
+    "glenn2223.live-sass"
+    "icrawl.discord-vscode"
+    "lakshits11.monokai-pirokai"
+    "mathematic.vscode-latex"
+    "mhutchie.git-graph"
+    "mjpvs.latex-previewer"
+    "ms-azuretools.vscode-containers"
+    "ms-azuretools.vscode-docker"
+    "ms-python.debugpy"
+    "ms-python.python"
+    "ms-python.vscode-pylance"
+    "ms-python.vscode-python-envs"
+    "ms-vscode-remote.remote-containers"
+    "ms-vscode-remote.remote-ssh"
+    "ms-vscode-remote.remote-ssh-edit"
+    "ms-vscode.cmake-tools"
+    "ms-vscode.cpptools"
+    "ms-vscode.cpptools-extension-pack"
+    "ms-vscode.cpptools-themes"
+    "ms-vscode.remote-explorer"
+    "ms-vsliveshare.vsliveshare"
+    "oracle.oracle-java"
+    "pkief.material-icon-theme"
+    "redhat.java"
+    "ritwickdey.liveserver"
+    "robbowen.synthwave-vscode"
+    "shd101wyy.markdown-preview-enhanced"
+    "sibiraj-s.vscode-scss-formatter"
+    "thenuprojectcontributors.vscode-nushell-lang"
+    "theqtcompany.qt-core"
+    "usernamehw.errorlens"
+    "vscjava.vscode-gradle"
+    "vscjava.vscode-java-debug"
+    "vscjava.vscode-java-dependency"
+    "vscjava.vscode-java-pack"
+    "vscjava.vscode-java-test"
+    "vscjava.vscode-maven"
+    "vscode-icons-team.vscode-icons"
+    "whizkydee.material-palenight-theme"
+    "yandeu.five-server"
+  ];
+in
+{
+  programs.vscode = {
+    enable = true;
+    profiles.default.userSettings = {
+      "window.titleBarStyle" = "custom";
+      "workbench.iconTheme" = "material-icon-theme";
+      "editor.stickyScroll.enabled" = false;
+      "git.enableSmartCommit" = true;
+      "github.copilot.enable" = {
+        "*" = false;
+        plaintext = false;
+        markdown = false;
+        scminput = false;
+        json = true;
+        vue = false;
+      };
+      "settingsSync.ignoredExtensions" = [ "catppuccin.catppuccin-vsc" ];
+      "workbench.colorTheme" = "Bearded Theme Monokai Black";
+      "markdown-preview-enhanced.previewTheme" = "atom-material.css";
+      # NixOS has no /usr/bin/php by default; point this at your nix-provided
+      # php if you use fiveServer.
+      "fiveServer.php.executable" = "/usr/bin/php";
+      "liveServer.settings.donotShowInfoMsg" = true;
+      "[jsonc]" = {
+        "editor.defaultFormatter" = "esbenp.prettier-vscode";
+      };
+      "codetogether.userName" = "Josh";
+      "git.openRepositoryInParentFolders" = "always";
+      "redhat.telemetry.enabled" = false;
+      "git.autofetch" = true;
+      "terminal.integrated.inheritEnv" = false;
+      "githubPullRequests.pullBranch" = "never";
+      "terminal.integrated.fontFamily" = "FiraCode Nerd Font Mono";
+      "diffEditor.ignoreTrimWhitespace" = false;
+      "files.associations" = {
+        "*.jas" = "plaintext";
+      };
+      "settingsSync.ignoredSettings" = [
+        "terminal.integrated.defaultProfile.linux"
+        "terminal.integrated.profiles.linux"
+      ];
+      "security.workspace.trust.untrustedFiles" = "open";
+      "workbench.editor.empty.hint" = "hidden";
+      "github.copilot.nextEditSuggestions.enabled" = true;
+      "markdown-preview-enhanced.chromePath" = "/home/joshr/.local/bin/chromium";
+      "powermode.enabled" = true;
+      "files.autoSave" = "afterDelay";
+      "workbench.secondarySideBar.defaultVisibility" = "hidden";
+      "claudeCode.preferredLocation" = "panel";
+    };
+  };
+
+  # Extensions aren't declaratively pinned (most of these aren't packaged in
+  # nixpkgs), so mirror the original install-vscode-extensions.sh script: pull
+  # them from the marketplace into VS Code's own (mutable) extensions dir on
+  # every home-manager switch.
+  home.activation.installVscodeExtensions = lib.hm.dag.entryAfter [ "writeBoundary" ] (
+    let
+      code = "${config.programs.vscode.package}/bin/code";
+    in
+    ''
+      if [ -x "${code}" ]; then
+        for ext in ${lib.concatStringsSep " " extensions}; do
+          $DRY_RUN_CMD "${code}" --install-extension "$ext" >/dev/null 2>&1 || true
+        done
+      fi
+    ''
+  );
+}

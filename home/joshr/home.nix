@@ -1,0 +1,65 @@
+{ pkgs, inputs, ... }:
+
+{
+  imports = [
+    ./fish.nix
+    ./kitty.nix
+    ./vscode.nix
+    ./plasma.nix
+  ];
+
+  home.username = "joshr";
+  home.homeDirectory = "/home/joshr";
+
+  # Do not bump this after the initial install; see the Home Manager manual.
+  home.stateVersion = "24.11";
+
+  programs.home-manager.enable = true;
+
+  programs.git = {
+    enable = true;
+    userName = "joshrandall8478";
+    userEmail = "joshrandall8478@gmail.com"; # adjust if this isn't your git identity
+  };
+
+  home.packages = with pkgs; [
+    vivaldi
+    spotify
+    discord
+    protonup-qt
+    papirus-icon-theme
+  ];
+
+  programs.mangohud = {
+    enable = true;
+    enableSessionWide = false;
+    settings = {
+      fps = true;
+      frametime = true;
+      gpu_stats = true;
+      cpu_stats = true;
+      gpu_temp = true;
+      cpu_temp = true;
+    };
+  };
+
+  # --- Assets pulled straight from the joshrandall8478/dotfiles repo ---
+  # (fonts, custom Plasma themes/look-and-feel, cursor theme, custom icons,
+  # and wallpapers referenced by plasma.nix). These are large third-party
+  # asset trees that make more sense to reference from source than to
+  # hand-transcribe into Nix.
+  xdg.dataFile."fonts".source = "${inputs.dotfiles}/dot_local/share/fonts";
+  fonts.fontconfig.enable = true;
+
+  xdg.dataFile."plasma/desktoptheme".source = "${inputs.dotfiles}/dot_local/share/plasma/desktoptheme";
+  xdg.dataFile."plasma/look-and-feel".source = "${inputs.dotfiles}/dot_local/share/plasma/look-and-feel";
+
+  xdg.dataFile."icons/j-accent.svg".source = "${inputs.dotfiles}/dot_local/share/icons/j-accent.svg";
+  xdg.dataFile."icons/j-contrast.svg".source = "${inputs.dotfiles}/dot_local/share/icons/j-contrast.svg";
+
+  xdg.dataFile."wallpapers".source = "${inputs.dotfiles}/dot_local/share/wallpapers";
+
+  home.file.".icons/Bibata-Modern-Ice".source = "${inputs.dotfiles}/dot_icons/Bibata-Modern-Ice";
+
+  xdg.dataFile."color-schemes/DarkObsidianII.colors".source = ./files/DarkObsidianII.colors;
+}

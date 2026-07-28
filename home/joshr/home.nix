@@ -18,8 +18,10 @@
 
   programs.git = {
     enable = true;
-    userName = "joshrandall8478";
-    userEmail = "joshrandall8478@gmail.com"; # adjust if this isn't your git identity
+    settings.user = {
+      name = "joshrandall8478";
+      email = "joshrandall8478@gmail.com"; # adjust if this isn't your git identity
+    };
   };
 
   home.packages = with pkgs; [

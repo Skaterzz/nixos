@@ -107,44 +107,78 @@
     };
 
     panels = [
-      # Main dock: screen 0, bottom edge (was Containments[4]).
+      # Main dock: screen 0, bottom edge (was Containments[4] / PlasmaViews
+      # "Panel 4"). thickness=50, panelLengthMode=1 (FitContent),
+      # panelOpacity=2 (Translucent), panelVisibility=2 (DodgeWindows),
+      # alignment=132 (Qt AlignHCenter|AlignVCenter).
       {
         screen = 0;
         location = "bottom";
         floating = true;
+        height = 50;
+        lengthMode = "fit";
+        alignment = "center";
+        opacity = "translucent";
+        hiding = "dodgewindows";
         widgets = [
           {
             kickoff = {
               icon = "/home/joshr/.local/share/icons/j-contrast.svg";
-              sidebarPosition = "right";
-              applicationsDisplayMode = "grid";
-              showButtonsFor = "powerAndSession";
+              sidebarPosition = "right"; # paneSwap=true
+              applicationsDisplayMode = "grid"; # applicationsDisplay=0
+              showButtonsFor = "powerAndSession"; # primaryActions=3
+              popupHeight = 526;
+              popupWidth = 1147;
             };
           }
           {
-            iconTasks.launchers = [
-              "applications:vivaldi-stable.desktop"
-              "applications:kitty.desktop"
-              "applications:org.kde.dolphin.desktop"
-              "applications:spotify.desktop"
-              "applications:discord.desktop"
-              "applications:signal.desktop"
-              "applications:steam.desktop"
-              "applications:code.desktop"
-              "applications:systemsettings.desktop"
-            ];
+            iconTasks = {
+              # Full launcher list from the dotfiles. Joplin, Shelly and
+              # Thunderbird are pinned there but aren't installed by this
+              # config, so those three will show as dead entries until you
+              # add the packages (or drop the lines).
+              launchers = [
+                "applications:vivaldi-stable.desktop"
+                "applications:kitty.desktop"
+                "applications:org.kde.dolphin.desktop"
+                "applications:spotify.desktop"
+                "applications:discord.desktop"
+                "applications:signal.desktop"
+                "applications:steam.desktop"
+                "applications:code.desktop"
+                "applications:net.cozic.joplin_desktop.desktop"
+                "applications:com.shellyorg.shelly.desktop"
+                "applications:org.mozilla.Thunderbird.desktop"
+                "applications:systemsettings.desktop"
+              ];
+              appearance.indicateAudioStreams = false;
+              # No dedicated option for this one yet.
+              settings.General.interactiveMute = false;
+            };
           }
           "org.kde.plasma.showdesktop"
         ];
       }
 
-      # Status bar: screen 0, top edge (was Containments[101]).
+      # Status bar: screen 0, top edge (was Containments[101] / PlasmaViews
+      # "Panel 101"). thickness=32, panelLengthMode=0 (FillAvailable),
+      # panelVisibility=0 (NormalPanel). The stored min/maxLength (2416/2490)
+      # only apply in Custom length mode, so they're intentionally omitted.
       {
         screen = 0;
         location = "top";
         floating = true;
+        height = 32;
+        lengthMode = "fill";
+        hiding = "normalpanel";
         widgets = [
-          { pager.general.displayedText = "desktopNumber"; }
+          {
+            pager.general = {
+              displayedText = "desktopNumber";
+              showOnlyCurrentScreen = true;
+              showApplicationIconsOnWindowOutlines = true;
+            };
+          }
           "org.kde.plasma.windowlist"
           "org.kde.plasma.panelspacer"
           {
@@ -162,6 +196,7 @@
                 "org.kde.plasma.bluetooth"
                 "org.kde.plasma.brightness"
                 "org.kde.plasma.battery"
+                "org.kde.plasma.notifications"
               ];
               extra = [
                 "org.kde.kdeconnect"
@@ -189,17 +224,42 @@
               };
             };
           }
-          "org.kde.plasma.lock_logout"
+          {
+            # No plasma-manager module for this widget, so raw config.
+            name = "org.kde.plasma.lock_logout";
+            config.General.actionsOrder = [
+              "lockScreen"
+              "switchUser"
+              "suspendToRam"
+              "requestReboot"
+              "requestShutDown"
+              "requestLogout"
+              "requestLogoutScreen"
+              "suspendToDisk"
+            ];
+          }
         ];
       }
 
-      # Second monitor: top edge (was Containments[63]).
+      # Second monitor: top edge (was Containments[63] / PlasmaViews
+      # "Panel 63"). thickness=32, panelOpacity=0 (Adaptive),
+      # panelVisibility=0 (NormalPanel).
       {
         screen = 1;
         location = "top";
         floating = true;
+        height = 32;
+        lengthMode = "fill";
+        opacity = "adaptive";
+        hiding = "normalpanel";
         widgets = [
-          { pager.general.displayedText = "desktopNumber"; }
+          {
+            pager.general = {
+              displayedText = "desktopNumber";
+              showOnlyCurrentScreen = true;
+              showApplicationIconsOnWindowOutlines = true;
+            };
+          }
           "org.kde.plasma.windowlist"
           "org.kde.plasma.panelspacer"
           {

@@ -189,6 +189,20 @@ passwd
 That new password persists — `initialPassword` only applies at account
 creation, and editing it later does nothing.
 
+**8. Commit `flake.lock`.** The first build generates one, pinning every
+input to an exact revision. Commit it:
+
+```bash
+cd /etc/nixos
+sudo git add flake.lock && sudo git commit -m "Pin flake inputs"
+```
+
+This matters more than it looks. `flake.nix` tracks `nixos-unstable`, so
+**without a committed lock file every build resolves to whatever nixpkgs
+HEAD happens to be that day** — meaning a rebuild that worked yesterday can
+fail today because a package got renamed upstream. With the lock committed,
+inputs only move when you explicitly run `nix flake update`.
+
 ## Rebuilding after changes
 
 Once installed, from the repo (`/etc/nixos` if you followed the above):
@@ -209,7 +223,14 @@ sudo nixos-rebuild test --flake .#gamestation
 
 # Update all flake inputs (nixpkgs, home-manager, plasma-manager, dotfiles):
 nix flake update
+
+# Update just one input (e.g. after pushing to the dotfiles repo):
+nix flake update dotfiles
 ```
+
+`nix flake update` rewrites `flake.lock` — commit it alongside whatever
+prompted the update, so a build that works is a build you can get back to.
+If an update breaks something, `git checkout flake.lock` and rebuild.
 
 If a rebuild leaves you with a broken desktop, pick the previous generation
 from the systemd-boot menu at startup — nothing is destroyed by a bad switch.

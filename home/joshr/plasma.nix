@@ -214,27 +214,6 @@
           "org.kde.plasma.volume"
         ];
       }
-
-      # Third monitor: bottom edge (was Containments[56]).
-      {
-        screen = 2;
-        location = "bottom";
-        floating = true;
-        widgets = [
-          { pager.general.displayedText = "desktopNumber"; }
-          "org.kde.plasma.panelspacer"
-          {
-            digitalClock.date = {
-              enable = true;
-              format.custom = "ddd, MMM d";
-              position = "besideTime";
-            };
-          }
-          "org.kde.plasma.panelspacer"
-          "org.kde.plasma.mediacontroller"
-          "org.kde.plasma.volume"
-        ];
-      }
     ];
   };
 }

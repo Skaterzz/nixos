@@ -13,6 +13,16 @@
     options = "--delete-older-than 14d";
   };
 
+  # Building the NixOS manual is one of the slower steps of a rebuild and it
+  # runs nearly every time. Web docs cover the same ground. Set this back to
+  # true if you want `nixos-help` and the offline manual.
+  documentation.nixos.enable = false;
+
+  # Defaults to 25; the store is thousands of small fetches, so a higher
+  # ceiling helps most on links with latency (which includes a VM going
+  # through a host NAT).
+  nix.settings.http-connections = 64;
+
   # The weather widget ported from the dotfiles was configured for Detroit;
   # adjust if this machine lives somewhere else.
   time.timeZone = "America/Detroit";

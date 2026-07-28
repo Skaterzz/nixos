@@ -113,19 +113,31 @@ in
     };
   };
 
-  # Extensions aren't declaratively pinned (most of these aren't packaged in
-  # nixpkgs), so mirror the original install-vscode-extensions.sh script: pull
-  # them from the marketplace into VS Code's own (mutable) extensions dir on
-  # every home-manager switch.
+  # Extensions aren't declaratively pinned (most aren't packaged in nixpkgs),
+  # so mirror the original install-vscode-extensions.sh script: pull them from
+  # the marketplace into VS Code's own (mutable) extensions dir.
+  #
+  # This is gated behind a stamp file keyed on the extension list. Running it
+  # unconditionally meant ~60 sequential marketplace round-trips — each one
+  # spawning the Electron CLI — on *every* `nixos-rebuild switch`, which added
+  # minutes to an otherwise no-op rebuild. Now it only runs when the list above
+  # actually changes. To force a re-run, delete the stamp file.
   home.activation.installVscodeExtensions = lib.hm.dag.entryAfter [ "writeBoundary" ] (
     let
       code = "${config.programs.vscode.package}/bin/code";
+      extList = lib.concatStringsSep " " extensions;
+      stamp = "${config.xdg.stateHome}/vscode-extensions.stamp";
+      stampFile = pkgs.writeText "vscode-extensions-stamp" (
+        builtins.hashString "sha256" extList
+      );
     in
     ''
-      if [ -x "${code}" ]; then
-        for ext in ${lib.concatStringsSep " " extensions}; do
+      if [ -x "${code}" ] && ! ${pkgs.diffutils}/bin/cmp -s "${stampFile}" "${stamp}"; then
+        for ext in ${extList}; do
           $DRY_RUN_CMD "${code}" --install-extension "$ext" >/dev/null 2>&1 || true
         done
+        $DRY_RUN_CMD mkdir -p "$(dirname "${stamp}")"
+        $DRY_RUN_CMD cp "${stampFile}" "${stamp}"
       fi
     ''
   );

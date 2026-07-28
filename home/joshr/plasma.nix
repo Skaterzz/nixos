@@ -107,11 +107,19 @@
     };
 
     panels = [
-      # Main dock: screen 0, bottom edge (was Containments[4]).
+      # Main dock: screen 0, bottom edge (was Containments[4] / PlasmaViews
+      # "Panel 4"). thickness=50, panelLengthMode=1 (FitContent),
+      # panelOpacity=2 (Translucent), panelVisibility=2 (DodgeWindows),
+      # alignment=132 (Qt AlignHCenter|AlignVCenter).
       {
         screen = 0;
         location = "bottom";
         floating = true;
+        height = 50;
+        lengthMode = "fit";
+        alignment = "center";
+        opacity = "translucent";
+        hiding = "dodgewindows";
         widgets = [
           {
             kickoff = {
@@ -138,11 +146,17 @@
         ];
       }
 
-      # Status bar: screen 0, top edge (was Containments[101]).
+      # Status bar: screen 0, top edge (was Containments[101] / PlasmaViews
+      # "Panel 101"). thickness=32, panelLengthMode=0 (FillAvailable),
+      # panelVisibility=0 (NormalPanel). The stored min/maxLength (2416/2490)
+      # only apply in Custom length mode, so they're intentionally omitted.
       {
         screen = 0;
         location = "top";
         floating = true;
+        height = 32;
+        lengthMode = "fill";
+        hiding = "normalpanel";
         widgets = [
           { pager.general.displayedText = "desktopNumber"; }
           "org.kde.plasma.windowlist"
@@ -193,11 +207,17 @@
         ];
       }
 
-      # Second monitor: top edge (was Containments[63]).
+      # Second monitor: top edge (was Containments[63] / PlasmaViews
+      # "Panel 63"). thickness=32, panelOpacity=0 (Adaptive),
+      # panelVisibility=0 (NormalPanel).
       {
         screen = 1;
         location = "top";
         floating = true;
+        height = 32;
+        lengthMode = "fill";
+        opacity = "adaptive";
+        hiding = "normalpanel";
         widgets = [
           { pager.general.displayedText = "desktopNumber"; }
           "org.kde.plasma.windowlist"

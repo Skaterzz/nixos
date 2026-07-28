@@ -67,10 +67,10 @@ there's no 1:1 mechanical conversion. What I did instead:
 ## Before you build this
 
 1. **Hardware config.** `hosts/gamestation/hardware-configuration.nix` is a
-   placeholder. On the real machine:
-   ```bash
-   sudo nixos-generate-config --show-hardware-config > hosts/gamestation/hardware-configuration.nix
-   ```
+   placeholder — it has invented disk labels and a guessed CPU vendor, and
+   will not boot your machine. See
+   [Regenerating hardware-configuration.nix](#regenerating-hardware-configurationnix)
+   below.
 2. **NVIDIA generation.** `modules/nixos/nvidia.nix` defaults to the
    proprietary kernel module (`open = false`). If your card is a Turing
    (RTX 20xx) or newer, you can flip that to `true` to use the open kernel
@@ -84,23 +84,151 @@ there's no 1:1 mechanical conversion. What I did instead:
    `programs.git.userEmail = "joshrandall8478@gmail.com"` — change it if
    that's not the identity you want for commits.
 
-## Building
+## Regenerating hardware-configuration.nix
+
+`nixos-generate-config` scans the running machine — disks, filesystem UUIDs,
+kernel modules needed at boot, CPU vendor — and writes a Nix module
+describing it. It is machine-specific and must be regenerated per host.
+
+**On a machine that already runs NixOS:**
 
 ```bash
-git clone <this repo> && cd fine-ill-try-nix
-# after generating hardware-configuration.nix as above:
+sudo nixos-generate-config --show-hardware-config \
+  > hosts/gamestation/hardware-configuration.nix
+```
+
+`--show-hardware-config` prints to stdout instead of writing into
+`/etc/nixos`, which is what you want when the file lives in a repo.
+
+**During a fresh install**, it's generated as part of the install flow below
+(step 4), after the target disk is mounted at `/mnt`.
+
+Either way, open the result and sanity-check it — in particular
+`boot.initrd.availableKernelModules` (needs your storage controller) and that
+`fileSystems` entries point at the right devices.
+
+## Fresh install from the NixOS ISO
+
+Boot the NixOS installer ISO (the minimal or graphical image, either works)
+and get a network connection.
+
+**1. Partition and format.** This config uses `systemd-boot`, so the disk
+must be GPT with an EFI system partition. Replace `/dev/nvme0n1` with your
+actual disk (`lsblk` to find it) — **this erases it**:
+
+```bash
+sudo parted /dev/nvme0n1 -- mklabel gpt
+sudo parted /dev/nvme0n1 -- mkpart ESP fat32 1MB 1GB
+sudo parted /dev/nvme0n1 -- set 1 esp on
+sudo parted /dev/nvme0n1 -- mkpart root ext4 1GB 100%
+
+sudo mkfs.fat -F 32 -n boot /dev/nvme0n1p1
+sudo mkfs.ext4 -L nixos /dev/nvme0n1p2
+```
+
+**2. Mount.**
+
+```bash
+sudo mount /dev/disk/by-label/nixos /mnt
+sudo mkdir -p /mnt/boot
+sudo mount /dev/disk/by-label/boot /mnt/boot
+```
+
+**3. Clone this repo to where it will live permanently.** Putting it at
+`/mnt/etc/nixos` means it survives the reboot and is where you'll edit it
+later:
+
+```bash
+sudo nix-shell -p git --run \
+  'git clone https://github.com/joshrandall8478/fine-ill-try-nix /mnt/etc/nixos'
+```
+
+**4. Generate the hardware config into the repo.**
+
+```bash
+sudo nixos-generate-config --root /mnt --show-hardware-config \
+  > /mnt/etc/nixos/hosts/gamestation/hardware-configuration.nix
+```
+
+**5. Commit it — this step is not optional.** Flakes only see files that git
+tracks. A newly written, untracked `hardware-configuration.nix` is invisible
+to the evaluator and the install will fail with a confusing "path does not
+exist" error:
+
+```bash
+cd /mnt/etc/nixos
+sudo nix-shell -p git --run 'git add hosts/gamestation/hardware-configuration.nix'
+```
+
+(You don't have to `git commit` — staging is enough for the flake to see it —
+but committing keeps things tidy.)
+
+**6. Install.** This builds the whole system, so expect it to take a while
+and pull down a lot (NVIDIA driver, Plasma, Steam, VS Code):
+
+```bash
+sudo nixos-install --flake /mnt/etc/nixos#gamestation
+```
+
+If the installer's Nix complains about experimental features, prefix it:
+
+```bash
+sudo NIX_CONFIG="experimental-features = nix-command flakes" \
+  nixos-install --flake /mnt/etc/nixos#gamestation
+```
+
+`nixos-install` prompts for a **root** password at the end.
+
+**7. Reboot and log in.** `joshr`'s initial password is `changeme` (set in
+`modules/nixos/users.nix`). Change it immediately:
+
+```bash
+passwd
+```
+
+That new password persists — `initialPassword` only applies at account
+creation, and editing it later does nothing.
+
+## Rebuilding after changes
+
+Once installed, from the repo (`/etc/nixos` if you followed the above):
+
+```bash
 sudo nixos-rebuild switch --flake .#gamestation
 ```
 
-For just the home-manager profile on a non-NixOS or already-installed system:
+Useful variants:
 
 ```bash
-nix run home-manager -- switch --flake .#joshr
+# Build and check it evaluates, without activating:
+sudo nixos-rebuild build --flake .#gamestation
+
+# Activate now but don't add a boot entry (reverts on reboot — good for
+# testing risky NVIDIA/kernel changes):
+sudo nixos-rebuild test --flake .#gamestation
+
+# Update all flake inputs (nixpkgs, home-manager, plasma-manager, dotfiles):
+nix flake update
 ```
 
-(You'd need to add a standalone `homeConfigurations.joshr` output for that —
-right now home-manager is wired in as a NixOS module only, applied together
-with the system config.)
+If a rebuild leaves you with a broken desktop, pick the previous generation
+from the systemd-boot menu at startup — nothing is destroyed by a bad switch.
+
+## Installing on a second machine (e.g. a laptop)
+
+Don't reuse the `gamestation` host — its hardware config, NVIDIA module, and
+multi-monitor panel layout are wrong for anything else. Add a sibling host:
+
+1. `mkdir -p hosts/<newhost>` and write a `configuration.nix` there importing
+   only the modules that apply (a laptop probably wants `base.nix`,
+   `desktop.nix`, `users.nix` — and likely not `nvidia.nix` or `gaming.nix`).
+2. Generate `hosts/<newhost>/hardware-configuration.nix` on that machine.
+3. Add a matching `nixosConfigurations.<newhost>` block in `flake.nix`.
+4. Install with `--flake /mnt/etc/nixos#<newhost>`.
+
+The `home/joshr/` profile can be shared as-is, though `plasma.nix`'s
+`screen = 0` / `screen = 1` panel assignments assume a multi-monitor desk
+setup and are worth trimming for a laptop.
 
 ## I couldn't fully validate this here
 

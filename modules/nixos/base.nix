@@ -41,6 +41,8 @@
     vim
     btop
     ranger
+    gh
+    glab
   ];
 
   fonts.packages = with pkgs; [

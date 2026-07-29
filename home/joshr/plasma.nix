@@ -181,9 +181,6 @@
                 "applications:signal.desktop"
                 "applications:steam.desktop"
                 "applications:code.desktop"
-                "applications:net.cozic.joplin_desktop.desktop"
-                "applications:com.shellyorg.shelly.desktop"
-                "applications:org.mozilla.Thunderbird.desktop"
                 "applications:systemsettings.desktop"
               ];
               appearance.indicateAudioStreams = false;

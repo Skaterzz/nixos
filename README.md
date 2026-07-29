@@ -11,17 +11,25 @@ chezmoi repo.
 
 ```
 flake.nix                        # inputs: nixpkgs, home-manager, plasma-manager, dotfiles
-hosts/gamestation/
+hosts/gamestation/                # the desk: NVIDIA, multi-monitor
   configuration.nix               # top-level system config, imports the modules below
   hardware-configuration.nix      # PLACEHOLDER — replace with your real hardware scan
+hosts/laptop/                     # portable: no NVIDIA, single display
+  configuration.nix
+  hardware-configuration.nix      # PLACEHOLDER — regenerate on the machine
 modules/nixos/
   base.nix                        # nix settings, locale/timezone, fish, base fonts
   desktop.nix                     # SDDM (Wayland) + Plasma 6, portals, audio, Flatpak
+  plasma-xdg-data-dirs.nix        # workaround for nixpkgs#126590 (see below)
   nvidia.nix                      # NVIDIA driver + 32-bit graphics for Steam/Proton
   gaming.nix                      # Steam, MangoHud
   virtualisation.nix               # Docker + Docker Compose
+  laptop.nix                       # power-profiles-daemon, upower, thermald, fstrim
   users.nix                        # the `joshr` user account
 home/joshr/
+  gamestation.nix                  # host entrypoint: enables the 2nd-monitor panel
+  laptop.nix                       # host entrypoint: single-display panels
+  options.nix                      # local.* options the two entrypoints toggle
   home.nix                         # packages (Vivaldi, Spotify, Discord, ProtonUp-Qt, ...)
   fish.nix                         # fish shell, eza aliases, starship, fastfetch greeting
   kitty.nix                        # kitty terminal + zenwritten_dark theme
@@ -203,6 +211,26 @@ HEAD happens to be that day** — meaning a rebuild that worked yesterday can
 fail today because a package got renamed upstream. With the lock committed,
 inputs only move when you explicitly run `nix flake update`.
 
+## The XDG_DATA_DIRS workaround (nixpkgs#126590)
+
+`modules/nixos/plasma-xdg-data-dirs.nix` works around a long-standing NixOS
+bug where Plasma's Qt wrapper builds an `XDG_DATA_DIRS` of roughly 18 KB with
+heavy duplication. Every process in the session inherits it, and since
+applications stat every entry on startup looking for `.desktop` files, icons
+and mime data, the whole session feels slow to launch things. It's especially
+bad on storage with high per-operation latency — a VM disk, for instance.
+
+The module merges all those `share/` directories into one derivation and
+points the wrapper at that instead, taking `XDG_DATA_DIRS` down to two
+entries. Taken from
+[this comment](https://github.com/NixOS/nixpkgs/issues/126590#issuecomment-3194531220).
+
+**It rebuilds `plasma-workspace` from source.** A modified derivation gets no
+binary cache hit, so this recompiles on every `nix flake update` that touches
+the package — think tens of minutes, more in a VM. If that trade stops being
+worth it, drop the import from `hosts/gamestation/configuration.nix`; nothing
+else depends on it.
+
 ## Rebuilding after changes
 
 Once installed, from the repo (`/etc/nixos` if you followed the above):
@@ -235,21 +263,54 @@ If an update breaks something, `git checkout flake.lock` and rebuild.
 If a rebuild leaves you with a broken desktop, pick the previous generation
 from the systemd-boot menu at startup — nothing is destroyed by a bad switch.
 
-## Installing on a second machine (e.g. a laptop)
+## Hosts
 
-Don't reuse the `gamestation` host — its hardware config, NVIDIA module, and
-multi-monitor panel layout are wrong for anything else. Add a sibling host:
+Two are defined. Pick one with the flake attribute:
 
-1. `mkdir -p hosts/<newhost>` and write a `configuration.nix` there importing
-   only the modules that apply (a laptop probably wants `base.nix`,
-   `desktop.nix`, `users.nix` — and likely not `nvidia.nix` or `gaming.nix`).
-2. Generate `hosts/<newhost>/hardware-configuration.nix` on that machine.
-3. Add a matching `nixosConfigurations.<newhost>` block in `flake.nix`.
-4. Install with `--flake /mnt/etc/nixos#<newhost>`.
+| Host | For | Differences |
+|---|---|---|
+| `gamestation` | the desk | NVIDIA module; second-monitor panel |
+| `laptop` | portable | no NVIDIA; power management; single-display panels |
 
-The `home/joshr/` profile can be shared as-is, though `plasma.nix`'s
-`screen = 0` / `screen = 1` panel assignments assume a multi-monitor desk
-setup and are worth trimming for a laptop.
+```bash
+sudo nixos-rebuild switch --flake .#gamestation
+sudo nixos-rebuild switch --flake .#laptop
+```
+
+Both share everything else — the same modules, the same `home/joshr` profile,
+the same Plasma theming, the same package set.
+
+### What actually differs
+
+**Panels.** `home/joshr/plasma.nix` is shared. The second-monitor status bar
+is gated behind `local.plasma.secondaryMonitorPanel`, which
+`home/joshr/gamestation.nix` turns on and `home/joshr/laptop.nix` leaves off.
+The dock and the primary status bar are on `screen = 0` and appear on both.
+If the laptop gets docked to external displays and you want that bar back,
+set the option to `true` in `home/joshr/laptop.nix`.
+
+**Graphics.** `laptop` deliberately does *not* import `modules/nixos/nvidia.nix`
+— that module hard-sets `services.xserver.videoDrivers = [ "nvidia" ]` for a
+single always-on discrete GPU, which is wrong for integrated-only machines and
+wrong for Optimus hybrids. If the laptop does have an NVIDIA chip, read the
+comment at the bottom of `hosts/laptop/configuration.nix`: hybrids want PRIME
+offload, not that module as written.
+
+**Power.** `modules/nixos/laptop.nix` adds power-profiles-daemon (which backs
+Plasma's power-profile switcher and the `Meta+B` shortcut from the dotfiles),
+upower, thermald and fstrim.
+
+Each host still needs its own hardware scan —
+`hosts/laptop/hardware-configuration.nix` is the same placeholder as
+gamestation's and must be regenerated on the machine.
+
+### Adding a third host
+
+1. `mkdir -p hosts/<newhost>`, write a `configuration.nix` importing the
+   modules that apply, and generate its `hardware-configuration.nix`.
+2. Add a `<newhost> = mkHost { ... }` entry to `nixosConfigurations` in
+   `flake.nix`, pointing at that host module and a home entrypoint.
+3. Install with `--flake /mnt/etc/nixos#<newhost>`.
 
 ## I couldn't fully validate this here
 

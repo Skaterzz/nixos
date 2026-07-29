@@ -35,22 +35,36 @@
       };
     in
     {
-      nixosConfigurations.gamestation = nixpkgs.lib.nixosSystem {
-        inherit system;
-        specialArgs = { inherit inputs; };
-        modules = [
-          ./hosts/gamestation/configuration.nix
+      nixosConfigurations =
+        let
+          mkHost = { hostModule, homeModule }: nixpkgs.lib.nixosSystem {
+            inherit system;
+            specialArgs = { inherit inputs; };
+            modules = [
+              hostModule
 
-          home-manager.nixosModules.home-manager
-          {
-            home-manager.useGlobalPkgs = true;
-            home-manager.useUserPackages = true;
-            home-manager.extraSpecialArgs = { inherit inputs; };
-            home-manager.sharedModules = [ plasma-manager.homeModules.plasma-manager ];
-            home-manager.users.joshr = import ./home/joshr/home.nix;
-          }
-        ];
-      };
+              home-manager.nixosModules.home-manager
+              {
+                home-manager.useGlobalPkgs = true;
+                home-manager.useUserPackages = true;
+                home-manager.extraSpecialArgs = { inherit inputs; };
+                home-manager.sharedModules = [ plasma-manager.homeModules.plasma-manager ];
+                home-manager.users.joshr = import homeModule;
+              }
+            ];
+          };
+        in
+        {
+          gamestation = mkHost {
+            hostModule = ./hosts/gamestation/configuration.nix;
+            homeModule = ./home/joshr/gamestation.nix;
+          };
+
+          laptop = mkHost {
+            hostModule = ./hosts/laptop/configuration.nix;
+            homeModule = ./home/joshr/laptop.nix;
+          };
+        };
 
       formatter.${system} = pkgs.nixfmt-rfc-style;
     };

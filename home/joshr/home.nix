@@ -2,6 +2,7 @@
 
 {
   imports = [
+    ./options.nix
     ./fish.nix
     ./kitty.nix
     ./vscode.nix
@@ -30,6 +31,10 @@
     discord
     protonup-qt
     papirus-icon-theme
+    # Both are pinned in the dock launchers ported from the dotfiles
+    # (signal.desktop, net.cozic.joplin_desktop.desktop).
+    signal-desktop
+    joplin-desktop
   ];
 
   programs.mangohud = {

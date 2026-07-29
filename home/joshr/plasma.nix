@@ -1,4 +1,4 @@
-{ inputs, lib, ... }:
+{ inputs, lib, config, ... }:
 
 # KDE Plasma 6 configuration ported from joshrandall8478/dotfiles
 # (kdeglobals, plasmarc, kwinrc, kglobalshortcutsrc, plasma-org.kde.plasma.desktop-appletsrc).
@@ -104,6 +104,41 @@
       };
 
       krunnerrc.General.FreeFloating = true;
+
+      # Remaining kdeglobals settings from the dotfiles. The colour palette
+      # itself comes from workspace.colorScheme (DarkObsidianII) and the fonts
+      # from fonts.general; these are the leftovers with no dedicated
+      # plasma-manager option.
+      kdeglobals = {
+        General = {
+          # Default browser/terminal, used by "open link" and
+          # "open terminal here" actions across KDE.
+          BrowserApplication = "vivaldi-stable.desktop";
+          TerminalApplication = "kitty";
+          TerminalService = "kitty.desktop";
+
+          AccentColor = "184,69,61";
+          accentColorFromWallpaper = true;
+          LastUsedCustomAccentColor = "233,61,88";
+
+          # Font rendering.
+          XftAntialias = true;
+          XftHintStyle = "hintslight";
+          XftSubPixel = "none";
+        };
+        KDE = {
+          # ~0.354 — noticeably snappier than the 1.0 default. This one is
+          # very visible; without it every animation runs ~3x longer.
+          AnimationDurationFactor = 0.35355339059327373;
+          ShowDeleteCommand = false;
+          contrast = 0;
+          frameContrast = 0.2;
+        };
+        PreviewSettings = {
+          EnableRemoteFolderThumbnail = false;
+          MaximumRemoteSize = 1048576000;
+        };
+      };
     };
 
     panels = [
@@ -241,6 +276,8 @@
         ];
       }
 
+    ]
+    ++ lib.optionals config.local.plasma.secondaryMonitorPanel [
       # Second monitor: top edge (was Containments[63] / PlasmaViews
       # "Panel 63"). thickness=32, panelOpacity=0 (Adaptive),
       # panelVisibility=0 (NormalPanel).

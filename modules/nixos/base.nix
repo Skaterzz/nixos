@@ -38,6 +38,9 @@
     curl
     wget
     kitty
+    vim
+    btop
+    ranger
   ];
 
   fonts.packages = with pkgs; [

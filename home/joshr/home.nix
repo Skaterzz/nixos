@@ -2,6 +2,7 @@
 
 {
   imports = [
+    ./options.nix
     ./fish.nix
     ./kitty.nix
     ./vscode.nix

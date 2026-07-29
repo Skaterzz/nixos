@@ -1,4 +1,4 @@
-{ inputs, lib, ... }:
+{ inputs, lib, config, ... }:
 
 # KDE Plasma 6 configuration ported from joshrandall8478/dotfiles
 # (kdeglobals, plasmarc, kwinrc, kglobalshortcutsrc, plasma-org.kde.plasma.desktop-appletsrc).
@@ -276,6 +276,8 @@
         ];
       }
 
+    ]
+    ++ lib.optionals config.local.plasma.secondaryMonitorPanel [
       # Second monitor: top edge (was Containments[63] / PlasmaViews
       # "Panel 63"). thickness=32, panelOpacity=0 (Adaptive),
       # panelVisibility=0 (NormalPanel).

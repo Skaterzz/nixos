@@ -25,18 +25,41 @@ modules/nixos/
   gaming.nix                      # Steam, MangoHud
   virtualisation.nix               # Docker + Docker Compose
   laptop.nix                       # power-profiles-daemon, upower, thermald, fstrim
-  users.nix                        # the `joshr` user account
+  users.nix                        # the `joshr` and `root` accounts
+home/common/
+  options.nix                      # local.* options the entrypoints toggle
+  shell.nix                        # fish + starship, shared by joshr and root
+  files/                           # starship.toml, smallfetch.jsonc
 home/joshr/
   gamestation.nix                  # host entrypoint: enables the 2nd-monitor panel
   laptop.nix                       # host entrypoint: single-display panels
-  options.nix                      # local.* options the two entrypoints toggle
   home.nix                         # packages (Vivaldi, Spotify, Discord, ProtonUp-Qt, ...)
-  fish.nix                         # fish shell, eza aliases, starship, fastfetch greeting
   kitty.nix                        # kitty terminal + zenwritten_dark theme
   vscode.nix                       # VS Code settings + extension list
   plasma.nix                       # KDE Plasma settings/panels/shortcuts (plasma-manager)
-  files/                           # small config files copied in verbatim (starship.toml, etc.)
+  files/                           # DarkObsidianII.colors
+home/root/
+  home.nix                         # fish + starship only, no desktop
 ```
+
+## The root account
+
+`root` uses fish as its login shell and gets the same starship prompt and eza
+aliases as `joshr`, via `home/common/shell.nix`. It gets nothing else — no
+Plasma, no Kitty config, no GUI packages.
+
+That split isn't invented here; it's what the dotfiles already do. Their
+`.chezmoiignore` has a `root` / `jrh` / `jrp` branch that strips the Plasma
+configs, Code, spicetify, mpv, vlc, wallpapers, icons and colour schemes, and
+`config.fish.tmpl` branches on username to give root an **empty**
+`fish_greeting` instead of the fastfetch one. Both behaviours are reproduced
+here — the greeting via `local.shell.fastfetchGreeting`, which also decides
+whether fastfetch and `~/.smallfetch.jsonc` get installed at all.
+
+Root is managed by home-manager rather than chezmoi, same as joshr. Pointing
+chezmoi at the dotfiles repo for root would mean two mechanisms writing to
+the same home directories, with chezmoi's state living outside the Nix store
+and drifting on its own.
 
 ## Where things came from
 

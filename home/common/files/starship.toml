@@ -36,7 +36,7 @@ format = '[$symbol($version )]($style)'
 format = '[$symbol($version )]($style)'
 
 [python]
-symbol = ' '
+symbol = ' '
 style = "blue bold"
 format = '[${symbol}${pyenv_prefix}(${version} ) (\($virtualenv\) )]($style)'
 
@@ -84,8 +84,8 @@ format='[$symbol($type) ]($style)'
 [os.symbols]
 Gentoo = "󰣨 "
 Arch = "󰣇 "
-Macos = " "
-Debian = " "
+Macos = " "
+Debian = " "
 
 [git_branch]
 style="yellow bold"
@@ -95,20 +95,21 @@ format = '[${symbol}${branch} ]($style)'
 disabled=false
 added_style = 'bold blue'
 deleted_style = 'bold red'
-format = '([+$added]($added_style) )([-$deleted]($deleted_style) )'
+format = '([+$added]($added_style) )([-$deleted]($deleted_style) )' 
 
 [shell]
 disabled=false
 nu_indicator="󰟆 nu"
-zsh_indicator=" zsh"
-bash_indicator=" bash"
+zsh_indicator=" zsh"
+bash_indicator=" bash"
 fish_indicator="󰈺 fish"
-unknown_indicator=" wtf?"
+unknown_indicator=" wtf?"
 powershell_indicator="󰨊 pwsh"
-cmd_indicator=" cmd"
+cmd_indicator=" cmd"
 style="purple bold"
 format = "[$indicator]($style) "
 
 [cmd_duration]
 min_time = 10_000  # Show command duration over 10,000 milliseconds (=10 sec)
 format = "took [$duration]($style) "
+

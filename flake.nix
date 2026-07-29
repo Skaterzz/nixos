@@ -50,6 +50,9 @@
                 home-manager.extraSpecialArgs = { inherit inputs; };
                 home-manager.sharedModules = [ plasma-manager.homeModules.plasma-manager ];
                 home-manager.users.joshr = import homeModule;
+                # root gets the same fish + starship setup, minus everything
+                # graphical. Same on every host, so it isn't parameterised.
+                home-manager.users.root = import ./home/root/home.nix;
               }
             ];
           };

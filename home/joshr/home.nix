@@ -2,8 +2,8 @@
 
 {
   imports = [
-    ./options.nix
-    ./fish.nix
+    ../common/options.nix
+    ../common/shell.nix
     ./kitty.nix
     ./vscode.nix
     ./plasma.nix

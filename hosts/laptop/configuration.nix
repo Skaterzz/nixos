@@ -8,7 +8,7 @@
     # Workaround for nixpkgs#126590 (huge XDG_DATA_DIRS makes every app slow
     # to start). Rebuilds plasma-workspace from source — remove this import
     # if the build cost outweighs the win.
-    ../../modules/nixos/plasma-xdg-data-dirs.nix
+    # ../../modules/nixos/plasma-xdg-data-dirs.nix
     ../../modules/nixos/laptop.nix
     ../../modules/nixos/gaming.nix
     ../../modules/nixos/virtualisation.nix

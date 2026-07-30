@@ -52,6 +52,15 @@
    defaultEditor = true;
   };
 
+  services.openssh = {
+    enable = true;
+    settings = {
+      PasswordAuthentication = false;
+     };
+  };
+
+  services.tailscale.enable = true;
+
   fonts.packages = with pkgs; [
     noto-fonts
     noto-fonts-color-emoji

@@ -36,6 +36,13 @@
     signal-desktop
     joplin-desktop
     bitwarden-desktop
+    nextcloud-client
+    obs-studio
+    kdePackages.kdenlive
+    audacity
+    lutris
+    localsend
+    sshfs
   ];
 
   programs.mangohud = {

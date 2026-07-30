@@ -28,7 +28,7 @@
         library = "org.kde.breeze";
         theme = "Breeze";
       };
-      wallpaper = "${inputs.dotfiles}/dot_local/share/wallpapers/Anime/Yor.jpg";
+      wallpaper = "${inputs.dotfiles}/dot_local/share/wallpapers/Anime/shinobu.png";
     };
 
     fonts.general = {

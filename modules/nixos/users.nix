@@ -1,6 +1,10 @@
 { config, lib, pkgs, ... }:
 
 {
+  # `programs.fish.enable` in base.nix is what puts fish in /etc/shells, which
+  # is required before it can be set as a login shell here.
+  users.users.root.shell = pkgs.fish;
+
   users.users.joshr = {
     isNormalUser = true;
     description = "Josh Randall";

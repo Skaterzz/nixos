@@ -35,6 +35,7 @@
     # (signal.desktop, net.cozic.joplin_desktop.desktop).
     signal-desktop
     joplin-desktop
+    bitwarden
   ];
 
   programs.mangohud = {

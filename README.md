@@ -42,6 +42,23 @@ home/root/
   home.nix                         # fish + starship only, no desktop
 ```
 
+## Shells
+
+Fish is the login shell for both `joshr` and `root`, but zsh, bash and
+nushell are all installed and configured too, and **all four get the same
+starship prompt** from `home/common/files/starship.toml`.
+
+Two things are needed for that, both in `home/common/shell.nix`. starship's
+`enable*Integration` options already default to `true`, but all they do is
+set the corresponding `programs.<shell>` options — and home-manager only
+writes a shell's rc file when that shell's own module is enabled. So the
+shells are enabled explicitly alongside the integrations; with only one half,
+the prompt silently doesn't appear.
+
+Note that only fish carries the eza aliases (`ls`, `ll`, `la`, `lt`, `lg`) —
+those came from the dotfiles' `config.fish.tmpl` and haven't been mirrored
+into the other shells.
+
 ## The root account
 
 `root` uses fish as its login shell and gets the same starship prompt and eza

@@ -47,6 +47,11 @@
               {
                 home-manager.useGlobalPkgs = true;
                 home-manager.useUserPackages = true;
+                # home-manager refuses to overwrite a file it doesn't already
+                # manage. Now that it writes ~/.bashrc and ~/.zshrc, any
+                # pre-existing copy would abort activation; this moves them
+                # aside as e.g. ~/.bashrc.hm-backup instead.
+                home-manager.backupFileExtension = "hm-backup";
                 home-manager.extraSpecialArgs = { inherit inputs; };
                 home-manager.sharedModules = [ plasma-manager.homeModules.plasma-manager ];
                 home-manager.users.joshr = import homeModule;

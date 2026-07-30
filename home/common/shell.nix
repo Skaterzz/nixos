@@ -90,10 +90,30 @@ in
     };
   };
 
+  # Fish is the login shell, but zsh/bash/nushell all get the same prompt.
+  #
+  # Both halves below are needed. starship's enable*Integration options
+  # already default to true (via home.shell.enableShellIntegration), but all
+  # they do is set `programs.<shell>.initExtra`-style options — and
+  # home-manager only writes a shell's rc file when that shell's own module is
+  # enabled. Without these, the zsh/bash/nushell integrations are computed and
+  # then dropped on the floor.
+  programs.bash.enable = true;
+  programs.zsh.enable = true;
+  programs.nushell.enable = true;
+
   programs.starship = {
     enable = true;
+    # Stated explicitly rather than leaning on the defaults, so the intent
+    # survives a change to home.shell.enableShellIntegration.
+    enableBashIntegration = true;
+    enableZshIntegration = true;
     enableFishIntegration = true;
+    enableNushellIntegration = true;
   };
+
+  # One config for every shell. starship looks here by default, and
+  # home-manager also exports STARSHIP_CONFIG pointing at it.
   xdg.configFile."starship.toml".source = ./files/starship.toml;
 
   # Only useful when the greeting actually calls fastfetch.

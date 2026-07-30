@@ -34,6 +34,8 @@
   programs.fish.enable = true;
 
   environment.systemPackages = with pkgs; [
+    papirus-icon-theme
+    bibata-cursors
     git
     curl
     wget
@@ -45,10 +47,16 @@
     glab
   ];
 
+  programs.vim = {
+   enable = true;
+   defaultEditor = true;
+  };
+
   fonts.packages = with pkgs; [
     noto-fonts
     noto-fonts-color-emoji
     nerd-fonts.fira-code
+    (google-fonts.override { fonts = [ "Poppins" ]; })
   ];
   fonts.fontconfig.defaultFonts.monospace = [ "FiraCode Nerd Font Mono" ];
 }

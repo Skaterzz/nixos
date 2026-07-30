@@ -20,8 +20,8 @@
   programs.git = {
     enable = true;
     settings.user = {
-      name = "joshrandall8478";
-      email = "joshrandall8478@gmail.com"; # adjust if this isn't your git identity
+      name = "Joshua Randall";
+      email = "josh@joshrandall.net"; # adjust if this isn't your git identity
     };
   };
 

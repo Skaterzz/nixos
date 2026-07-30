@@ -23,4 +23,11 @@
   local.shell.fastfetchGreeting = false;
 
   programs.home-manager.enable = true;
+
+  programs.git = {
+    settings.user = {
+      name = "Joshua Randall";
+      email = "josh@joshrandall.net"; # adjust if this isn't your git identity
+    };
+  };
 }

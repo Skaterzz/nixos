@@ -93,8 +93,8 @@
       );
 
       kscreenlockerrc."Greeter/Wallpaper/org.kde.image/General" = {
-        Image = "file:///home/joshr/.local/share/wallpapers/Anime/Yor.jpg";
-        PreviewImage = "file:///home/joshr/.local/share/wallpapers/Anime/Yor.jpg";
+        Image = "file:///home/joshr/.local/share/wallpapers/Anime/shinobu.png";
+        PreviewImage = "file:///home/joshr/.local/share/wallpapers/Anime/shinobu.png";
         SlidePaths = "/home/joshr/.local/share/wallpapers/,/usr/share/wallpapers/";
       };
 

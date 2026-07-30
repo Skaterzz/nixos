@@ -22,8 +22,6 @@
     jack.enable = true;
   };
 
-  # Flat accel profile for mouses
-  services.libinput.mouse.accelProfile = "flat";
 
   services.flatpak.enable = true;
 }

@@ -150,24 +150,18 @@ let
   themeStateFile = "${niriStateDir}/current";
   wallpaperStateFile = "${niriStateDir}/wallpaper";
 
-  # The greeter's own display layout.
+  # The greeter's display layout is deliberately left alone.
   #
-  # SDDM's Wayland greeter runs under kwin_wayland, which takes its output
-  # layout from kwinoutputconfig.json in the sddm user's home — niri's output
-  # config has no bearing on it, which is why the greeter comes up
-  # auto-detected regardless of local.niri.outputs.
+  # An earlier version copied a kwinoutputconfig.json into the sddm user's
+  # home so the greeter's kwin_wayland would match niri's arrangement. It
+  # didn't work: the greeter came up on one display instead of both. A saved
+  # layout is all-or-nothing — kwin matches entries to monitors by EDID and
+  # applies enabled/disabled state along with mode and position, so a file
+  # that doesn't match the hardware exactly is worse than none at all.
   #
-  # Two sources, in priority order:
-  #
-  #   1. the one `niri-sync-displays` generates from niri's live layout
-  #      (home/joshr/niri/displays-sync.nix), which runs on every rebuild
-  #   2. whatever KWin last wrote for joshr, i.e. the Plasma arrangement
-  #
-  # The generated file is KWin's own, edited in place — the EDID identifiers
-  # KWin matches monitors by are preserved, only mode/scale/position change.
-  # Absent both, kwin auto-detects and nothing is worse than today.
-  kwinOutputGenerated = "/home/joshr/.local/state/niri-theme/kwinoutputconfig.json";
-  kwinOutputConfig = "/home/joshr/.config/kwinoutputconfig.json";
+  # With no file, kwin auto-detects and lights up everything it finds, which
+  # is what a login screen should do.
+  kwinOutputSddm = "/var/lib/sddm/.config/kwinoutputconfig.json";
 
   syncSddmTheme = pkgs.writeShellScript "sddm-theme-sync" ''
     set -eu
@@ -207,16 +201,11 @@ let
     fi
 
     # --- greeter display layout ---------------------------------------
-    # See the kwinOutputConfig note above. Copied rather than symlinked so
-    # the greeter can read it without traversing joshr's home.
-    for src in "${kwinOutputGenerated}" "${kwinOutputConfig}"; do
-      if [ -f "$src" ]; then
-        install -d -m 0700 -o sddm -g sddm /var/lib/sddm/.config
-        install -m 0600 -o sddm -g sddm \
-          "$src" /var/lib/sddm/.config/kwinoutputconfig.json
-        break
-      fi
-    done
+    # Remove any layout an earlier build copied here. This is state under
+    # /var/lib, so NixOS won't clean it up on its own — dropping the code
+    # that wrote it would otherwise leave the greeter stuck on the bad
+    # layout forever. See the kwinOutputSddm note above.
+    rm -f "${kwinOutputSddm}"
   '';
 in
 {
@@ -260,8 +249,6 @@ in
     pathConfig.PathChanged = [
       themeStateFile
       wallpaperStateFile
-      kwinOutputGenerated
-      kwinOutputConfig
     ];
   };
 

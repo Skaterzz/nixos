@@ -180,32 +180,33 @@ Three things worth knowing:
 Also available per output: `scale`, `transform` (rotation),
 `variableRefreshRate`, and `off`.
 
-**The greeter's own display layout** is a separate thing from
-`local.niri.outputs`: SDDM's greeter runs its own kwin_wayland, which reads
-`kwinoutputconfig.json`. `niri-sync-displays` (alias `sync-displays`) copies
-niri's live layout into that file, and it runs automatically on every
-`nixos-rebuild switch`.
+**The greeter's own display layout is left to auto-detection**, and is a
+separate thing from `local.niri.outputs`: SDDM's greeter runs its own
+kwin_wayland, which reads `kwinoutputconfig.json` and knows nothing about
+niri's config.
 
-It *edits* the config KWin already wrote rather than generating one, because
-KWin matches saved entries to monitors by EDID identifier first — a file
-written from scratch has no EDID fields and would be silently ignored. So it
-needs KWin to have written one at least once, which means arranging the
-displays in a Plasma session on this machine. Without it the script says so
-and the greeter just auto-detects.
+An earlier version wrote that file to make the greeter match niri's
+arrangement. It's been removed — it brought the greeter up on one display
+instead of both. A saved layout is all-or-nothing: kwin matches entries to
+monitors by EDID and applies enabled/disabled state along with mode and
+position, so a file that doesn't match the hardware exactly is worse than no
+file. Auto-detection lights up every connected display, which is what a login
+screen should do.
 
-Like the palette and wallpaper, this lands at the next greeter start.
+The greeter may therefore use different modes or a different arrangement than
+your niri session. That's the trade for having it show up reliably.
 
 **Workspaces follow a display** via `local.niri.workspaceOutput` in the same
 file. niri creates a workspace on whichever output is focused at the time, so
 without it the numbered workspaces scatter across displays depending on where
 you were when you first used each one. The desk pins them to `DP-3`.
 
-**The login screen shows the form on the primary display only**, with the
-other showing just the wallpaper. SDDM creates one view per screen and sets a
-`primaryScreen` bool on each; the theme ignores it, so the form is patched to
-honour it. Which display is "primary" is decided by Qt/kwin in the greeter —
-there is no SDDM setting to force it, so if it picks the wrong one that's the
-knob that doesn't exist.
+**The login screen shows the form and wallpaper on every display**, which is
+sddm-astronaut's stock behaviour. SDDM does create one view per screen and
+sets a `primaryScreen` bool on each, and binding the form's visibility to it
+looks like the way to get "form on one display, wallpaper on the other" — but
+under the greeter's kwin_wayland that bool came back false on *both* views,
+so the form disappeared entirely. Left alone on purpose.
 
 ### Screenshots
 

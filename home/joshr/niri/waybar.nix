@@ -70,8 +70,8 @@ in
         # refers to an argument that doesn't exist and the module renders
         # nothing at all — which is why the centre of the bar was empty.
         # Everything therefore goes through one strftime.
-        format = "  {:%H:%M     %a, %b %d}";
-        format-alt = "  {:%H:%M:%S     %A, %d %B %Y}";
+        format = "  {:%H:%M      %a, %b %d}";
+        format-alt = "  {:%H:%M:%S      %A, %d %B %Y}";
         tooltip-format = "<tt><small>{calendar}</small></tt>";
         calendar = {
           mode = "month";
@@ -105,7 +105,7 @@ in
       };
 
       network = {
-        format-wifi = "  {signalStrength}%";
+        format-wifi = "󰖩  {signalStrength}%";
         format-ethernet = "󰈀  wired";
         format-linked = "󰈀  {ifname}";
         format-disconnected = "󰖪  offline";

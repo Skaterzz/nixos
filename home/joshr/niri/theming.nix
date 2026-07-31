@@ -448,6 +448,11 @@ let
     '';
 
   themeDirs = lib.mapAttrs mkThemeDir themes;
+
+  # `name) target="/nix/store/..." ;;` arms for the activation script's case.
+  themeCaseArms = lib.concatStringsSep "\n" (
+    lib.mapAttrsToList (n: d: "      ${n}) target=\"${d}\" ;;") themeDirs
+  );
 in
 {
   _module.args.niriTheming = {
@@ -463,13 +468,27 @@ in
     defaultThemeDir = themeDirs.${themeSet.default};
   };
 
-  # Seed the symlink on first activation so a fresh login has a theme before
-  # the switcher has ever run. An existing choice is left alone.
-  home.activation.seedNiriTheme = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
-    if [ ! -e "${activeDir}" ]; then
-      $DRY_RUN_CMD mkdir -p "${stateDir}"
-      $DRY_RUN_CMD ln -sfn "${themeDirs.${themeSet.default}}" "${activeDir}"
-      $DRY_RUN_CMD sh -c 'printf %s "${themeSet.default}" > "${stateDir}/current"'
-    fi
+  # Re-point the symlink at the *current generation's* store path for whichever
+  # theme is selected, on every activation.
+  #
+  # This deliberately does more than seed-if-missing. Each rebuild produces new
+  # store paths for the themes, but the symlink would still point into the old
+  # generation — so edits to themes.nix (or to any of the renderers above)
+  # would appear to do nothing until the theme was switched by hand, and would
+  # break outright once the old path was garbage collected.
+  #
+  # The selected theme *name* is preserved; only the path it resolves to is
+  # refreshed. An unknown or missing name falls back to the default.
+  home.activation.linkNiriTheme = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
+    $DRY_RUN_CMD mkdir -p "${stateDir}"
+
+    current="$(cat "${stateDir}/current" 2>/dev/null || true)"
+    case "$current" in
+${themeCaseArms}
+      *) target="${themeDirs.${themeSet.default}}"; current="${themeSet.default}" ;;
+    esac
+
+    $DRY_RUN_CMD ln -sfn "$target" "${activeDir}"
+    $DRY_RUN_CMD sh -c "printf %s '$current' > '${stateDir}/current'"
   '';
 }

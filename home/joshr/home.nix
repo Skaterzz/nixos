@@ -29,6 +29,9 @@
       name = "Joshua Randall";
       email = "josh@joshrandall.net"; # adjust if this isn't your git identity
     };
+    extraConfig = {
+      credential.helper = "libsecret"; # Or "cache --timeout=3600"
+    };
   };
 
 

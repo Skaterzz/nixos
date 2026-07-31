@@ -51,6 +51,7 @@
     playerctl
     cava
     cmatrix
+    prismlauncher
   ];
 
   programs.btop = {

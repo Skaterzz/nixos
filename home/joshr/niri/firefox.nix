@@ -1,7 +1,12 @@
 { config, niriTheming, ... }:
 
-# The niri half of the browser: point Firefox's chrome stylesheets at the
-# active theme, and make it the handler for links.
+# The niri half of Firefox: point its chrome stylesheets at the active theme.
+#
+# It does *not* claim the http(s) handler any more — Vivaldi is the default
+# again, and `xdg.mimeApps` is owned by ./browser.nix. Two modules both
+# writing that option would be a conflict rather than a merge, so if this
+# file is ever re-enabled in ./default.nix, the mimeApps block stays there
+# and not here.
 #
 # This is separate from ../firefox.nix — which sets up the browser itself and
 # is shared with the Plasma hosts — for the same reason the kitty `include`
@@ -28,28 +33,4 @@ in
 
   home.file."${chromeDir}/userContent.css".source =
     config.lib.file.mkOutOfStoreSymlink "${niriTheming.activeDir}/firefox-userContent.css";
-
-  # Default browser for the session: what `xdg-open`, and so every "open link"
-  # in every app, resolves to.
-  #
-  # The Plasma hosts don't get this — they set `kdeglobals.General
-  # .BrowserApplication` instead (see ../plasma.nix), and letting home-manager
-  # take ownership of ~/.config/mimeapps.list underneath a running Plasma
-  # means its "Default Applications" page silently can't save. Under niri
-  # nothing else is writing that file.
-  #
-  # The trade is that "Set as default" inside Firefox, and any "always use
-  # this app" choice, now fails to persist: the file is a read-only symlink
-  # into the store. Change it here instead.
-  xdg.mimeApps = {
-    enable = true;
-    defaultApplications = {
-      "text/html" = "firefox.desktop";
-      "application/xhtml+xml" = "firefox.desktop";
-      "x-scheme-handler/http" = "firefox.desktop";
-      "x-scheme-handler/https" = "firefox.desktop";
-      "x-scheme-handler/about" = "firefox.desktop";
-      "x-scheme-handler/unknown" = "firefox.desktop";
-    };
-  };
 }

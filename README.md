@@ -31,6 +31,9 @@ modules/nixos/
   nvidia.nix                      # NVIDIA driver + 32-bit graphics for Steam/Proton
   gaming.nix                      # Steam, MangoHud
   laptop.nix                       # power-profiles-daemon, upower, thermald, fstrim
+  power.nix                        # no idle suspend while on mains power
+  boot.nix                         # bootloader: limine theming + other-OS detection
+  options.nix                      # local.boot.*, local.power.*, local.sddm.*
   users.nix                        # the `joshr` and `root` accounts
 home/common/
   options.nix                      # local.* options the entrypoints toggle
@@ -41,9 +44,17 @@ home/joshr/
   laptop.nix                       # host entrypoint: single-display panels
   server.nix                       # host entrypoint: shell only, no desktop base
   home.nix                         # packages (Spotify, Discord, ProtonUp-Qt, ...)
-  firefox.nix                      # the default browser: profile, prefs, sync
+  browser.nix                      # the default browser: Vivaldi, $BROWSER, desktop id
+  firefox.nix                      # Firefox: profile, prefs, sync (installed, not default)
   kitty.nix                        # kitty terminal + zenwritten_dark theme
   vscode.nix                       # VS Code settings + extension list
+  niri/                            # the niri desktop; see the section below
+    default.nix                    #   imports, GTK/Qt theming, Dolphin
+    themes.nix theming.nix         #   the palettes, and every generated config
+    niri.nix waybar.nix            #   compositor config and the bar
+    scripts.nix notifications.nix  #   theme/wallpaper/lock/screenshot helpers
+    clipboard.nix browser.nix      #   clipboard history, default-browser wiring
+    vscode.nix lock.nix            #   editor theming, idle handling
   plasma.nix                       # KDE Plasma settings/panels/shortcuts (plasma-manager)
   files/                           # DarkObsidianII.colors
 home/root/
@@ -121,16 +132,35 @@ Each tool is pointed at a file under that symlink: niri via its `include` node
 `style` config key, dunst via `services.dunst.configFile`, kitty via an
 `include` at the end of `kitty.conf`. `theme-apply` moves the symlink, restarts
 waybar and dunst, and sends kitty SIGUSR1 so open terminals repaint in place;
-wofi re-reads on each launch. KDE apps read `~/.config/kdeglobals`, which is a
-symlink into the active theme — Dolphin picks up a switch when it next starts.
-Firefox is the same: its profile's `chrome/userChrome.css` and
-`userContent.css` are symlinks into the active theme, read once at startup.
-See "The browser" below.
+wofi re-reads on each launch.
+
+**Dolphin and other KDE apps** read `~/.config/kdeglobals`, which is a symlink
+into the active theme. Two things have to be true for that to work, and the
+second is easy to get wrong: `qt.platformTheme.name` must be `"kde"`, not
+`"gtk"`. The GTK platform plugin reads colours out of the *GTK* theme and
+never opens `kdeglobals` at all, so with it loaded Dolphin comes out in
+Adwaita grey whatever palette is selected. With the KDE plugin in place,
+`theme-apply` also emits KDE's palette-changed signal on the session bus —
+the same one Plasma sends when you apply a colour scheme — so an open Dolphin
+repaints without being restarted. That part is best effort; anything that
+doesn't listen picks the change up next time it starts.
+
+**VS Code** has no "read colours from this path" setting — a colour theme can
+only arrive as an extension. So each palette renders a complete one-theme
+extension, and `home/joshr/niri/vscode.nix` symlinks the whole directory into
+`~/.vscode/extensions`. `workbench.colorTheme` is therefore pinned to `"Niri"`
+forever: a switch re-points the symlink at a different build of the same
+extension, and the name in `settings.json` — which lives in the store and
+can't change at runtime — never has to. Restart the editor to see it.
+
+**Firefox** is the same shape as Dolphin: its profile's `chrome/userChrome.css`
+and `userContent.css` are symlinks into the active theme, read once at
+startup. See "The browser" below.
 
 Adding a theme is one attrset in `themes.nix` — the niri fragment, both
 stylesheets, the dunstrc, the swaylock palette, the SDDM config, Dolphin's
-kdeglobals and Firefox's two chrome stylesheets are all generated from its ten
-colour roles.
+kdeglobals, VS Code's extension and Firefox's two chrome stylesheets are all
+generated from its ten colour roles.
 
 kitty is the exception, because a terminal needs sixteen ANSI colours and ten
 semantic roles don't contain them — there's no blue, magenta or cyan in a
@@ -160,6 +190,7 @@ restored at login.
 |---|---|
 | `Mod+Return` / `Mod+D` / `Mod+E` / `Mod+B` | terminal, launcher, Dolphin, browser |
 | `Mod+Ctrl+E` | ranger, in a terminal |
+| `Mod+Ctrl+V` | clipboard history |
 | `Mod+Q` / `Mod+O` | close window, overview |
 | `Mod+H/J/K` | focus (arrows also work; `Mod+L` is lock, so use `Mod+Right`) |
 | `Mod+1..5` | named workspaces |
@@ -173,6 +204,26 @@ restored at login.
 | `Mod`+scroll / `Mod+Shift`+scroll | walk windows / workspaces (wheel and touchpad) |
 
 `Mod+Shift+Slash` shows niri's own hotkey overlay.
+
+### Clipboard history
+
+`Mod+Ctrl+V` opens the history in wofi; picking an entry puts it back on the
+clipboard. `clipboard-wipe` empties it, and isn't bound to a key on purpose.
+
+Wayland has no clipboard manager in the compositor — a copied selection lives
+in the process that copied it and vanishes when that process exits, which is
+why closing a browser tab loses what you just copied out of it. `cliphist`
+plugs that hole: home-manager runs it as two `wl-paste --watch` user services,
+one for text and one for images, and it keeps the last 300 entries.
+
+Images are stored too. They show in the picker as `[[ binary data … ]]`;
+choosing one puts the real image back on the clipboard, so pasting into an
+image-aware app still works.
+
+`Mod+V` and `Mod+Shift+V` were already float and float/tile focus, hence the
+third spelling.
+
+See `home/joshr/niri/clipboard.nix`.
 
 ### Staying awake
 
@@ -195,6 +246,36 @@ This isn't waybar's built-in `idle_inhibitor` module. That one takes a Wayland
 idle-inhibit lock on waybar's own surface — a perfectly good mechanism, but it
 can only be toggled by clicking, with no IPC for a keybind to use, and it
 wouldn't stop logind suspending the machine.
+
+### No automatic sleep on mains power
+
+Separate from the toggle above, and always on: while the machine is plugged
+in, it never suspends on an idle timer. `modules/nixos/power.nix`, option
+`local.power.noAutoSleepOnAC`, imported by `base.nix` so every host has it.
+
+There is no single "auto-sleep" switch to flip, because automatic suspend can
+come from more than one place and they don't know about each other. So this
+holds a logind **idle** inhibitor for as long as a mains supply reports
+`online`, and anything that asks logind — Plasma's powerdevil included — then
+treats the session as busy. `ExecCondition` re-checks the power source each
+time the unit starts, and a udev rule restarts it on any `power_supply` event,
+so plugging and unplugging just re-evaluate the one condition. That check
+follows systemd's own `on_ac_power()` rule — any supply that isn't a battery
+and reports `online` non-zero — which is what makes a USB-C-charged laptop
+(supply type `USB`, `online` 2) count as plugged in. A machine with no battery
+at all counts as permanently on mains, so on the desk and the server the
+inhibitor just stays up.
+
+`--what=idle`, not `idle:sleep`, and that distinction is the whole point: a
+*sleep* inhibitor blocks every suspend including a deliberate one, so
+`systemctl suspend`, the session menu's "Suspend" and the lid switch would
+all stop working. An *idle* inhibitor blocks only the timer-driven path.
+
+Locking, dimming and blanking are untouched — those are swayidle under niri
+and powerdevil under Plasma, and "don't fall asleep" is not "don't lock the
+screen". On battery, nothing changes at all. The Plasma hosts also set
+`powerdevil.AC.autoSuspend.action = "nothing"` directly, so the behaviour
+doesn't rest on one daemon asking another the right question.
 
 ### Displays
 
@@ -371,13 +452,68 @@ icon from a pixmap compiled into the binary rather than looking it up in the
 icon theme, so nothing outside the package can change that one. Upstream has
 an open request for it (OpenRGB issue #2453).
 
+## Dates and times
+
+12-hour clock, month before day, everywhere. There is no single setting for
+this — every clock either carries its own format string or asks the locale —
+so it is set in each of them, and they're listed here because that's the only
+way to find them all again:
+
+| where | file | format |
+|---|---|---|
+| locale (`date`, `ls -l`, anything that asks) | `modules/nixos/base.nix` | `LC_TIME = en_US.UTF-8` |
+| waybar clock | `home/joshr/niri/waybar.nix` | `%I:%M %p   %a, %b %d` |
+| swaylock | `home/joshr/niri/scripts.nix` | `%I:%M %p`, `%A, %B %d` |
+| SDDM greeter | `modules/nixos/niri.nix` | `h:mm AP`, `dddd, MMMM d` |
+| Plasma panel clocks | `home/joshr/plasma.nix` | `time.format = "12h"` |
+| screenshot filenames | `niri.nix`, `scripts.nix` | `%m-%d-%Y %I-%M-%S %p` |
+
+Two things worth knowing before editing any of them:
+
+- **waybar is not strftime.** It formats through libfmt/date.h, so glibc's
+  `%-I` "no padding" extension doesn't exist there — it comes out as a
+  literal `-I` or throws the whole format away. Hence `07:30 PM` rather than
+  `7:30 PM` in the bar. SDDM is Qt format, which is different again: `h`
+  means 12-hour as soon as an `AP` field is present.
+- **Screenshot filenames no longer sort chronologically.** `%m-%d-%Y` puts
+  every January together. That's the cost of matching the rest of the system;
+  if you'd rather have sortable names back, `%Y-%m-%d %H-%M-%S` is the string
+  to restore, in both `niri.nix` and `scripts.nix`.
+
 ## The browser
 
-**Firefox**, on every host, in `home/joshr/firefox.nix`. It replaced Vivaldi.
+**Vivaldi**, on every host. `home/joshr/browser.nix` installs it, sets
+`$BROWSER`, and is the one place that decides which browser is *the* browser.
 
-The requirement was cloud sync, a Chromium or Firefox base, and colours that
-follow the desktop theme. Firefox is the only candidate that does all three
-without a workaround:
+Firefox is still installed and still themed (`home/joshr/firefox.nix`) — it
+held the default for a while, and the notes below are what it is still good
+for. It simply isn't what links open in any more.
+
+One detail that bites: nixpkgs copies Vivaldi's upstream `.deb` desktop entry
+across **without renaming it**, so the entry ID is `vivaldi-stable.desktop`,
+not `vivaldi.desktop`. Naming the wrong one fails silently — `mimeapps.list`
+keeps whatever string you give it and `xdg-open` just finds nothing. Both
+spellings are listed wherever the format takes a fallback list.
+
+Where the default is actually set differs by session, and neither mechanism
+reaches the other:
+
+- **niri** — `xdg.mimeApps`, in `home/joshr/niri/browser.nix`.
+- **Plasma** — `kdeglobals.General.BrowserApplication`, in
+  `home/joshr/plasma.nix`. The Plasma hosts deliberately don't get
+  `xdg.mimeApps`: letting home-manager own `~/.config/mimeapps.list`
+  underneath a running Plasma means its "Default Applications" page silently
+  can't save.
+
+The trade under niri is that "Set as default" inside a browser, and any
+"always open with" choice, no longer stick — the file is a read-only symlink
+into the store. Change it in `home/joshr/niri/browser.nix` instead.
+
+### Why Firefox is still here
+
+The requirement when it took over was cloud sync, a Chromium or Firefox base,
+and colours that follow the desktop theme. Firefox is the only candidate that
+does all three without a workaround:
 
 - **Sync** is Firefox Sync over a Mozilla account — first-party, end-to-end
   encrypted, carrying bookmarks, history, open tabs, logins, add-ons and
@@ -420,14 +556,11 @@ Plasma hosts have no theme state for the symlinks to point at, so there
 Firefox wears its own dark theme and takes its accent from Plasma like any
 other GTK app.
 
-The niri hosts also get `xdg.mimeApps`, so `xdg-open` and every "open link"
-in the session resolve to Firefox. The Plasma hosts don't — they set
-`kdeglobals.General.BrowserApplication` instead, because letting home-manager
-own `~/.config/mimeapps.list` underneath a running Plasma means its "Default
-Applications" page silently can't save. The trade under niri is that "Set as
-default" inside Firefox, and any "always open with" choice, no longer stick:
-the file is a read-only symlink into the store, so those go in
-`home/joshr/niri/firefox.nix` instead.
+Note `home/joshr/niri/firefox.nix` is currently not imported by
+`home/joshr/niri/default.nix`, so the stylesheet symlinks aren't in place.
+Uncomment it there to turn Firefox's theming back on; the `xdg.mimeApps`
+block that used to live in it has moved to `./browser.nix`, so the two won't
+collide.
 
 ### What Nix owns and what Sync owns
 
@@ -449,16 +582,17 @@ not be listed in `firefox.nix`.
 
 | | themed | finds other OSes by |
 |---|---|---|
-| `limine` (default) | wallpaper + full palette, follows runtime switches | scanning the ESP for other loaders |
+| `limine` (default) | wallpaper + full palette, follows runtime switches | scanning every ESP on the machine for other loaders |
 | `grub` | palette + fixed splash, build time only | `os-prober` |
 | `systemd-boot` | not at all | itself, no setting needed |
 
 limine is the default because it's the only one that can put the desktop's
 wallpaper and colours on the boot menu. grub is the fallback for anything it
 can't handle — BIOS/MBR, odd partition layouts, firmware that dislikes
-limine's EFI binary — and it detects *more*, since os-prober looks inside
-other partitions rather than only reading this ESP. systemd-boot is the
-escape hatch and what this repo used before the module existed:
+limine's EFI binary — and it still detects *more*, since os-prober looks
+inside other partitions rather than only at EFI System Partitions.
+systemd-boot is the escape hatch and what this repo used before the module
+existed:
 
 ```nix
 local.boot.loader = "systemd-boot";
@@ -468,6 +602,51 @@ local.boot.loader = "systemd-boot";
 watch, with install media to hand. The previous generation stays in the *old*
 loader's menu — but only while that loader is still installed and still the
 one your firmware runs.
+
+### Dual boot: finding the other operating systems
+
+**On by default.** `local.boot.detectOtherSystems = true` is the setting, and
+under limine the scan runs in two passes:
+
+1. **This machine's own ESP.** That is the whole story for a dual boot where
+   both systems share one EFI System Partition, which is what you get when
+   they're installed onto the same disk.
+2. **Every other ESP attached to the machine**, behind
+   `local.boot.scanAllEsps` (also on by default). NixOS mounts exactly one
+   ESP, so an OS installed onto a disk of its own is otherwise invisible.
+   Each is located by GPT partition type, mounted read-only, read, and
+   unmounted. Nothing is written, and the service runs with `PrivateMounts`
+   so a mount can't outlive the scan even if it's killed mid-way.
+
+Whatever it finds appears under an **"Other operating systems"** branch in the
+boot menu — one chainload entry per vendor directory that carries a
+recognised loader (`bootmgfw.efi` for Windows, `shimx64.efi` or `grubx64.efi`
+for a distro, rEFInd, elilo). Entries on this machine's ESP are addressed as
+`boot():/…`; entries on any other are addressed by filesystem UUID, since
+`boot()` only ever means the volume limine itself was loaded from.
+
+To see what it found without rebooting:
+
+```bash
+sudo systemctl start limine-theme-sync
+grep -A100 'detected systems' /boot/limine/limine.conf
+```
+
+Nothing found? The scan only reads EFI System Partitions. An OS whose loader
+isn't on one — an old BIOS/MBR install, or a distro on an LVM or LUKS volume
+with no ESP of its own — needs grub, whose `os-prober` inspects partitions
+rather than boot partitions:
+
+```nix
+local.boot.loader = "grub";   # detects more, but no runtime theming
+```
+
+To turn detection off entirely, or to leave other disks alone:
+
+```nix
+local.boot.detectOtherSystems = false;   # no other-OS entries at all
+local.boot.scanAllEsps = false;          # this machine's ESP only
+```
 
 ### How the boot menu ends up wearing the desktop's colours
 
@@ -1126,6 +1305,16 @@ than from memory, but please run `nix flake check` before your first
   Firefox internals rather than API — a surface that comes out stock-coloured
   instead of themed means one of them was renamed, not that anything is
   broken. See "The browser".
+- the VS Code theme extension. The mechanism is the same one home-manager's
+  own `programs.vscode.…extensions` uses — a symlink under
+  `~/.vscode/extensions` — so it should be picked up on the next start, but
+  if `workbench.colorTheme = "Niri"` falls back to the default dark theme,
+  `code --list-extensions` will say whether it was scanned.
+- limine's `uuid(…)` volume specifier, used for entries found on a disk other
+  than the one NixOS boots from. Entries on this machine's own ESP use
+  `boot():` and don't depend on it. `sudo systemctl start limine-theme-sync`
+  and read `/boot/limine/limine.conf` to see what was written before you
+  trust the menu.
 
 ## Updating the dotfiles-derived assets
 

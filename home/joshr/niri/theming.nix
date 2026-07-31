@@ -1,8 +1,8 @@
 { config, lib, pkgs, ... }:
 
 # Renders each palette in themes.nix into the config formats niri, waybar,
-# wofi, dunst, kitty, KDE and swaylock actually read, and exposes them as one
-# store path per theme.
+# wofi, dunst, kitty, KDE, VS Code and swaylock actually read, and exposes
+# them as one store path per theme.
 #
 # How runtime switching stays declarative
 # ---------------------------------------
@@ -22,6 +22,8 @@
 #   KDE apps `~/.config/kdeglobals` symlink, re-read at app startup
 #   firefox  `chrome/userChrome.css` + `userContent.css` symlinks, read once
 #            at startup
+#   VS Code  a whole generated extension, symlinked into
+#            ~/.vscode/extensions, scanned once at startup
 #
 # Note these are *complete* files, not colour fragments. An earlier version
 # emitted only `@define-color` blocks and pulled them in with a GTK CSS
@@ -801,6 +803,370 @@ let
       }
     '';
 
+  # VS Code.
+  #
+  # VS Code has no "read my colours from this file" setting — a colour theme
+  # can only arrive as an extension. So each palette renders a complete,
+  # self-contained extension: a manifest contributing one theme called
+  # "Niri", and the theme JSON itself. home/joshr/niri/vscode.nix drops the
+  # whole directory into ~/.vscode/extensions as an out-of-store symlink, so
+  # switching themes re-points it at a different build of the same extension
+  # and the name in `workbench.colorTheme` never has to change.
+  #
+  # VS Code reads extensions once, at startup, so a theme switch lands the
+  # next time the editor starts — same as Dolphin and Firefox.
+  #
+  # `uiTheme` is what VS Code falls back to for any colour key not listed
+  # below, which is why it tracks the palette's own light/dark-ness rather
+  # than being pinned to vs-dark.
+  renderVscodeManifest =
+    name: t:
+    builtins.toJSON {
+      name = "niri-theme";
+      displayName = "niri theme";
+      description = "Follows the active niri desktop palette (built from “${name}”).";
+      version = "1.0.0";
+      publisher = "niri";
+      engines.vscode = "^1.70.0";
+      categories = [ "Themes" ];
+      contributes.themes = [
+        {
+          label = "Niri";
+          uiTheme = if colorScheme t == "dark" then "vs-dark" else "vs";
+          path = "./themes/niri-color-theme.json";
+        }
+      ];
+    };
+
+  # The theme itself. Written as Nix and converted rather than kept as a JSON
+  # string, so the palette roles appear once each and a typo is an evaluation
+  # error instead of a colour that silently doesn't apply.
+  #
+  # Syntax colours come from the theme's `ansi` block, for the same reason
+  # kitty's do: the ten UI roles have no blue, magenta or cyan in them, and a
+  # syntax palette built only out of the accent makes every token look alike.
+  renderVscodeTheme =
+    name: t:
+    let
+      a = t.ansi or (deriveAnsi t);
+
+      # Selection, hover and "current line" tints. VS Code takes #RRGGBBAA,
+      # so these are the accent at a few opacities rather than pre-blended
+      # colours that would have to be recomputed per palette.
+      faint = "${t.accent}14";
+      soft = "${t.accent}26";
+      medium = "${t.accent}40";
+    in
+    builtins.toJSON {
+      name = "Niri (${name})";
+      type = colorScheme t;
+      semanticHighlighting = true;
+
+      colors = {
+        # --- editor ----------------------------------------------------
+        "editor.background" = t.bg;
+        "editor.foreground" = t.fg;
+        "editorLineNumber.foreground" = t.fgDim;
+        "editorLineNumber.activeForeground" = t.accent;
+        "editorCursor.foreground" = t.accent;
+        "editor.lineHighlightBackground" = faint;
+        "editor.selectionBackground" = medium;
+        "editor.selectionHighlightBackground" = soft;
+        "editor.wordHighlightBackground" = soft;
+        "editor.wordHighlightStrongBackground" = medium;
+        "editor.findMatchBackground" = medium;
+        "editor.findMatchHighlightBackground" = soft;
+        "editor.hoverHighlightBackground" = soft;
+        "editorWhitespace.foreground" = t.fgDim;
+        "editorIndentGuide.background1" = t.border;
+        "editorIndentGuide.activeBackground1" = t.accentDim;
+        "editorRuler.foreground" = t.border;
+        "editorBracketMatch.background" = soft;
+        "editorBracketMatch.border" = t.accent;
+        "editorError.foreground" = t.err;
+        "editorWarning.foreground" = t.warn;
+        "editorInfo.foreground" = t.accentDim;
+        "editorGutter.addedBackground" = a.green;
+        "editorGutter.modifiedBackground" = a.blue;
+        "editorGutter.deletedBackground" = t.err;
+        "editorOverviewRuler.border" = t.border;
+
+        "editorWidget.background" = t.bgAlt;
+        "editorWidget.border" = t.border;
+        "editorSuggestWidget.background" = t.bgAlt;
+        "editorSuggestWidget.border" = t.border;
+        "editorSuggestWidget.selectedBackground" = medium;
+        "editorSuggestWidget.highlightForeground" = t.accent;
+        "editorHoverWidget.background" = t.bgAlt;
+        "editorHoverWidget.border" = t.border;
+
+        # --- chrome ----------------------------------------------------
+        "foreground" = t.fg;
+        "descriptionForeground" = t.fgDim;
+        "errorForeground" = t.err;
+        "focusBorder" = t.accent;
+        "contrastBorder" = t.border;
+        "widget.shadow" = "#00000070";
+        "selection.background" = medium;
+
+        "titleBar.activeBackground" = t.bg;
+        "titleBar.activeForeground" = t.fg;
+        "titleBar.inactiveBackground" = t.bg;
+        "titleBar.inactiveForeground" = t.fgDim;
+        "titleBar.border" = t.border;
+
+        "activityBar.background" = t.bg;
+        "activityBar.foreground" = t.accent;
+        "activityBar.inactiveForeground" = t.fgDim;
+        "activityBar.border" = t.border;
+        "activityBar.activeBorder" = t.accent;
+        "activityBarBadge.background" = t.accent;
+        "activityBarBadge.foreground" = t.bg;
+
+        "sideBar.background" = t.bg;
+        "sideBar.foreground" = t.fg;
+        "sideBar.border" = t.border;
+        "sideBarTitle.foreground" = t.fgDim;
+        "sideBarSectionHeader.background" = t.bgAlt;
+        "sideBarSectionHeader.foreground" = t.fg;
+        "sideBarSectionHeader.border" = t.border;
+
+        "editorGroupHeader.tabsBackground" = t.bg;
+        "editorGroupHeader.tabsBorder" = t.border;
+        "editorGroup.border" = t.border;
+
+        # The active tab wears the accent along its top edge — the same
+        # "active thing gets the accent" rule as waybar's workspaces and
+        # niri's focus ring.
+        "tab.activeBackground" = t.bgAlt;
+        "tab.activeForeground" = t.fg;
+        "tab.activeBorderTop" = t.accent;
+        "tab.inactiveBackground" = t.bg;
+        "tab.inactiveForeground" = t.fgDim;
+        "tab.border" = t.border;
+        "tab.hoverBackground" = soft;
+        "tab.unfocusedActiveBorderTop" = t.accentDim;
+
+        "statusBar.background" = t.bgAlt;
+        "statusBar.foreground" = t.fg;
+        "statusBar.border" = t.border;
+        "statusBar.noFolderBackground" = t.bgAlt;
+        "statusBar.debuggingBackground" = t.warn;
+        "statusBar.debuggingForeground" = t.bg;
+        "statusBarItem.remoteBackground" = t.accent;
+        "statusBarItem.remoteForeground" = t.bg;
+        "statusBarItem.hoverBackground" = soft;
+        "statusBarItem.errorBackground" = t.err;
+        "statusBarItem.errorForeground" = t.bg;
+        "statusBarItem.warningBackground" = t.warn;
+        "statusBarItem.warningForeground" = t.bg;
+
+        "panel.background" = t.bg;
+        "panel.border" = t.border;
+        "panelTitle.activeForeground" = t.fg;
+        "panelTitle.activeBorder" = t.accent;
+        "panelTitle.inactiveForeground" = t.fgDim;
+
+        "menu.background" = t.bgAlt;
+        "menu.foreground" = t.fg;
+        "menu.border" = t.border;
+        "menu.selectionBackground" = medium;
+        "menu.selectionForeground" = t.fg;
+        "menu.separatorBackground" = t.border;
+        "menubar.selectionBackground" = soft;
+
+        "quickInput.background" = t.bgAlt;
+        "quickInput.foreground" = t.fg;
+        "quickInputList.focusBackground" = medium;
+        "quickInputList.focusForeground" = t.fg;
+        "pickerGroup.border" = t.border;
+        "pickerGroup.foreground" = t.accent;
+
+        "list.activeSelectionBackground" = medium;
+        "list.activeSelectionForeground" = t.fg;
+        "list.inactiveSelectionBackground" = soft;
+        "list.hoverBackground" = faint;
+        "list.highlightForeground" = t.accent;
+        "list.focusBackground" = medium;
+        "list.errorForeground" = t.err;
+        "list.warningForeground" = t.warn;
+        "tree.indentGuidesStroke" = t.border;
+
+        "input.background" = t.bgAlt;
+        "input.foreground" = t.fg;
+        "input.border" = t.border;
+        "input.placeholderForeground" = t.fgDim;
+        "inputOption.activeBorder" = t.accent;
+        "inputValidation.errorBackground" = t.bgUrgent;
+        "inputValidation.errorBorder" = t.err;
+        "dropdown.background" = t.bgAlt;
+        "dropdown.foreground" = t.fg;
+        "dropdown.border" = t.border;
+
+        "button.background" = t.accent;
+        "button.foreground" = t.bg;
+        "button.hoverBackground" = t.accentDim;
+        "button.secondaryBackground" = t.bgAlt;
+        "button.secondaryForeground" = t.fg;
+        "badge.background" = t.accent;
+        "badge.foreground" = t.bg;
+        "progressBar.background" = t.accent;
+
+        "scrollbar.shadow" = "#00000070";
+        "scrollbarSlider.background" = "${t.accentDim}59";
+        "scrollbarSlider.hoverBackground" = "${t.accentDim}80";
+        "scrollbarSlider.activeBackground" = t.accent;
+
+        "breadcrumb.foreground" = t.fgDim;
+        "breadcrumb.focusForeground" = t.fg;
+        "breadcrumb.activeSelectionForeground" = t.accent;
+        "breadcrumbPicker.background" = t.bgAlt;
+
+        "peekView.border" = t.accent;
+        "peekViewEditor.background" = t.bgAlt;
+        "peekViewResult.background" = t.bgAlt;
+        "peekViewTitle.background" = t.bgAlt;
+        "peekViewResult.selectionBackground" = medium;
+
+        "notifications.background" = t.bgAlt;
+        "notifications.foreground" = t.fg;
+        "notifications.border" = t.border;
+        "notificationLink.foreground" = t.accent;
+
+        "diffEditor.insertedTextBackground" = "${a.green}26";
+        "diffEditor.removedTextBackground" = "${t.err}26";
+        "merge.currentHeaderBackground" = "${a.green}59";
+        "merge.incomingHeaderBackground" = "${a.blue}59";
+
+        "gitDecoration.modifiedResourceForeground" = a.yellow;
+        "gitDecoration.deletedResourceForeground" = t.err;
+        "gitDecoration.untrackedResourceForeground" = a.green;
+        "gitDecoration.ignoredResourceForeground" = t.fgDim;
+        "gitDecoration.conflictingResourceForeground" = t.warn;
+
+        "textLink.foreground" = t.accent;
+        "textLink.activeForeground" = t.accent;
+        "textPreformat.foreground" = a.cyan;
+        "textBlockQuote.background" = t.bgAlt;
+        "textCodeBlock.background" = t.bgAlt;
+
+        # --- integrated terminal --------------------------------------
+        # The same 16 colours kitty gets, so a shell looks identical in
+        # either terminal.
+        "terminal.background" = t.bg;
+        "terminal.foreground" = t.fg;
+        "terminalCursor.foreground" = t.accent;
+        "terminal.selectionBackground" = medium;
+        "terminal.ansiBlack" = a.black;
+        "terminal.ansiRed" = a.red;
+        "terminal.ansiGreen" = a.green;
+        "terminal.ansiYellow" = a.yellow;
+        "terminal.ansiBlue" = a.blue;
+        "terminal.ansiMagenta" = a.magenta;
+        "terminal.ansiCyan" = a.cyan;
+        "terminal.ansiWhite" = a.white;
+        "terminal.ansiBrightBlack" = a.brightBlack;
+        "terminal.ansiBrightRed" = a.brightRed;
+        "terminal.ansiBrightGreen" = a.brightGreen;
+        "terminal.ansiBrightYellow" = a.brightYellow;
+        "terminal.ansiBrightBlue" = a.brightBlue;
+        "terminal.ansiBrightMagenta" = a.brightMagenta;
+        "terminal.ansiBrightCyan" = a.brightCyan;
+        "terminal.ansiBrightWhite" = a.brightWhite;
+      };
+
+      tokenColors = [
+        {
+          scope = [ "comment" "punctuation.definition.comment" ];
+          settings = {
+            foreground = a.brightBlack;
+            fontStyle = "italic";
+          };
+        }
+        {
+          scope = [ "string" "constant.other.symbol" ];
+          settings.foreground = a.green;
+        }
+        {
+          scope = [ "constant.character.escape" "string.regexp" ];
+          settings.foreground = a.cyan;
+        }
+        {
+          scope = [ "constant.numeric" "constant.language" "keyword.other.unit" ];
+          settings.foreground = a.yellow;
+        }
+        {
+          scope = [ "keyword" "storage" "storage.type" "keyword.control" ];
+          settings.foreground = a.magenta;
+        }
+        {
+          scope = [ "keyword.operator" "punctuation" "meta.brace" ];
+          settings.foreground = t.fgDim;
+        }
+        {
+          scope = [ "entity.name.function" "support.function" "meta.function-call" ];
+          settings.foreground = a.blue;
+        }
+        {
+          scope = [
+            "entity.name.type"
+            "entity.name.class"
+            "entity.name.namespace"
+            "support.type"
+            "support.class"
+          ];
+          settings.foreground = a.brightCyan;
+        }
+        {
+          scope = [ "variable" "meta.definition.variable" ];
+          settings.foreground = t.fg;
+        }
+        {
+          scope = [ "variable.parameter" "variable.other.member" ];
+          settings.foreground = a.brightYellow;
+        }
+        {
+          scope = [ "entity.name.tag" "meta.tag" ];
+          settings.foreground = a.red;
+        }
+        {
+          scope = [ "entity.other.attribute-name" ];
+          settings.foreground = a.brightMagenta;
+        }
+        {
+          scope = [ "invalid" "invalid.illegal" ];
+          settings.foreground = t.err;
+        }
+        {
+          scope = [ "markup.heading" "entity.name.section" ];
+          settings = {
+            foreground = t.accent;
+            fontStyle = "bold";
+          };
+        }
+        {
+          scope = [ "markup.bold" ];
+          settings.fontStyle = "bold";
+        }
+        {
+          scope = [ "markup.italic" ];
+          settings.fontStyle = "italic";
+        }
+        {
+          scope = [ "markup.inserted" ];
+          settings.foreground = a.green;
+        }
+        {
+          scope = [ "markup.deleted" ];
+          settings.foreground = t.err;
+        }
+        {
+          scope = [ "markup.underline.link" ];
+          settings.foreground = t.accent;
+        }
+      ];
+    };
+
   # swaylock takes flags, not a config file, so its palette is a shell
   # fragment the lock script sources.
   renderSwaylockEnv = name: t: ''
@@ -824,8 +1190,12 @@ let
     CropBackground = "true";
 
     HeaderText = "Welcome";
-    HourFormat = "HH:mm";
-    DateFormat = "dddd, d MMMM";
+    # Qt format strings, not strftime — `h` plus an `AP` field gives a
+    # 12-hour clock. Month before day. Kept in step with the copy in
+    # modules/nixos/niri.nix, which is the one the greeter is actually
+    # built from.
+    HourFormat = "h:mm AP";
+    DateFormat = "dddd, MMMM d";
     FormPosition = "center";
 
     HeaderTextColor = t.accent;
@@ -873,6 +1243,15 @@ let
       cp ${pkgs.writeText "kitty.conf" (renderKitty name t)}          "$out/kitty.conf"
       cp ${pkgs.writeText "userChrome.css" (renderFirefoxUserChrome name t)}   "$out/firefox-userChrome.css"
       cp ${pkgs.writeText "userContent.css" (renderFirefoxUserContent name t)} "$out/firefox-userContent.css"
+
+      # A whole VS Code extension rather than a single file: that is the only
+      # shape VS Code will load a colour theme in. See renderVscodeManifest.
+      mkdir -p "$out/vscode-extension/themes"
+      cp ${pkgs.writeText "package.json" (renderVscodeManifest name t)} \
+         "$out/vscode-extension/package.json"
+      cp ${pkgs.writeText "niri-color-theme.json" (renderVscodeTheme name t)} \
+         "$out/vscode-extension/themes/niri-color-theme.json"
+
       echo -n "${name}" > "$out/name"
     '';
 

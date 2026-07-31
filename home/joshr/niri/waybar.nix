@@ -133,8 +133,14 @@ in
         # refers to an argument that doesn't exist and the module renders
         # nothing at all — which is why the centre of the bar was empty.
         # Everything therefore goes through one strftime.
-        format = "  {:%H:%M      %a, %b %d}";
-        format-alt = "  {:%H:%M      %A, %B %d %Y}";
+        #
+        # 12-hour, month before day. `%I` keeps the leading zero ("07:30 PM")
+        # rather than `%-I` ("7:30 PM") on purpose: waybar formats through
+        # libfmt/date.h, not glibc's strftime, and the `%-` no-padding
+        # modifier is a glibc extension neither of those implements — it
+        # comes out as a literal "-I", or throws the whole format away.
+        format = "  {:%I:%M %p      %a, %b %d}";
+        format-alt = "  {:%I:%M %p      %A, %B %d, %Y}";
         tooltip-format = "<tt><small>{calendar}</small></tt>";
         calendar = {
           mode = "month";

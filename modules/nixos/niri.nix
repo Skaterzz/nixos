@@ -53,8 +53,12 @@ let
 
       # The clock is the header; a "Welcome" string on top of it is noise.
       HeaderText = "";
-      HourFormat = "HH:mm";
-      DateFormat = "dddd, d MMMM";
+
+      # Qt date/time format strings, not strftime: `h` is the hour without a
+      # leading zero and drops to 1–12 as soon as an AM/PM field is present,
+      # and `AP` is that field. Month before day, same as the session.
+      HourFormat = "h:mm AP";
+      DateFormat = "dddd, MMMM d";
 
       HeaderTextColor = t.accent;
       DateTextColor = t.fg;

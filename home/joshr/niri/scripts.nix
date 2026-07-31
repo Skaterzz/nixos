@@ -34,15 +34,22 @@ let
   #   kitty   SIGUSR1, which is kitty's documented "re-read kitty.conf"
   #           signal. It follows the include and repaints open windows, so
   #           running terminals change colour in place.
-  #   KDE     nothing to send. Dolphin and friends read kdeglobals once at
-  #           startup, so an open window keeps its old palette until
-  #           relaunched.
+  #   KDE     a palette-changed signal on the session bus. This is the
+  #           mechanism Plasma itself uses when you pick a colour scheme, and
+  #           plasma-integration — loaded because qt.platformTheme.name is
+  #           "kde", see ./default.nix — listens for it and re-reads
+  #           kdeglobals, so an open Dolphin repaints in place. Best effort:
+  #           nothing guarantees a given Qt app subscribes, and anything that
+  #           doesn't keeps its old palette until relaunched.
+  #   VS Code nothing to send. Extensions, and therefore colour themes, are
+  #           scanned once at startup; the editor picks the new palette up
+  #           the next time it starts.
   #   SDDM    picked up by a system path unit watching the file written
   #           below; applies at the next greeter start. See
   #           modules/nixos/niri.nix.
   themeApply = pkgs.writeShellApplication {
     name = "theme-apply";
-    runtimeInputs = with pkgs; [ libnotify systemd procps ];
+    runtimeInputs = with pkgs; [ libnotify systemd procps dbus ];
     text = ''
       name="''${1:-}"
       if [ -z "$name" ]; then
@@ -68,8 +75,20 @@ let
       # terminal is open.
       pkill -USR1 -x kitty || true
 
+      # Tell running KDE apps their palette changed, so an open Dolphin
+      # repaints instead of waiting to be relaunched.
+      #
+      # This is KGlobalSettings::notifyChange, the signal Plasma emits when a
+      # colour scheme is applied; the two int32 arguments are the change type
+      # (0 = PaletteChanged) and an unused argument the signature still
+      # requires. It is a plain broadcast — with no subscriber it goes
+      # nowhere and costs nothing, which is why it is safe to send blind.
+      dbus-send --session --type=signal \
+        /KGlobalSettings org.kde.KGlobalSettings.notifyChange \
+        int32:0 int32:0 >/dev/null 2>&1 || true
+
       notify-send -a theme -i preferences-desktop-theme \
-        "Theme" "Switched to $name" || true
+        "Theme" "Switched to $name — restart VS Code and Firefox to update them" || true
     '';
   };
 
@@ -196,7 +215,11 @@ let
     ];
     text = ''
       mkdir -p "${screenshotDir}"
-      stamp="$(date +%Y-%m-%d_%H-%M-%S)"
+      # Month-day-year on a 12-hour clock, matching niri's own
+      # `screenshot-path` and every other clock in the session. The cost is
+      # that filenames no longer sort chronologically; "%Y-%m-%d_%H-%M-%S"
+      # is the string to put back in both places if that matters more.
+      stamp="$(date '+%m-%d-%Y_%I-%M-%S-%p')"
       out="${screenshotDir}/screenshot_$stamp.png"
 
       # Cancelled selection exits non-zero; that's not an error.
@@ -239,8 +262,8 @@ let
         --indicator-thickness 8 \
         --effect-blur 8x5 \
         --effect-vignette 0.4:0.4 \
-        --datestr "%A, %d %B" \
-        --timestr "%H:%M" \
+        --datestr "%A, %B %d" \
+        --timestr "%I:%M %p" \
         --font "FiraCode Nerd Font" \
         --ring-color "$LOCK_ACCENT_DIM" \
         --ring-clear-color "$LOCK_WARN" \

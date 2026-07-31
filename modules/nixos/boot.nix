@@ -7,6 +7,34 @@
 # Only one is ever enabled; NixOS refuses to install two.
 #
 #
+# Finding other operating systems
+# -------------------------------
+#
+# On by default — `local.boot.detectOtherSystems`. Under limine the scan runs
+# in two passes, both inside limine-theme-sync below:
+#
+#   * this machine's own ESP, walked directly. That is the whole story for a
+#     dual boot where both systems share one EFI System Partition, which is
+#     what you get installing them onto the same disk.
+#
+#   * every other ESP attached to the machine, gated behind
+#     `local.boot.scanAllEsps`. NixOS mounts exactly one ESP, so an OS
+#     installed onto a disk of its own is otherwise invisible; each is found
+#     by GPT partition type, mounted read-only, read, and unmounted.
+#
+# Each vendor directory holding a recognised loader becomes one chainload
+# entry under an "Other operating systems" branch. To see what it found
+# without rebooting:
+#
+#   sudo systemctl start limine-theme-sync
+#   grep -A100 'detected systems' /boot/limine/limine.conf
+#
+# What neither pass reaches is an OS whose loader isn't on any ESP at all.
+# That is what grub's os-prober is for — it inspects other *partitions* — so
+# `local.boot.loader = "grub"` is the escape hatch, at the cost of the
+# runtime theming.
+#
+#
 # How limine ends up wearing the desktop's colours
 # ------------------------------------------------
 #
@@ -184,9 +212,10 @@ let
       findutils
       gawk
       imagemagick
+      # lsblk, blkid, findmnt, mount, umount — for the other-ESP scan.
+      util-linux
     ];
     text = ''
-      esp="${esp}"
       conf="${limineConf}"
 
       # Nothing to theme until limine has been installed at least once. This is
@@ -225,7 +254,21 @@ let
 
       body="$(mktemp)"
       entries="$(mktemp)"
-      trap 'rm -f "$body" "$entries"' EXIT
+
+      # scan_mount is set while another ESP is mounted below. Unmounting it
+      # from the trap rather than only on the happy path matters because this
+      # script also runs from limine's extraInstallCommands, outside any
+      # systemd sandbox — a mount leaked there would outlive the rebuild and
+      # pin a disk the user thinks is idle.
+      scan_mount=""
+      cleanup() {
+        if [ -n "$scan_mount" ]; then
+          umount "$scan_mount" 2>/dev/null || true
+          rmdir "$scan_mount" 2>/dev/null || true
+        fi
+        rm -f "$body" "$entries"
+      }
+      trap cleanup EXIT
 
       cp "$block" "$body"
 
@@ -238,10 +281,33 @@ let
 
       # --- other operating systems --------------------------------------
       ${lib.optionalString cfg.detectOtherSystems ''
-        detect_systems() {
-          [ -d "$esp/EFI" ] || return 0
+        # Bound here rather than at the top of the script because this is the
+        # only section that reads it. writeShellApplication lints the script
+        # at build time and fails on SC2034 (unused variable), so binding it
+        # unconditionally would break the build for any host that sets
+        # detectOtherSystems = false.
+        esp="${esp}"
 
-          for dir in "$esp"/EFI/*/; do
+        # Labels already emitted, as "|Label|" runs. An OS whose loader
+        # appears on two ESPs — a Windows recovery copy, a distro reinstalled
+        # onto a second disk — is listed once, from whichever partition was
+        # read first. That ordering is deliberate: this machine's own ESP is
+        # scanned before any other, so a shared-ESP install always wins.
+        seen_labels=""
+
+        # Walk one mounted EFI System Partition and print a limine entry for
+        # every vendor directory on it that carries a boot loader.
+        #
+        #   $1  where it is mounted
+        #   $2  limine volume specifier to address paths on it, e.g.
+        #       "boot():" or "uuid(1A2B-3C4D):"
+        scan_root() {
+          local root="$1" volume="$2"
+          local dir vendor target cand label rel
+
+          [ -d "$root/EFI" ] || return 0
+
+          for dir in "$root"/EFI/*/; do
             [ -d "$dir" ] || continue
 
             vendor="$(basename "$dir")"
@@ -278,17 +344,76 @@ let
               *)         label="$vendor" ;;
             esac
 
-            rel="''${target#"$esp"}"
+            case "$seen_labels" in
+              *"|$label|"*) continue ;;
+            esac
+            seen_labels="$seen_labels|$label|"
 
-            # boot(): the volume limine itself was loaded from, which is this
-            # ESP. if_fw_type hides the entry if the machine is ever booted in
-            # BIOS mode, where chainloading an EFI binary cannot work.
+            rel="''${target#"$root"}"
+
+            # if_fw_type hides the entry if the machine is ever booted in BIOS
+            # mode, where chainloading an EFI binary cannot work.
             printf '//%s\n' "$label"
-            printf '    comment: Chainloaded from %s\n' "$rel"
+            printf '    comment: Chainloaded from %s%s\n' "$volume" "$rel"
             printf '    protocol: efi\n'
             printf '    if_fw_type: UEFI\n'
-            printf '    path: boot():%s\n' "$rel"
+            printf '    path: %s%s\n' "$volume" "$rel"
           done
+        }
+
+        # Every *other* EFI System Partition on the machine. NixOS mounts one
+        # ESP and no more, so a Windows or a distro installed onto its own
+        # disk is invisible until its partition is mounted — which is what
+        # this does, read-only and only for as long as the scan takes.
+        scan_other_esps() {
+          local boot_dev dev parttype fsuuid mnt
+
+          # Whatever backs the ESP NixOS boots from; already scanned.
+          boot_dev="$(findmnt -no SOURCE --target "$esp" 2>/dev/null || true)"
+
+          # A pipeline would put this loop in a subshell, and $scan_mount has
+          # to be visible to the EXIT trap or a failed umount leaks a mount.
+          while read -r dev parttype; do
+            [ -n "$dev" ] || continue
+            [ "$dev" != "$boot_dev" ] || continue
+
+            # The GPT type GUID for an EFI System Partition, and the MBR
+            # equivalent for a machine that predates GPT. Anything else is
+            # someone's data and has no business being mounted here.
+            case "''${parttype,,}" in
+              c12a7328-f81f-11d2-ba4b-00a0c93ec93b | 0xef) ;;
+              *) continue ;;
+            esac
+
+            # limine addresses a volume it did not boot from by filesystem
+            # UUID, so one without a readable UUID can't be pointed at even
+            # if it does turn out to hold a loader.
+            fsuuid="$(lsblk -rno UUID "$dev" 2>/dev/null || true)"
+            [ -n "$fsuuid" ] || continue
+
+            # Mounted already (by hand, or because it is a second NixOS's
+            # ESP)? Read it where it is rather than mounting it twice.
+            mnt="$(findmnt -nfo TARGET "$dev" 2>/dev/null || true)"
+            if [ -n "$mnt" ]; then
+              scan_root "$mnt" "uuid($fsuuid):"
+              continue
+            fi
+
+            scan_mount="$(mktemp -d)"
+            if mount -o ro,nosuid,nodev,noexec "$dev" "$scan_mount" 2>/dev/null; then
+              scan_root "$scan_mount" "uuid($fsuuid):"
+              umount "$scan_mount" 2>/dev/null || true
+            fi
+            rmdir "$scan_mount" 2>/dev/null || true
+            scan_mount=""
+          done < <(lsblk -rno PATH,PARTTYPE 2>/dev/null || true)
+        }
+
+        detect_systems() {
+          # boot(): the volume limine itself was loaded from, which is this
+          # machine's ESP.
+          scan_root "$esp" "boot():"
+          ${lib.optionalString cfg.scanAllEsps "scan_other_esps"}
         }
 
         detect_systems > "$entries" || true
@@ -385,6 +510,16 @@ in
         serviceConfig = {
           Type = "oneshot";
           ExecStart = lib.getExe limineSync;
+
+          # The other-ESP scan mounts partitions read-only while it reads
+          # them. It unmounts them itself, from an EXIT trap — this is the
+          # second line of defence: a private mount namespace means even a
+          # kill -9 mid-scan can't leave a mount behind on the host.
+          #
+          # Harmless when scanAllEsps is off; nothing else here mounts
+          # anything, and the ESP it writes to is mounted before the
+          # namespace is set up (see RequiresMountsFor above).
+          PrivateMounts = true;
         };
       };
 

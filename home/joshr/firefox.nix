@@ -1,12 +1,14 @@
 { ... }:
 
-# Firefox, the default browser on every host.
+# Firefox, on every host. Installed and themed, but no longer the default —
+# see ./browser.nix, which hands that back to Vivaldi.
 #
-# Why this one
-# ------------
+# Why it was the default
+# ----------------------
 # The brief was: cloud sync, Chromium- or Firefox-based, and able to wear the
 # niri palette. Firefox is the only candidate that does all three without a
-# workaround.
+# workaround. The notes below are kept because they are still what you'd be
+# giving up by uninstalling it, and still what makes the theming work.
 #
 #   sync     Firefox Sync, over a Mozilla account. First-party, end-to-end
 #            encrypted, and it carries bookmarks, history, open tabs, logins,
@@ -111,7 +113,7 @@ in
     };
   };
 
-  # For CLI tools that shell out to a browser (gh, glab, xdg-open fallbacks).
-  # Bare name so it resolves from PATH to the home-manager-wrapped build.
-  home.sessionVariables.BROWSER = "firefox";
+  # $BROWSER and the http(s) handler are *not* set here — Vivaldi is the
+  # default again, and both live in ./browser.nix. Firefox stays installed
+  # and stays themed; it is simply not what links open in.
 }

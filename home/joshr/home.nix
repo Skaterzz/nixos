@@ -12,6 +12,7 @@
     ./vscode.nix
     ./spicetify.nix
     ./firefox.nix
+    ./browser.nix
   ];
 
   home.username = "joshr";

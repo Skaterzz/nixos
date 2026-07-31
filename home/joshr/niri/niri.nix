@@ -302,6 +302,7 @@ ${workspaceBlocks}
         // --- window management -----------------------------------------
         Mod+Q repeat=false { close-window; }
         Mod+O repeat=false { toggle-overview; }
+        Mod+Tab repeat=false { toggle-overview; }
 
         Mod+Left  { focus-column-left; }
         Mod+Down  { focus-window-down; }

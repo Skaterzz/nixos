@@ -11,6 +11,29 @@ let
 
   bin = pkg: lib.getExe pkg;
 
+  # Per-host display layout, from local.niri.outputs. Empty on hosts that
+  # don't set it, which leaves niri to auto-detect.
+  renderOutput =
+    o:
+    let
+      lines =
+        lib.optional o.off "off"
+        ++ lib.optional (o.mode != null) ''mode "${o.mode}"''
+        ++ lib.optional (o.scale != null) "scale ${toString o.scale}"
+        ++ lib.optional (o.transform != null) ''transform "${o.transform}"''
+        ++ lib.optional (o.position != null)
+          "position x=${toString o.position.x} y=${toString o.position.y}"
+        ++ lib.optional o.variableRefreshRate "variable-refresh-rate"
+        ++ lib.optional o.focusAtStartup "focus-at-startup";
+    in
+    ''
+      output "${o.name}" {
+      ${lib.concatMapStringsSep "\n" (l: "    ${l}") lines}
+      }
+    '';
+
+  outputBlocks = lib.concatMapStringsSep "\n" renderOutput config.local.niri.outputs;
+
   terminal = "${pkgs.kitty}/bin/kitty";
   launcher = "${pkgs.wofi}/bin/wofi --show drun";
   browser = "${pkgs.vivaldi}/bin/vivaldi";
@@ -25,6 +48,10 @@ in
     // Colours live in the active theme, swapped by `theme-apply`. niri
     // reloads its config automatically when this include target changes.
     include "${activeDir}/niri.kdl"
+
+    // Displays. Set per host in home/joshr/<host>-niri.nix via
+    // local.niri.outputs; nothing here means niri auto-detects.
+    ${outputBlocks}
 
     input {
         keyboard {

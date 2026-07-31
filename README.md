@@ -138,6 +138,42 @@ restored at login.
 
 `Mod+Shift+Slash` shows niri's own hotkey overlay.
 
+### Displays
+
+Per-host, via `local.niri.outputs` in the host's home entrypoint. Empty means
+niri auto-detects, which is what the laptop does.
+
+```nix
+# home/joshr/gamestation-niri.nix
+local.niri.outputs = [
+  { name = "DP-3"; mode = "2560x1440@180.000";
+    position = { x = 0;    y = 0; }; focusAtStartup = true; }
+  { name = "DP-2"; mode = "1920x1080@100.000";
+    position = { x = 2560; y = 0; }; }
+];
+```
+
+Get connector names and the modes each display actually reports with:
+
+```bash
+niri msg outputs
+```
+
+Three things worth knowing:
+
+- **State the refresh rate.** A display's *preferred* mode is often not its
+  fastest, so omitting it can silently leave a 180Hz panel at 60. The string
+  has to match a mode the display reports or niri falls back and warns.
+- **Positions are logical pixels**, so a scaled display occupies
+  `width / scale`. Lay the next one out from there, not from its physical
+  width. Above, DP-2 starts at x=2560 because DP-3 is unscaled.
+- **niri has no "primary" display.** `focusAtStartup` decides where the
+  session begins. To pin workspaces to a display, give them an
+  `open-on-output` in the `workspace` declarations in `niri.nix`.
+
+Also available per output: `scale`, `transform` (rotation),
+`variableRefreshRate`, and `off`.
+
 ### Screenshots
 
 Region capture goes `slurp` → `grim` → `satty`, so you land in an annotation

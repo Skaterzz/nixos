@@ -1,6 +1,10 @@
 { config, lib, pkgs, ... }:
 
 {
+  # Power behaviour that every host wants: no idle suspend while on mains.
+  # See modules/nixos/power.nix and local.power.noAutoSleepOnAC.
+  imports = [ ./power.nix ];
+
   nix.settings.experimental-features = [ "nix-command" "flakes" ];
 
   # NVIDIA, Steam, VS Code, Vivaldi, Spotify and Discord are all unfree.
@@ -27,6 +31,17 @@
   # adjust if this machine lives somewhere else.
   time.timeZone = "America/Detroit";
   i18n.defaultLocale = "en_US.UTF-8";
+
+  # Dates and times are American everywhere: 12-hour clock, month before day.
+  #
+  # en_US.UTF-8 already formats that way, so this is belt and braces rather
+  # than a change — it pins LC_TIME independently of LANG, which is what
+  # anything reading the locale (`date`, `ls -l`, GTK/Qt widgets that ask the
+  # locale instead of carrying their own format string) actually consults.
+  # The clocks with their own format strings — waybar, swaylock, the SDDM
+  # greeter, Plasma's panel — are set in their own modules and don't go
+  # through this.
+  i18n.extraLocaleSettings.LC_TIME = "en_US.UTF-8";
 
   networking.networkmanager.enable = true;
 

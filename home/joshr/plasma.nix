@@ -40,6 +40,17 @@
       lockOnResume = true;
     };
 
+    # No automatic suspend while plugged in.
+    #
+    # modules/nixos/power.nix already holds a logind idle inhibitor on mains
+    # power, and powerdevil honours it — but powerdevil is the thing with the
+    # timer, so saying it here as well means the behaviour doesn't depend on
+    # one daemon asking another the right question. The battery and
+    # lowBattery profiles are left alone: on battery, sleeping is the point.
+    #
+    # Screen locking and blanking are untouched; those are separate settings.
+    powerdevil.AC.autoSuspend.action = "nothing";
+
     # Global shortcuts that were actually customized (everything else in
     # kglobalshortcutsrc was the stock KDE default and isn't worth restating).
     shortcuts = {
@@ -113,7 +124,11 @@
         General = {
           # Default browser/terminal, used by "open link" and
           # "open terminal here" actions across KDE.
-          BrowserApplication = "vivaldi.desktop";
+          #
+          # `vivaldi-stable.desktop`, not `vivaldi.desktop`: nixpkgs copies
+          # the upstream .deb's desktop entry across without renaming it, so
+          # that is the entry ID KDE looks up. See home/joshr/browser.nix.
+          BrowserApplication = "vivaldi-stable.desktop";
           TerminalApplication = "kitty";
           TerminalService = "kitty.desktop";
 
@@ -173,7 +188,8 @@
               # config, so those three will show as dead entries until you
               # add the packages (or drop the lines).
               launchers = [
-                "applications:vivaldi.desktop"
+                # See BrowserApplication above for the -stable suffix.
+                "applications:vivaldi-stable.desktop"
                 "applications:kitty.desktop"
                 "applications:org.kde.dolphin.desktop"
                 "applications:spotify.desktop"
@@ -214,10 +230,15 @@
           "org.kde.plasma.windowlist"
           "org.kde.plasma.panelspacer"
           {
-            digitalClock.date = {
-              enable = true;
-              format.custom = "ddd, MMM dd";
-              position = "besideTime";
+            digitalClock = {
+              date = {
+                enable = true;
+                format.custom = "ddd, MMM d";
+                position = "besideTime";
+              };
+              # 12-hour rather than whatever the locale decides, so this
+              # can't drift from the niri bar and the login screen.
+              time.format = "12h";
             };
           }
           "org.kde.plasma.panelspacer"
@@ -297,10 +318,13 @@
           "org.kde.plasma.windowlist"
           "org.kde.plasma.panelspacer"
           {
-            digitalClock.date = {
-              enable = true;
-              format.custom = "ddd, MMM d";
-              position = "besideTime";
+            digitalClock = {
+              date = {
+                enable = true;
+                format.custom = "ddd, MMM d";
+                position = "besideTime";
+              };
+              time.format = "12h";
             };
           }
           "org.kde.plasma.panelspacer"

@@ -1,5 +1,8 @@
 { pkgs, ... }:
 
+# Note vivaldi is deliberately not here: it is the default browser, so it is
+# installed from home/joshr/browser.nix instead. Only gamestation-niri imports
+# this module, and the browser has to exist on all four desktop hosts.
 {
     environment.systemPackages = with pkgs; [
         discord
@@ -15,7 +18,6 @@
         cava
         cmatrix
         yt-dlp
-        vivaldi
         haruna
         kdePackages.gwenview
         kdePackages.elisa

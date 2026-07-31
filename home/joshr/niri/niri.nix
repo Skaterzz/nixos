@@ -1,4 +1,4 @@
-{ config, lib, pkgs, niriTheming, niriScripts, ... }:
+{ config, lib, pkgs, niriTheming, niriScripts, niriClipboard, ... }:
 
 # niri's own config. There is no home-manager module for niri, so this is
 # written out as a KDL file.
@@ -67,6 +67,14 @@ let
   # on (it implies `--gui`) and keeps that GUI out of the way. Passing
   # `--profile` alone, or omitting it, are both wrong for "apply the profile
   # and sit in the tray".
+  #
+  # Switched off at the moment: the whole binding is commented out below
+  # rather than deleted, so re-enabling it is uncommenting two lines. The
+  # empty string is what keeps `${openrgbStartup}` in the config template a
+  # valid reference while that is the case — with the binding commented out
+  # and nothing in its place, evaluating this file fails outright with
+  # "undefined variable 'openrgbStartup'".
+  openrgbStartup = "";
   #openrgbStartup = lib.optionalString config.local.openrgb.autostart ''
     #spawn-at-startup "${pkgs.openrgb}/bin/openrgb" "--startminimized" "--profile" "${config.local.openrgb.profile}"'';
 in
@@ -147,7 +155,12 @@ ${workspaceBlocks}
 
     prefer-no-csd
 
-    screenshot-path "~/Pictures/Screenshots/Screenshot from %Y-%m-%d %H-%M-%S.png"
+    // Filename stamp is month-day-year on a 12-hour clock, to match every
+    // other clock in the session. That does cost chronological sort order in
+    // a file manager — %m-%d-%Y sorts January of every year together — so if
+    // you ever want that back, "%Y-%m-%d %H-%M-%S" is the string to restore
+    // here and in the `screenshot` script in scripts.nix.
+    screenshot-path "~/Pictures/Screenshots/Screenshot from %m-%d-%Y %I-%M-%S %p.png"
 
     hotkey-overlay {
         skip-at-startup
@@ -239,6 +252,12 @@ ${workspaceBlocks}
         Mod+E      hotkey-overlay-title="Files" { spawn-sh "${fileManager}"; }
         Mod+Ctrl+E hotkey-overlay-title="Files (ranger)" { spawn-sh "${fileManagerTui}"; }
         Mod+B      hotkey-overlay-title="Browser" { spawn-sh "${browser}"; }
+
+        // --- clipboard -------------------------------------------------
+        // Mod+V and Mod+Shift+V are both window management already, so the
+        // history lands on the third one in the V family rather than
+        // somewhere unrelated. See clipboard.nix.
+        Mod+Ctrl+V hotkey-overlay-title="Clipboard history" { spawn "${bin niriClipboard.clipboardHistory}"; }
 
         // --- session ---------------------------------------------------
         // Lock is Mod+L, matching the Windows/KDE reflex. That costs the

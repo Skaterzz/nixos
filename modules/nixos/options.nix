@@ -51,9 +51,38 @@
       systemd-boot it does nothing — that loader already finds Windows and
       any other Boot Loader Spec entries by itself.
 
-      Detection runs against the mounted ESP only. An OS on a disk that
-      isn't mounted here won't be seen; os-prober (grub) is the option that
-      looks further.
+      Under limine this covers this machine's own ESP always, and every
+      other EFI System Partition on the machine when
+      `local.boot.scanAllEsps` is on. What neither reaches is an OS whose
+      loader lives on a non-EFI partition — os-prober (grub) is the option
+      that looks that far.
+    '';
+  };
+
+  options.local.boot.scanAllEsps = lib.mkOption {
+    type = lib.types.bool;
+    default = true;
+    description = ''
+      Look for other operating systems on *every* EFI System Partition
+      attached to the machine, not just the one NixOS boots from. Only
+      meaningful under limine, and only when
+      `local.boot.detectOtherSystems` is on.
+
+      This is what finds a Windows installed on its own disk. Sharing one
+      ESP is the common case for a dual boot set up in a single sitting,
+      and the plain scan handles that — but a second OS installed later, or
+      onto a disk of its own, brings its own ESP, and NixOS does not mount
+      it. So limine-theme-sync locates them by partition type, mounts each
+      read-only in turn, reads it, and unmounts. Nothing is written and no
+      mount outlives the scan.
+
+      Entries found this way are addressed by filesystem UUID
+      (`uuid(XXXX-XXXX):/EFI/...`) rather than limine's `boot():`, which
+      only ever means the volume limine itself was loaded from.
+
+      Turn this off if the extra mounts are unwelcome — on a machine with an
+      encrypted or removable disk you'd rather nothing touched, or if a
+      rebuild is somehow slowed by spinning something up.
     '';
   };
 
@@ -92,6 +121,30 @@
       straight onto the picture and is usually unreadable.
 
       The default is a middle that keeps the text legible on a busy image.
+    '';
+  };
+
+  options.local.power.noAutoSleepOnAC = lib.mkOption {
+    type = lib.types.bool;
+    default = true;
+    description = ''
+      Never suspend on an idle timer while the machine is on mains power.
+      Battery behaviour is untouched.
+
+      Implemented as a logind *idle* inhibitor held for as long as a mains
+      supply is online — see modules/nixos/power.nix. That blocks the
+      automatic, timer-driven path only: `systemctl suspend`, the session
+      menu's "Suspend" and the lid switch all still work, which a `sleep`
+      inhibitor would have broken.
+
+      Locking, dimming and blanking are unaffected. Those are separate
+      timers (swayidle under niri, powerdevil under Plasma) and "don't fall
+      asleep" is not "don't lock the screen".
+
+      Whether the machine counts as on mains is read from
+      /sys/class/power_supply. A machine with no battery at all is always
+      on mains, so the inhibitor simply stays up on the desk and the
+      server.
     '';
   };
 

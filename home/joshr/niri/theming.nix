@@ -1,8 +1,8 @@
 { config, lib, pkgs, ... }:
 
 # Renders each palette in themes.nix into the config formats niri, waybar,
-# wofi, dunst and swaylock actually read, and exposes them as one store path
-# per theme.
+# wofi, dunst, kitty, KDE and swaylock actually read, and exposes them as one
+# store path per theme.
 #
 # How runtime switching stays declarative
 # ---------------------------------------
@@ -18,6 +18,8 @@
 #   waybar   started with `-s <path>`, restarted by the switcher
 #   wofi     `style` key in its config, re-read on every launch
 #   dunst    `services.dunst.configFile`, restarted by the switcher
+#   kitty    `include` at the end of kitty.conf, reloaded on SIGUSR1
+#   KDE apps `~/.config/kdeglobals` symlink, re-read at app startup
 #
 # Note these are *complete* files, not colour fragments. An earlier version
 # emitted only `@define-color` blocks and pulled them in with a GTK CSS
@@ -493,6 +495,78 @@ let
     inactiveForeground=${rgb t.fgDim}
   '';
 
+  # Fallback terminal palette for a theme with no `ansi` block.
+  #
+  # The ten roles have no blue, magenta or cyan in them, so those three have
+  # to borrow the accent — the result is legible but flat, and anything that
+  # colour-codes by hue (git diff, ls, syntax highlighting) loses most of its
+  # distinctions. Every theme in themes.nix defines `ansi` for that reason;
+  # this exists so adding one without it degrades instead of failing.
+  deriveAnsi = t: {
+    black = t.bg;          brightBlack = t.fgDim;
+    red = t.err;           brightRed = t.err;
+    green = t.accent;      brightGreen = t.accent;
+    yellow = t.warn;       brightYellow = t.warn;
+    blue = t.accentDim;    brightBlue = t.accent;
+    magenta = t.accentDim; brightMagenta = t.accent;
+    cyan = t.accentDim;    brightCyan = t.accent;
+    white = t.fg;          brightWhite = t.fg;
+  };
+
+  # kitty colours. Only colours — kitty.nix keeps font, padding, opacity and
+  # the rest, and this is `include`d after them so a theme switch can't
+  # disturb any of that.
+  renderKitty =
+    name: t:
+    let
+      a = t.ansi or (deriveAnsi t);
+    in
+    ''
+      # Generated from home/joshr/niri/themes.nix — theme "${name}".
+      # Included by kitty.conf; reloaded in place on SIGUSR1.
+
+      foreground           ${t.fg}
+      background           ${t.bg}
+      selection_foreground ${t.bg}
+      selection_background ${t.accent}
+
+      cursor               ${t.accent}
+      cursor_text_color    ${t.bg}
+
+      url_color            ${t.accent}
+
+      # Window borders only show with more than one kitty split.
+      active_border_color   ${t.accent}
+      inactive_border_color ${t.border}
+      bell_border_color     ${t.err}
+
+      active_tab_foreground   ${t.bg}
+      active_tab_background   ${t.accent}
+      inactive_tab_foreground ${t.fgDim}
+      inactive_tab_background ${t.bgAlt}
+      tab_bar_background      ${t.bg}
+
+      mark1_foreground ${t.bg}
+      mark1_background ${t.accent}
+
+      color0  ${a.black}
+      color8  ${a.brightBlack}
+      color1  ${a.red}
+      color9  ${a.brightRed}
+      color2  ${a.green}
+      color10 ${a.brightGreen}
+      color3  ${a.yellow}
+      color11 ${a.brightYellow}
+      color4  ${a.blue}
+      color12 ${a.brightBlue}
+      color5  ${a.magenta}
+      color13 ${a.brightMagenta}
+      color6  ${a.cyan}
+      color14 ${a.brightCyan}
+      color7  ${a.white}
+      color15 ${a.brightWhite}
+    '';
+
   # swaylock takes flags, not a config file, so its palette is a shell
   # fragment the lock script sources.
   renderSwaylockEnv = name: t: ''
@@ -562,6 +636,7 @@ let
       cp ${pkgs.writeText "dunstrc" (renderDunstrc name t)}          "$out/dunstrc"
       cp ${pkgs.writeText "swaylock.env" (renderSwaylockEnv name t)} "$out/swaylock.env"
       cp ${pkgs.writeText "kdeglobals" (renderKdeglobals name t)}     "$out/kdeglobals"
+      cp ${pkgs.writeText "kitty.conf" (renderKitty name t)}          "$out/kitty.conf"
       echo -n "${name}" > "$out/name"
     '';
 

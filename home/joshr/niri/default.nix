@@ -89,4 +89,21 @@
   # until relaunched.
   xdg.configFile."kdeglobals".source =
     config.lib.file.mkOutOfStoreSymlink "${niriTheming.activeDir}/kdeglobals";
+
+  # Point kitty at the active theme's colours.
+  #
+  # This lives here rather than in ../kitty.nix because that module is shared
+  # with the Plasma hosts, which have no niri theme state — the include would
+  # be a dangling path there. On a niri host it's appended to everything
+  # kitty.nix already set, and kitty takes the last value for any key, so the
+  # colours are overridden and font, padding and opacity are left alone.
+  #
+  # mkAfter is what guarantees that ordering: extraConfig is a `lines` option,
+  # and without it the merge order between two modules isn't defined.
+  #
+  # The theme switcher reloads running terminals; see scripts.nix.
+  programs.kitty.extraConfig = lib.mkAfter ''
+
+    include ${niriTheming.activeDir}/kitty.conf
+  '';
 }

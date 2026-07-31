@@ -108,12 +108,25 @@ complete set of config files, and the only mutable state is one symlink:
 
 Each tool is pointed at a file under that symlink: niri via its `include` node
 (live-reloaded), waybar started with `-s <active>/waybar.css`, wofi via its
-`style` config key, dunst via `services.dunst.configFile`. `theme-apply` moves
-the symlink and restarts waybar and dunst; wofi re-reads on each launch.
+`style` config key, dunst via `services.dunst.configFile`, kitty via an
+`include` at the end of `kitty.conf`. `theme-apply` moves the symlink, restarts
+waybar and dunst, and sends kitty SIGUSR1 so open terminals repaint in place;
+wofi re-reads on each launch. KDE apps read `~/.config/kdeglobals`, which is a
+symlink into the active theme — Dolphin picks up a switch when it next starts.
 
 Adding a theme is one attrset in `themes.nix` — the niri fragment, both
 stylesheets, the dunstrc, the swaylock palette, the SDDM config and
 Dolphin's kdeglobals are all generated from its ten colour roles.
+
+kitty is the exception, because a terminal needs sixteen ANSI colours and ten
+semantic roles don't contain them — there's no blue, magenta or cyan in a
+palette built for a bar and a focus ring. So each theme also carries an `ansi`
+block. Themes with a published terminal palette (Catppuccin, Nord, Gruvbox,
+Dracula, Tokyo Night, Rosé Pine, Everforest, Kanagawa, Solarized) use it
+verbatim, quirks included — Rosé Pine maps "green" to a teal, Solarized's
+bright slots are greys rather than brighter hues. The rest are hand-picked.
+Omitting `ansi` is allowed and falls back to a derivation from the ten roles,
+but it's flat: blue, magenta and cyan all collapse onto the accent.
 
 The login screen follows too: one `sddm-astronaut` instance is built per
 palette, and a system path unit rewrites an SDDM drop-in when the selection

@@ -31,12 +31,18 @@ let
   #           SIGUSR2 alone did not reliably repaint.
   #   dunst   restarted; it's launched with `-config <active>/dunstrc`.
   #   wofi    nothing — it reads its stylesheet fresh on each launch.
+  #   kitty   SIGUSR1, which is kitty's documented "re-read kitty.conf"
+  #           signal. It follows the include and repaints open windows, so
+  #           running terminals change colour in place.
+  #   KDE     nothing to send. Dolphin and friends read kdeglobals once at
+  #           startup, so an open window keeps its old palette until
+  #           relaunched.
   #   SDDM    picked up by a system path unit watching the file written
   #           below; applies at the next greeter start. See
   #           modules/nixos/niri.nix.
   themeApply = pkgs.writeShellApplication {
     name = "theme-apply";
-    runtimeInputs = with pkgs; [ libnotify systemd ];
+    runtimeInputs = with pkgs; [ libnotify systemd procps ];
     text = ''
       name="''${1:-}"
       if [ -z "$name" ]; then
@@ -56,6 +62,11 @@ let
 
       systemctl --user restart waybar.service || true
       systemctl --user restart dunst.service || true
+
+      # -x so this matches the kitty process and not, say, an editor that
+      # happens to have "kitty" in its command line. Non-zero simply means no
+      # terminal is open.
+      pkill -USR1 -x kitty || true
 
       notify-send -a theme -i preferences-desktop-theme \
         "Theme" "Switched to $name" || true

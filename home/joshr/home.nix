@@ -34,8 +34,6 @@
     discord
     protonup-qt
     papirus-icon-theme
-    # Both are pinned in the dock launchers ported from the dotfiles
-    # (signal.desktop, net.cozic.joplin_desktop.desktop).
     signal-desktop
     joplin-desktop
     bitwarden-desktop
@@ -48,6 +46,8 @@
     sshfs
     openrgb
     playerctl
+    cava
+    cmatrix
   ];
 
   programs.btop = {

@@ -8,6 +8,7 @@
     ../common/options.nix
     ../common/shell.nix
     ./kitty.nix
+    ./ranger.nix
     ./vscode.nix
   ];
 

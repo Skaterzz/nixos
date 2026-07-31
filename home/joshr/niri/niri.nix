@@ -14,7 +14,9 @@ let
   terminal = "${pkgs.kitty}/bin/kitty";
   launcher = "${pkgs.wofi}/bin/wofi --show drun";
   browser = "${pkgs.vivaldi}/bin/vivaldi";
-  fileManager = "${terminal} -e ${pkgs.ranger}/bin/ranger";
+  # Bare `ranger` so it resolves from PATH to home-manager's wrapped build,
+  # which carries the preview tools. The raw ${pkgs.ranger} has none of them.
+  fileManager = "${terminal} -e ranger";
 in
 {
   xdg.configFile."niri/config.kdl".text = ''

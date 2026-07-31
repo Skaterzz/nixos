@@ -106,6 +106,24 @@
     );
   };
 
+  options.local.niri.workspaceOutput = lib.mkOption {
+    type = lib.types.nullOr lib.types.str;
+    default = null;
+    example = "DP-3";
+    description = ''
+      Output the named workspaces open on, as an `open-on-output` on each
+      `workspace` declaration.
+
+      niri creates a workspace on whichever output is focused at the time, so
+      without this the numbered workspaces land wherever you happened to be —
+      Mod+1 through Mod+5 end up scattered across displays. Naming an output
+      pins them all to it.
+
+      null leaves them unpinned, which is what a single-display machine
+      wants.
+    '';
+  };
+
   options.local.plasma.secondaryMonitorPanel = lib.mkEnableOption ''
     the status bar on the second monitor (screen 1).
 

@@ -122,6 +122,28 @@ let
               'passwordMaskDelay: config.HideCompletePassword == "true" ? undefined : 1000' \
               'passwordMaskDelay: 0'
 
+          # Show the login form on the primary display only.
+          #
+          # SDDM creates one QQuickView per screen and sets a `primaryScreen`
+          # bool on each one's context (GreeterApp.cpp: setContextProperty
+          # "primaryScreen", QGuiApplication::primaryScreen() == screen).
+          # sddm-astronaut never reads it, so every display draws a full copy
+          # of the form.
+          #
+          # Binding the form and its backing panel to that property leaves the
+          # secondary display showing just the wallpaper. The `typeof` guard
+          # keeps the theme usable if the property ever goes away — it falls
+          # back to drawing the form rather than to a screen with no login on
+          # it.
+          substituteInPlace "$themeDir/Main.qml" \
+            --replace-fail \
+              'anchors.left: config.FormPosition == "left" ? parent.left : undefined' \
+              'anchors.left: config.FormPosition == "left" ? parent.left : undefined
+            visible: typeof primaryScreen === "undefined" ? true : primaryScreen' \
+            --replace-fail \
+              'visible: config.HaveFormBackground == "true" ? true : false' \
+              'visible: (config.HaveFormBackground == "true" ? true : false) && (typeof primaryScreen === "undefined" ? true : primaryScreen)'
+
           mv "$themeDir" "$out/share/sddm/themes/niri-${name}"
         '';
       });

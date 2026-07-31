@@ -178,6 +178,18 @@ Three things worth knowing:
 Also available per output: `scale`, `transform` (rotation),
 `variableRefreshRate`, and `off`.
 
+**Workspaces follow a display** via `local.niri.workspaceOutput` in the same
+file. niri creates a workspace on whichever output is focused at the time, so
+without it `Mod+1`–`Mod+5` scatter across displays depending on where you
+were when you first used each one. The desk pins them to `DP-3`.
+
+**The login screen shows the form on the primary display only**, with the
+other showing just the wallpaper. SDDM creates one view per screen and sets a
+`primaryScreen` bool on each; the theme ignores it, so the form is patched to
+honour it. Which display is "primary" is decided by Qt/kwin in the greeter —
+there is no SDDM setting to force it, so if it picks the wrong one that's the
+knob that doesn't exist.
+
 ### Screenshots
 
 Region capture goes `slurp` → `grim` → `satty`, so you land in an annotation

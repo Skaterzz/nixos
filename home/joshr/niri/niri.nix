@@ -34,6 +34,19 @@ let
 
   outputBlocks = lib.concatMapStringsSep "\n" renderOutput config.local.niri.outputs;
 
+  workspaceNames = [ "1" "2" "3" "4" "5" ];
+
+  workspaceBlocks = lib.concatMapStringsSep "\n" (
+    n:
+    if config.local.niri.workspaceOutput == null then
+      ''workspace "${n}"''
+    else
+      ''
+        workspace "${n}" {
+            open-on-output "${config.local.niri.workspaceOutput}"
+        }''
+  ) workspaceNames;
+
   terminal = "${pkgs.kitty}/bin/kitty";
   launcher = "${pkgs.wofi}/bin/wofi --show drun";
   browser = "${pkgs.vivaldi}/bin/vivaldi";
@@ -108,11 +121,12 @@ in
 
     // Named workspaces. waybar's niri/workspaces module shows these, and the
     // Mod+<n> binds below jump straight to them.
-    workspace "1"
-    workspace "2"
-    workspace "3"
-    workspace "4"
-    workspace "5"
+    //
+    // Pinned to an output when local.niri.workspaceOutput is set. niri
+    // otherwise creates a workspace on whichever output happens to be
+    // focused, so without this the numbered workspaces scatter across
+    // displays depending on where you were standing when you first used one.
+${workspaceBlocks}
 
     prefer-no-csd
 

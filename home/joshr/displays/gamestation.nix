@@ -18,6 +18,11 @@
 # width / scale. DP-2 starts at x=2560 because DP-3 is unscaled — if DP-3
 # ever gets a scale, that number becomes 2560 / scale.
 {
+  # Numbered workspaces (Mod+1..5) all live on the 1440p panel. Without this
+  # niri creates each one on whichever output was focused at the time, so
+  # they end up scattered across both displays.
+  local.niri.workspaceOutput = "DP-3";
+
   local.niri.outputs = [
     {
       name = "DP-3";

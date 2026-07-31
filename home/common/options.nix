@@ -116,7 +116,7 @@
 
       niri creates a workspace on whichever output is focused at the time, so
       without this the numbered workspaces land wherever you happened to be —
-      Mod+1 through Mod+5 end up scattered across displays. Naming an output
+      the Mod+<n> binds end up scattered across displays. Naming an output
       pins them all to it.
 
       null leaves them unpinned, which is what a single-display machine

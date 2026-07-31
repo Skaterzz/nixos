@@ -197,8 +197,8 @@ Like the palette and wallpaper, this lands at the next greeter start.
 
 **Workspaces follow a display** via `local.niri.workspaceOutput` in the same
 file. niri creates a workspace on whichever output is focused at the time, so
-without it `Mod+1`–`Mod+5` scatter across displays depending on where you
-were when you first used each one. The desk pins them to `DP-3`.
+without it the numbered workspaces scatter across displays depending on where
+you were when you first used each one. The desk pins them to `DP-3`.
 
 **The login screen shows the form on the primary display only**, with the
 other showing just the wallpaper. SDDM creates one view per screen and sets a

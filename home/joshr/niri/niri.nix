@@ -50,9 +50,10 @@ let
   terminal = "${pkgs.kitty}/bin/kitty";
   launcher = "${pkgs.wofi}/bin/wofi --show drun";
   browser = "${pkgs.vivaldi}/bin/vivaldi";
+  fileManager = "${pkgs.kdePackages.dolphin}/bin/dolphin";
   # Bare `ranger` so it resolves from PATH to home-manager's wrapped build,
   # which carries the preview tools. The raw ${pkgs.ranger} has none of them.
-  fileManager = "${terminal} -e ranger";
+  fileManagerTui = "${terminal} -e ranger";
 in
 {
   xdg.configFile."niri/config.kdl".text = ''
@@ -219,6 +220,7 @@ ${workspaceBlocks}
         Mod+Return hotkey-overlay-title="Terminal" { spawn-sh "${terminal}"; }
         Mod+D      hotkey-overlay-title="Applications" { spawn-sh "${launcher}"; }
         Mod+E      hotkey-overlay-title="Files" { spawn-sh "${fileManager}"; }
+        Mod+Ctrl+E hotkey-overlay-title="Files (ranger)" { spawn-sh "${fileManagerTui}"; }
         Mod+B      hotkey-overlay-title="Browser" { spawn-sh "${browser}"; }
 
         // --- session ---------------------------------------------------

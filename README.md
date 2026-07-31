@@ -112,8 +112,8 @@ Each tool is pointed at a file under that symlink: niri via its `include` node
 the symlink and restarts waybar and dunst; wofi re-reads on each launch.
 
 Adding a theme is one attrset in `themes.nix` — the niri fragment, both
-stylesheets, the dunstrc, the swaylock palette and the SDDM config are all
-generated from its ten colour roles.
+stylesheets, the dunstrc, the swaylock palette, the SDDM config and
+Dolphin's kdeglobals are all generated from its ten colour roles.
 
 The login screen follows too: one `sddm-astronaut` instance is built per
 palette, and a system path unit rewrites an SDDM drop-in when the selection
@@ -128,7 +128,8 @@ restored at login.
 
 | Key | Action |
 |---|---|
-| `Mod+Return` / `Mod+D` / `Mod+E` / `Mod+B` | terminal, launcher, files, browser |
+| `Mod+Return` / `Mod+D` / `Mod+E` / `Mod+B` | terminal, launcher, Dolphin, browser |
+| `Mod+Ctrl+E` | ranger, in a terminal |
 | `Mod+Q` / `Mod+O` | close window, overview |
 | `Mod+H/J/K/L` | focus (arrows also work) |
 | `Mod+1..5` | named workspaces |

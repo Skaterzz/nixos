@@ -1,4 +1,4 @@
-{ config, lib, pkgs, ... }:
+{ config, lib, pkgs, niriTheming, ... }:
 
 # niri desktop for joshr: compositor config, bar, notifications, launcher,
 # lock screen, and the theme/wallpaper switcher.
@@ -16,7 +16,15 @@
     ./displays-sync.nix
   ];
 
+  # Dolphin as the graphical file manager. It follows the active theme
+  # through kdeglobals — see the symlink below.
   home.packages = with pkgs; [
+    kdePackages.dolphin
+    kdePackages.kio-fuse # mount remote filesystems in place
+    kdePackages.kio-extras # sftp://, mtp://, trash:// and friends
+    kdePackages.qtsvg # icon rendering
+    kdePackages.breeze-icons # fallback icons Dolphin expects to exist
+
     # Screenshot stack: grim captures, slurp selects, satty annotates.
     grim
     slurp
@@ -69,4 +77,17 @@
     enable = true;
     createDirectories = true;
   };
+
+  # Point KDE apps at the active theme's kdeglobals.
+  #
+  # KColorScheme reads this whether or not Plasma is running, so Dolphin
+  # picks up the palette in a bare niri session. It has to be a symlink to
+  # the mutable state path rather than a store file, or a theme switch
+  # couldn't change it — mkOutOfStoreSymlink is home-manager's escape hatch
+  # for exactly that.
+  #
+  # Dolphin reads this at startup, so a running window keeps its old colours
+  # until relaunched.
+  xdg.configFile."kdeglobals".source =
+    config.lib.file.mkOutOfStoreSymlink "${niriTheming.activeDir}/kdeglobals";
 }

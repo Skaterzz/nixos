@@ -376,6 +376,123 @@ let
         timeout = 0
   '';
 
+  # "#rrggbb" -> "r,g,b". KDE colour keys are decimal triples, not hex.
+  rgb =
+    hex:
+    let
+      h = lib.removePrefix "#" hex;
+      byte = start: toString (lib.fromHexString (builtins.substring start 2 h));
+    in
+    "${byte 0},${byte 2},${byte 4}";
+
+  # kdeglobals, so KDE apps — Dolphin in particular — follow the palette.
+  #
+  # KDE apps read their colour scheme from kdeglobals via KColorScheme
+  # whether or not Plasma is running, so this works in a bare niri session
+  # with no KDE desktop underneath it.
+  renderKdeglobals = name: t: ''
+    # Generated from home/joshr/niri/themes.nix — theme "${name}".
+    [General]
+    ColorScheme=niri-${name}
+    AccentColor=${rgb t.accent}
+    accentColorFromWallpaper=false
+
+    [Icons]
+    Theme=Papirus-Dark
+
+    [KDE]
+    widgetStyle=Breeze
+
+    [Colors:Window]
+    BackgroundNormal=${rgb t.bg}
+    BackgroundAlternate=${rgb t.bgAlt}
+    ForegroundNormal=${rgb t.fg}
+    ForegroundInactive=${rgb t.fgDim}
+    ForegroundActive=${rgb t.accent}
+    ForegroundLink=${rgb t.accent}
+    ForegroundVisited=${rgb t.accentDim}
+    ForegroundNegative=${rgb t.err}
+    ForegroundNeutral=${rgb t.warn}
+    ForegroundPositive=${rgb t.accent}
+    DecorationFocus=${rgb t.accent}
+    DecorationHover=${rgb t.accent}
+
+    [Colors:View]
+    BackgroundNormal=${rgb t.bg}
+    BackgroundAlternate=${rgb t.bgAlt}
+    ForegroundNormal=${rgb t.fg}
+    ForegroundInactive=${rgb t.fgDim}
+    ForegroundActive=${rgb t.accent}
+    ForegroundLink=${rgb t.accent}
+    ForegroundVisited=${rgb t.accentDim}
+    ForegroundNegative=${rgb t.err}
+    ForegroundNeutral=${rgb t.warn}
+    ForegroundPositive=${rgb t.accent}
+    DecorationFocus=${rgb t.accent}
+    DecorationHover=${rgb t.accent}
+
+    [Colors:Button]
+    BackgroundNormal=${rgb t.bgAlt}
+    BackgroundAlternate=${rgb t.bg}
+    ForegroundNormal=${rgb t.fg}
+    ForegroundInactive=${rgb t.fgDim}
+    ForegroundActive=${rgb t.accent}
+    ForegroundLink=${rgb t.accent}
+    ForegroundVisited=${rgb t.accentDim}
+    ForegroundNegative=${rgb t.err}
+    ForegroundNeutral=${rgb t.warn}
+    ForegroundPositive=${rgb t.accent}
+    DecorationFocus=${rgb t.accent}
+    DecorationHover=${rgb t.accent}
+
+    [Colors:Selection]
+    BackgroundNormal=${rgb t.accent}
+    BackgroundAlternate=${rgb t.accentDim}
+    ForegroundNormal=${rgb t.bg}
+    ForegroundInactive=${rgb t.bgAlt}
+    ForegroundActive=${rgb t.bg}
+    ForegroundLink=${rgb t.bg}
+    ForegroundVisited=${rgb t.bgAlt}
+    ForegroundNegative=${rgb t.err}
+    ForegroundNeutral=${rgb t.warn}
+    ForegroundPositive=${rgb t.bg}
+    DecorationFocus=${rgb t.accent}
+    DecorationHover=${rgb t.accent}
+
+    [Colors:Tooltip]
+    BackgroundNormal=${rgb t.bgAlt}
+    BackgroundAlternate=${rgb t.bg}
+    ForegroundNormal=${rgb t.fg}
+    ForegroundInactive=${rgb t.fgDim}
+    ForegroundActive=${rgb t.accent}
+    DecorationFocus=${rgb t.accent}
+    DecorationHover=${rgb t.accent}
+
+    [Colors:Complementary]
+    BackgroundNormal=${rgb t.bg}
+    BackgroundAlternate=${rgb t.bgAlt}
+    ForegroundNormal=${rgb t.fg}
+    ForegroundInactive=${rgb t.fgDim}
+    ForegroundActive=${rgb t.accent}
+    DecorationFocus=${rgb t.accent}
+    DecorationHover=${rgb t.accent}
+
+    [Colors:Header]
+    BackgroundNormal=${rgb t.bgAlt}
+    BackgroundAlternate=${rgb t.bg}
+    ForegroundNormal=${rgb t.fg}
+    ForegroundInactive=${rgb t.fgDim}
+    ForegroundActive=${rgb t.accent}
+    DecorationFocus=${rgb t.accent}
+    DecorationHover=${rgb t.accent}
+
+    [WM]
+    activeBackground=${rgb t.bg}
+    activeForeground=${rgb t.fg}
+    inactiveBackground=${rgb t.bgAlt}
+    inactiveForeground=${rgb t.fgDim}
+  '';
+
   # swaylock takes flags, not a config file, so its palette is a shell
   # fragment the lock script sources.
   renderSwaylockEnv = name: t: ''
@@ -444,6 +561,7 @@ let
       cp ${pkgs.writeText "wofi.css" (renderWofiCss name t)}         "$out/wofi.css"
       cp ${pkgs.writeText "dunstrc" (renderDunstrc name t)}          "$out/dunstrc"
       cp ${pkgs.writeText "swaylock.env" (renderSwaylockEnv name t)} "$out/swaylock.env"
+      cp ${pkgs.writeText "kdeglobals" (renderKdeglobals name t)}     "$out/kdeglobals"
       echo -n "${name}" > "$out/name"
     '';
 

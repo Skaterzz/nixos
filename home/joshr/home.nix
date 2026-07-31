@@ -1,12 +1,15 @@
 { pkgs, inputs, ... }:
 
 {
+  # Everything here is desktop-agnostic. The desktop itself — ./plasma.nix or
+  # ./niri — is imported by the per-host entrypoint next to this file, so the
+  # Plasma and niri variants of a machine can share this base.
   imports = [
     ../common/options.nix
     ../common/shell.nix
     ./kitty.nix
+    ./ranger.nix
     ./vscode.nix
-    ./plasma.nix
   ];
 
   home.username = "joshr";
@@ -43,8 +46,18 @@
     lutris
     localsend
     sshfs
+    openrgb
+    playerctl
   ];
 
+  programs.btop = {
+   enable = true;
+   settings = {
+     color_theme = "tokyo-storm";
+     theme_background = false;
+     update_ms = 100;
+    };
+};
   programs.mangohud = {
     enable = true;
     enableSessionWide = false;
@@ -74,7 +87,21 @@
 
   xdg.dataFile."wallpapers".source = "${inputs.dotfiles}/dot_local/share/wallpapers";
 
-  home.file.".icons/Bibata-Modern-Ice".source = "${inputs.dotfiles}/dot_icons/Bibata-Modern-Ice";
-
   xdg.dataFile."color-schemes/DarkObsidianII.colors".source = ./files/DarkObsidianII.colors;
+
+  # Cursor theme, shared by both the Plasma and niri sessions.
+  #
+  # This uses nixpkgs' bibata-cursors rather than the copy under
+  # dot_icons/ in the dotfiles repo. home-manager's pointerCursor module
+  # writes ~/.icons/<name> itself, so linking the dotfiles copy to that same
+  # path as well is a conflicting definition — and the module expects a
+  # package laid out as ${package}/share/icons/<name>, which the raw
+  # dot_icons/ directory isn't.
+  home.pointerCursor = {
+    package = pkgs.bibata-cursors;
+    name = "Bibata-Modern-Ice";
+    size = 24;
+    gtk.enable = true;
+    x11.enable = true;
+  };
 }

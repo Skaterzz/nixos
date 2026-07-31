@@ -63,6 +63,7 @@
           };
         in
         {
+          # --- Plasma sessions -------------------------------------------
           gamestation = mkHost {
             hostModule = ./hosts/gamestation/configuration.nix;
             homeModule = ./home/joshr/gamestation.nix;
@@ -71,6 +72,23 @@
           laptop = mkHost {
             hostModule = ./hosts/laptop/configuration.nix;
             homeModule = ./home/joshr/laptop.nix;
+          };
+
+          # --- niri sessions ---------------------------------------------
+          # Same two machines, niri instead of Plasma. Separate hosts because
+          # the two use different display managers (plasma-login-manager vs
+          # SDDM) and NixOS won't enable both. Switching is just a rebuild:
+          #
+          #   sudo nixos-rebuild switch --flake .#gamestation-niri
+          #   sudo nixos-rebuild switch --flake .#gamestation
+          gamestation-niri = mkHost {
+            hostModule = ./hosts/gamestation-niri/configuration.nix;
+            homeModule = ./home/joshr/gamestation-niri.nix;
+          };
+
+          laptop-niri = mkHost {
+            hostModule = ./hosts/laptop-niri/configuration.nix;
+            homeModule = ./home/joshr/laptop-niri.nix;
           };
         };
 

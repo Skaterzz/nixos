@@ -42,6 +42,298 @@ home/root/
   home.nix                         # fish + starship only, no desktop
 ```
 
+## niri (experimental alternative to Plasma)
+
+There are niri variants of both machines. They're separate hosts rather than
+a switch inside the existing ones, because Plasma here uses
+plasma-login-manager and niri uses SDDM — NixOS won't enable two display
+managers at once.
+
+```bash
+sudo nixos-rebuild switch --flake .#gamestation-niri   # try niri
+sudo nixos-rebuild switch --flake .#gamestation        # back to Plasma
+```
+
+Nothing is destroyed either way, and the previous generation stays in the
+boot menu. `laptop-niri` is the same deal for the laptop.
+
+The niri hosts deliberately **don't** import `plasma-xdg-data-dirs.nix`.
+That workaround exists because plasma-workspace's Qt wrapper builds an ~18 KB
+`XDG_DATA_DIRS`; there's no plasma-workspace in a niri session, so the bug
+can't occur — and neither can the from-source rebuild the workaround costs.
+
+### Layout
+
+```
+modules/nixos/niri.nix        # session, SDDM + theme, polkit, PAM, portals
+home/joshr/displays/
+  gamestation.nix             # DP-3 + DP-2 layout — edit here for monitors
+  laptop.nix                  # empty: niri auto-detects
+home/joshr/niri/
+  default.nix                 # entrypoint: packages, GTK/Qt/cursor
+  themes.nix                  # the palettes — edit colours here
+  theming.nix                 # renders each palette into per-tool configs
+  niri.nix                    # config.kdl: binds, layout, window rules
+  waybar.nix                  # bar layout + style
+  notifications.nix           # dunst + wofi
+  lock.nix                    # swayidle timers
+  scripts.nix                 # theme/wallpaper/screenshot/session helpers
+```
+
+### The bar
+
+Left is workspaces and the focused window title, centre is the clock and
+date, right is the tray, volume, network, battery and a session button. Each
+group is its own rounded floating pill rather than one long bar.
+
+### Theme switching
+
+20 palettes ship. Greens: `matrix` (bright phosphor, the default), `forest`,
+`mint`. Monochrome: `mono` (white on black), `mono-light` (black on white).
+Reds: `blackred`, `crimson`. Then `catppuccin-mocha`,
+`catppuccin-macchiato`, `catppuccin-frappe`, `rose-pine`, `rose-pine-moon`,
+`nord`, `gruvbox`, `dracula`, `tokyo-night`, `everforest`, `kanagawa`,
+`solarized`, and `rose-pine-dawn` as the one light option.
+
+`Mod+Shift+T` cycles, `Mod+Ctrl+T` opens a picker (more useful at this count).
+
+The mechanism is worth knowing, because it's what keeps this declarative.
+home-manager owns `~/.config/...` as read-only symlinks into the store, so a
+script can't rewrite them. Instead every theme is **built ahead of time** as a
+complete set of config files, and the only mutable state is one symlink:
+
+```
+~/.local/state/niri-theme/active -> /nix/store/...-niri-theme-matrix
+```
+
+Each tool is pointed at a file under that symlink: niri via its `include` node
+(live-reloaded), waybar started with `-s <active>/waybar.css`, wofi via its
+`style` config key, dunst via `services.dunst.configFile`, kitty via an
+`include` at the end of `kitty.conf`. `theme-apply` moves the symlink, restarts
+waybar and dunst, and sends kitty SIGUSR1 so open terminals repaint in place;
+wofi re-reads on each launch. KDE apps read `~/.config/kdeglobals`, which is a
+symlink into the active theme — Dolphin picks up a switch when it next starts.
+
+Adding a theme is one attrset in `themes.nix` — the niri fragment, both
+stylesheets, the dunstrc, the swaylock palette, the SDDM config and
+Dolphin's kdeglobals are all generated from its ten colour roles.
+
+kitty is the exception, because a terminal needs sixteen ANSI colours and ten
+semantic roles don't contain them — there's no blue, magenta or cyan in a
+palette built for a bar and a focus ring. So each theme also carries an `ansi`
+block. Themes with a published terminal palette (Catppuccin, Nord, Gruvbox,
+Dracula, Tokyo Night, Rosé Pine, Everforest, Kanagawa, Solarized) use it
+verbatim, quirks included — Rosé Pine maps "green" to a teal, Solarized's
+bright slots are greys rather than brighter hues. The rest are hand-picked.
+Omitting `ansi` is allowed and falls back to a derivation from the ten roles,
+but it's flat: blue, magenta and cyan all collapse onto the accent.
+
+The login screen does **not** follow, by default. It uses SDDM's built-in
+greeter, because the themed one left the primary display black — see "The
+login screen" below. `local.sddm.theme = "astronaut"` turns the themed
+version back on, which builds one `sddm-astronaut` instance per palette and
+has a system path unit rewrite an SDDM drop-in when the selection changes.
+SDDM only reads its config when the greeter starts, so that lands at the next
+logout or reboot rather than immediately.
+
+Wallpapers use `awww` (the renamed `swww`) over `~/.local/share/wallpapers`:
+`Mod+Shift+W` picks one, `Mod+Ctrl+W` is random. The choice is remembered and
+restored at login.
+
+### Keys
+
+| Key | Action |
+|---|---|
+| `Mod+Return` / `Mod+D` / `Mod+E` / `Mod+B` | terminal, launcher, Dolphin, browser |
+| `Mod+Ctrl+E` | ranger, in a terminal |
+| `Mod+Q` / `Mod+O` | close window, overview |
+| `Mod+H/J/K/L` | focus (arrows also work) |
+| `Mod+1..5` | named workspaces |
+| `Mod+R` / `Mod+F` / `Mod+V` | preset widths, maximize, float |
+| `Print` / `Mod+Shift+S` | region screenshot, annotated in satty |
+| `Ctrl+Print` / `Alt+Print` | screen / window (niri's built-ins) |
+| `Mod+Escape` / `Mod+Shift+Escape` | lock, session menu |
+| `Mod+Shift+I` | stay awake (toggle the sleep inhibitor) |
+| `Mod+Shift+T` / `Mod+Ctrl+T` | cycle theme, pick theme |
+| `Mod+Shift+W` / `Mod+Ctrl+W` | pick wallpaper, random wallpaper |
+| `Mod`+scroll / `Mod+Shift`+scroll | walk windows / workspaces (wheel and touchpad) |
+
+`Mod+Shift+Slash` shows niri's own hotkey overlay.
+
+### Staying awake
+
+`Mod+Shift+I`, or the coffee-cup icon in the bar, holds the machine awake.
+The icon is dim when idling is normal and lit when the inhibitor is on — it's
+a mode that's easy to leave running by accident, so it's meant to be obvious.
+Clicking and keying run the same script, and the state lives in
+`idle-inhibit.service`, so the two can't disagree.
+
+It holds off two unrelated mechanisms, which is why it isn't a one-liner:
+
+- **swayidle** dims, locks and blanks. It takes its cue from the compositor's
+  idle-notify protocol, not from logind, so a logind inhibitor does nothing to
+  it — the timer is stopped outright and restarted on the way back.
+- **logind** handles the idle action, sleep, and the lid switch.
+  `systemd-inhibit` holds a block lock on all three for as long as the unit
+  runs.
+
+This isn't waybar's built-in `idle_inhibitor` module. That one takes a Wayland
+idle-inhibit lock on waybar's own surface — a perfectly good mechanism, but it
+can only be toggled by clicking, with no IPC for a keybind to use, and it
+wouldn't stop logind suspending the machine.
+
+### Displays
+
+One file per host under `home/joshr/displays/`, kept separate so a monitor
+change doesn't mean editing the session config. Empty means niri
+auto-detects, which is what the laptop does.
+
+```nix
+# home/joshr/displays/gamestation.nix
+local.niri.outputs = [
+  { name = "DP-3"; mode = "2560x1440@180.000";
+    position = { x = 0;    y = 0; }; focusAtStartup = true; }
+  { name = "DP-2"; mode = "1920x1080@100.000";
+    position = { x = 2560; y = 0; }; }
+];
+```
+
+Get connector names and the modes each display actually reports with:
+
+```bash
+niri msg outputs
+```
+
+Three things worth knowing:
+
+- **State the refresh rate.** A display's *preferred* mode is often not its
+  fastest, so omitting it can silently leave a 180Hz panel at 60. The string
+  has to match a mode the display reports or niri falls back and warns.
+- **Positions are logical pixels**, so a scaled display occupies
+  `width / scale`. Lay the next one out from there, not from its physical
+  width. Above, DP-2 starts at x=2560 because DP-3 is unscaled.
+- **niri has no "primary" display.** `focusAtStartup` decides where the
+  session begins. To pin workspaces to a display, give them an
+  `open-on-output` in the `workspace` declarations in `niri.nix`.
+
+Also available per output: `scale`, `transform` (rotation),
+`variableRefreshRate`, and `off`.
+
+**The greeter does not follow the display config, deliberately.** Several
+attempts to make it do so are gone; see "The login screen" below for why. The
+greeter auto-detects, which lights up every connected display at kwin's choice
+of mode and arrangement.
+
+
+**Workspaces follow a display** via `local.niri.workspaceOutput` in the same
+file. niri creates a workspace on whichever output is focused at the time, so
+without it the numbered workspaces scatter across displays depending on where
+you were when you first used each one. The desk pins them to `DP-3`.
+
+### The login screen
+
+**SDDM uses its own built-in greeter**, not a theme of ours. That is
+`local.sddm.theme = "stock"`, and it is the default after the themed one left
+the primary display black.
+
+The evidence for blaming the theme is that the failure did not move. It was
+identical under kwin_wayland, under weston and under X11, and SDDM logged no
+error at any point in the process:
+
+```
+sddm[1734]: Greeter starting...
+sddm-helper[1766]: [PAM] Starting... / Authenticating... / returning.
+sddm[1734]: Greeter session started successfully
+sddm[1734]: Message received from greeter: Connect
+```
+
+The greeter started, authenticated and connected. Three different display
+servers failing the same way, with the stack reporting success, points away
+from all three and at the one component they share.
+
+Things ruled out along the way, so they are not tried again:
+
+- **A generated `kwinoutputconfig.json`** from `local.niri.outputs`. Removed.
+  Writing a mode can black-screen a display outright, because kwin hands it
+  straight to a modeset and a rate that doesn't match exactly — DRM reporting
+  179998 mHz where the config says 180000 — simply fails. Dropping the mode
+  didn't help either: with no config, kwin still picks the preferred mode,
+  which for a 1440p180 panel is 180Hz.
+- **Copying KWin's own file** from the Plasma session. That dragged a whole
+  arrangement across including its enabled/disabled state.
+- **The greeter's compositor.** weston made no difference, and neither did
+  X11.
+
+The stock greeter confirmed the diagnosis: it comes up fine on both displays,
+so the theme was indeed the thing at fault.
+
+**`local.sddm.theme = "astronaut"`** brings the themed greeter back — one
+`sddm-astronaut` build per palette, following the desktop's theme and
+wallpaper — with the leading suspect now fixed.
+
+That suspect is the background. The theme config points `Background` at a
+fixed runtime path, `/var/lib/sddm-theme/wallpaper.png`, and that file only
+appears once the wallpaper switcher has run. Before a wallpaper has ever been
+picked, it isn't there. sddm-astronaut then feeds a missing image into a blur
+shader — `PartialBlur` is on — and a QML scene graph that fails while building
+an effect chain renders *nothing*, rather than falling back to
+`BackgroundColor`. That matches every symptom: no error from SDDM, which had
+already logged the greeter as started and connected, and identical behaviour
+on every display server, because none of them were involved.
+
+The fix is that the sync service now guarantees the file exists, seeding a
+solid image in the palette's background colour when there's no wallpaper to
+convert. A few KB per palette.
+
+This is unproven — the greeter's own QML warnings were never captured — but it
+was the only path in the theme referencing a file that might not exist. If the
+themed greeter is still black, go back to `"stock"` and the next thing to
+strip is the per-palette directory rename.
+
+One thing that has to happen on the way to stock: the sync service deletes
+`/etc/sddm.conf.d/99-niri-active-theme.conf`. That drop-in names a
+`niri-<palette>` theme package, it lives in `/etc` where NixOS only removes
+what it declares, and left behind it would point SDDM at a theme directory
+that is no longer in the store. The service is ordered before
+`display-manager.service` so this lands before the greeter reads it, rather
+than one boot late.
+
+**The greeter's cursor** comes from `settings.Theme.CursorTheme`. SDDM ships
+no cursor of its own — it exports `XCURSOR_THEME`/`XCURSOR_SIZE` into the
+greeter, which looks the name up on the *system* icon path. Without them the
+greeter inherits whatever the compositor defaults to, which on a bare login
+screen is often nothing, and the pointer is invisible.
+
+It's set to `Bibata-Modern-Ice` at size 24, matching `home.pointerCursor` in
+`home/joshr/home.nix` so the pointer doesn't change shape at login. The two
+have to be stated separately: the greeter runs as the `sddm` user before
+anyone has logged in and cannot see home-manager's config. `bibata-cursors` is
+in `environment.systemPackages` (`modules/nixos/base.nix`), which is what puts
+it on the system icon path — a cursor theme only in the user profile would not
+be found.
+
+If the login screen is ever black again, a TTY still works (`Ctrl+Alt+F2`), as
+does booting the previous generation.
+
+
+### Screenshots
+
+Region capture goes `slurp` → `grim` → `satty`, so you land in an annotation
+editor (arrows, boxes, blur, text) and it copies to the clipboard on save.
+Plain screen and window capture use niri's built-in `screenshot-screen` and
+`screenshot-window` actions instead — the compositor already knows the exact
+geometry, so there's nothing for a script to compute wrong.
+
+### Lock screen
+
+`swaylock-effects` with a blurred screenshot background, ring colours from
+the active theme. `swayidle` dims at 4 minutes, locks at 5, blanks at 10, and
+locks before suspend.
+
+The system module adds `security.pam.services.swaylock` — without that PAM
+entry swaylock accepts your password and then rejects it, which locks you out
+of your own session.
+
 ## Shells
 
 Fish is the login shell for both `joshr` and `root`, but zsh, bash and

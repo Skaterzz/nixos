@@ -85,26 +85,36 @@ group is its own rounded floating pill rather than one long bar.
 
 ### Theme switching
 
-Three green/black palettes ship: `matrix` (bright phosphor, the default),
-`forest` (deeper, softer) and `mint` (cooler, cyan-leaning). They're the same
-layout in different colours, so switching recolours without rearranging.
+18 palettes ship. Greens: `matrix` (bright phosphor, the default), `forest`,
+`mint`. Reds: `blackred`, `crimson`. Then `catppuccin-mocha`,
+`catppuccin-macchiato`, `catppuccin-frappe`, `rose-pine`, `rose-pine-moon`,
+`nord`, `gruvbox`, `dracula`, `tokyo-night`, `everforest`, `kanagawa`,
+`solarized`, and `rose-pine-dawn` as the one light option.
 
-`Mod+Shift+T` cycles, `Mod+Ctrl+T` opens a picker.
+`Mod+Shift+T` cycles, `Mod+Ctrl+T` opens a picker (more useful at this count).
 
 The mechanism is worth knowing, because it's what keeps this declarative.
 home-manager owns `~/.config/...` as read-only symlinks into the store, so a
-script can't rewrite them. Instead every theme is **built ahead of time**, and
-the only mutable state is one symlink:
+script can't rewrite them. Instead every theme is **built ahead of time** as a
+complete set of config files, and the only mutable state is one symlink:
 
 ```
 ~/.local/state/niri-theme/active -> /nix/store/...-niri-theme-matrix
 ```
 
-Each tool reaches its colours through its own indirection: niri via its
-`include` node (and it live-reloads), waybar and wofi via GTK CSS `@import`,
-dunst via `services.dunst.configFile`. So `theme-apply` moves one symlink and
-pokes waybar (`SIGUSR2`) and dunst (restart). Adding a theme means adding an
-attrset to `themes.nix` — everything else is generated.
+Each tool is pointed at a file under that symlink: niri via its `include` node
+(live-reloaded), waybar started with `-s <active>/waybar.css`, wofi via its
+`style` config key, dunst via `services.dunst.configFile`. `theme-apply` moves
+the symlink and restarts waybar and dunst; wofi re-reads on each launch.
+
+Adding a theme is one attrset in `themes.nix` — the niri fragment, both
+stylesheets, the dunstrc, the swaylock palette and the SDDM config are all
+generated from its ten colour roles.
+
+The login screen follows too: one `sddm-astronaut` instance is built per
+palette, and a system path unit rewrites an SDDM drop-in when the selection
+changes. SDDM only reads its config when the greeter starts, so that lands at
+the next logout or reboot rather than immediately.
 
 Wallpapers use `awww` (the renamed `swww`) over `~/.local/share/wallpapers`:
 `Mod+Shift+W` picks one, `Mod+Ctrl+W` is random. The choice is remembered and
@@ -124,6 +134,7 @@ restored at login.
 | `Mod+Escape` / `Mod+Shift+Escape` | lock, session menu |
 | `Mod+Shift+T` / `Mod+Ctrl+T` | cycle theme, pick theme |
 | `Mod+Shift+W` / `Mod+Ctrl+W` | pick wallpaper, random wallpaper |
+| `Mod`+scroll / `Mod+Shift`+scroll | walk windows / workspaces (wheel and touchpad) |
 
 `Mod+Shift+Slash` shows niri's own hotkey overlay.
 

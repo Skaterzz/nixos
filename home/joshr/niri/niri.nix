@@ -258,10 +258,38 @@ in
         Mod+Shift+4 { move-column-to-workspace "4"; }
         Mod+Shift+5 { move-column-to-workspace "5"; }
 
-        Mod+WheelScrollDown      cooldown-ms=150 { focus-workspace-down; }
-        Mod+WheelScrollUp        cooldown-ms=150 { focus-workspace-up; }
-        Mod+WheelScrollRight     { focus-column-right; }
-        Mod+WheelScrollLeft      { focus-column-left; }
+        // --- scrolling --------------------------------------------------
+        // Mod + scroll moves along the row of windows. niri lays windows out
+        // on one horizontal strip, so a vertical scroll mapping to
+        // left/right is the natural gesture: spin the wheel and you travel
+        // the strip.
+        //
+        // Wheel and touchpad are bound separately — they're distinct
+        // triggers, so binding only WheelScroll* leaves the touchpad dead.
+        // No cooldown here: unlike workspace switching, stepping several
+        // windows in one flick is the point.
+        Mod+WheelScrollDown    { focus-column-right; }
+        Mod+WheelScrollUp      { focus-column-left; }
+        Mod+WheelScrollRight   { focus-column-right; }
+        Mod+WheelScrollLeft    { focus-column-left; }
+
+        Mod+TouchpadScrollDown  { focus-column-right; }
+        Mod+TouchpadScrollUp    { focus-column-left; }
+        Mod+TouchpadScrollRight { focus-column-right; }
+        Mod+TouchpadScrollLeft  { focus-column-left; }
+
+        // Workspaces move to Mod+Shift+scroll, since Mod+scroll now walks
+        // windows. Kept on a cooldown so one flick is one workspace.
+        Mod+Shift+WheelScrollDown     cooldown-ms=150 { focus-workspace-down; }
+        Mod+Shift+WheelScrollUp       cooldown-ms=150 { focus-workspace-up; }
+        Mod+Shift+TouchpadScrollDown  cooldown-ms=150 { focus-workspace-down; }
+        Mod+Shift+TouchpadScrollUp    cooldown-ms=150 { focus-workspace-up; }
+
+        // Carry the focused column with you.
+        Mod+Ctrl+WheelScrollDown    cooldown-ms=150 { move-column-to-workspace-down; }
+        Mod+Ctrl+WheelScrollUp      cooldown-ms=150 { move-column-to-workspace-up; }
+        Mod+Ctrl+TouchpadScrollDown cooldown-ms=150 { move-column-to-workspace-down; }
+        Mod+Ctrl+TouchpadScrollUp   cooldown-ms=150 { move-column-to-workspace-up; }
 
         // --- monitors ---------------------------------------------------
         Mod+Shift+Left  { focus-monitor-left; }

@@ -29,6 +29,8 @@
     ../../modules/nixos/nvidia.nix
     ../../modules/nixos/gaming.nix
     ../../modules/nixos/users.nix
+    ../../modules/nixos/office.nix
+    ../../modules/nixos/contentcreation.nix
 
     # Development tooling: direnv, Docker, libvirtd/QEMU/virt-manager, and
     # the nix settings per-project dev shells need. Uncomment to enable.
@@ -45,7 +47,7 @@
     # from-source rebuild of plasma-workspace that the workaround costs.
   ];
 
-  networking.hostName = "gamestation";
+  networking.hostName = "dialga";
 
   # Themed login screen: one sddm-astronaut build per palette, following the
   # desktop's theme and wallpaper.
@@ -63,5 +65,5 @@
   # to what this host used before that module existed.
 
   # Do not bump this after the initial install; see the NixOS manual.
-  system.stateVersion = "24.11";
+  system.stateVersion = "26.05";
 }

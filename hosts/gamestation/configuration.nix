@@ -23,12 +23,12 @@
     ../../modules/nixos/development.nix
   ];
 
-  networking.hostName = "gamestation";
+  networking.hostName = "dialga";
 
   # Bootloader, its theming and other-OS detection: modules/nixos/boot.nix.
   # Defaults to limine; `local.boot.loader = "systemd-boot";` is the way back
   # to what this host used before that module existed.
 
   # Do not bump this after the initial install; see the NixOS manual.
-  system.stateVersion = "24.11";
+  system.stateVersion = "26.05";
 }

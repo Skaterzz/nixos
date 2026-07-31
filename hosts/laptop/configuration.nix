@@ -11,7 +11,7 @@
     # if the build cost outweighs the win.
     # ../../modules/nixos/plasma-xdg-data-dirs.nix
     ../../modules/nixos/laptop.nix
-    ../../modules/nixos/gaming.nix
+    #../../modules/nixos/gaming.nix
     ../../modules/nixos/users.nix
 
     # Development tooling: direnv, Docker, libvirtd/QEMU/virt-manager, and
@@ -39,12 +39,12 @@
     # with `services.xserver.videoDrivers = [ "modesetting" "nvidia" ]`.
   ];
 
-  networking.hostName = "laptop";
+  networking.hostName = "wooper";
 
   # Bootloader, its theming and other-OS detection: modules/nixos/boot.nix.
   # Defaults to limine; `local.boot.loader = "systemd-boot";` is the way back
   # to what this host used before that module existed.
 
   # Do not bump this after the initial install; see the NixOS manual.
-  system.stateVersion = "24.11";
+  system.stateVersion = "26.05";
 }

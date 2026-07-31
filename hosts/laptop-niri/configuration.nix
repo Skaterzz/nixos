@@ -18,7 +18,7 @@
     ../../modules/nixos/niri.nix
 
     ../../modules/nixos/laptop.nix
-    ../../modules/nixos/gaming.nix
+    #../../modules/nixos/gaming.nix
     ../../modules/nixos/users.nix
 
     # Development tooling: direnv, Docker, libvirtd/QEMU/virt-manager, and
@@ -35,7 +35,7 @@
     # PRIME-offload notes if this machine has an NVIDIA chip.
   ];
 
-  networking.hostName = "laptop";
+  networking.hostName = "wooper";
 
   # Themed login screen, same as the desk. See
   # hosts/gamestation-niri/configuration.nix and "The login screen" in the
@@ -48,5 +48,5 @@
   # to what this host used before that module existed.
 
   # Do not bump this after the initial install; see the NixOS manual.
-  system.stateVersion = "24.11";
+  system.stateVersion = "26.05";
 }

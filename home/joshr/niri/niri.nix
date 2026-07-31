@@ -228,6 +228,7 @@ ${workspaceBlocks}
         Mod+Shift+Escape hotkey-overlay-title="Session menu" { spawn "${bin niriScripts.sessionMenu}"; }
         Mod+Shift+E { quit; }
         Ctrl+Alt+Delete { quit; }
+        Mod+Shift+I hotkey-overlay-title="Stay awake (toggle)" { spawn "${bin niriScripts.idleInhibit}" "toggle"; }
 
         // --- theming ---------------------------------------------------
         // Cycle themes, or pick one / a wallpaper from a menu.

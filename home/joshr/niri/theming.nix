@@ -159,6 +159,7 @@ let
     #pulseaudio,
     #network,
     #battery,
+    #custom-idle-inhibitor,
     #custom-session {
       padding: 0 10px;
       margin: 4px 1px;
@@ -178,8 +179,21 @@ let
 
     #pulseaudio:hover,
     #network:hover,
-    #battery:hover {
+    #battery:hover,
+    #custom-idle-inhibitor:hover {
       background-color: alpha(@accent, 0.14);
+    }
+
+    /* Dim when idling is normal, lit when the machine is being held awake —
+       the inhibitor is a mode you can forget you left on, so it should be
+       obvious at a glance. */
+    #custom-idle-inhibitor {
+      color: @fg-dim;
+      font-size: 15px;
+    }
+
+    #custom-idle-inhibitor.activated {
+      color: @warn;
     }
 
     #pulseaudio.muted {

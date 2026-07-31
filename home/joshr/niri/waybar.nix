@@ -42,6 +42,7 @@ in
         "pulseaudio"
         "network"
         "battery"
+        "custom/idle-inhibitor"
         "custom/session"
       ];
 
@@ -133,6 +134,22 @@ in
         format-plugged = "󰚥  {capacity}%";
         format-icons = [ "󰁺" "󰁼" "󰁾" "󰂀" "󰂂" ];
         tooltip-format = "{timeTo}";
+      };
+
+      # Sleep inhibitor. Same script as the Mod+Shift+I bind, so clicking and
+      # keying stay in step.
+      #
+      # `signal` is what makes the icon change the instant it's toggled: the
+      # script sends SIGRTMIN+8 and waybar re-runs the module. The interval
+      # is only a backstop, in case the unit stops on its own (the inhibitor
+      # dying, or swayidle being started by something else).
+      "custom/idle-inhibitor" = {
+        format = "{}";
+        return-type = "json";
+        exec = "${lib.getExe niriScripts.idleInhibit} status";
+        interval = 30;
+        signal = 8;
+        on-click = "${lib.getExe niriScripts.idleInhibit} toggle";
       };
 
       "custom/session" = {

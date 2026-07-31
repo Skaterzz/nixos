@@ -266,6 +266,64 @@ let
     '';
   };
 
+  # Sleep inhibitor. One entry point for the keybind and the waybar module,
+  # so the two can't disagree about the state.
+  #
+  # All the actual work is in idle-inhibit.service (lock.nix); this only
+  # starts and stops it. systemd holding the state means `status` is a real
+  # query rather than a flag file that can go stale — if the inhibitor dies
+  # for any reason, the bar shows it.
+  #
+  # Not waybar's built-in `idle_inhibitor` module: that one holds a Wayland
+  # idle-inhibit lock on waybar's own surface, which is a fine mechanism but
+  # can only be toggled by clicking the module. There's no IPC to it, so a
+  # keybind would have no way in. It also wouldn't hold off logind sleep.
+  idleInhibit = pkgs.writeShellApplication {
+    name = "idle-inhibit";
+    runtimeInputs = with pkgs; [ systemd libnotify procps ];
+    text = ''
+      unit=idle-inhibit.service
+
+      is_on() { systemctl --user is-active --quiet "$unit"; }
+
+      case "''${1:-toggle}" in
+        on)  systemctl --user start "$unit" ;;
+        off) systemctl --user stop  "$unit" ;;
+        toggle)
+          if is_on; then systemctl --user stop "$unit"
+          else systemctl --user start "$unit"
+          fi
+          ;;
+        status)
+          # waybar custom module, return-type json.
+          if is_on; then
+            printf '%s\n' '{"text":"󰅶","class":"activated","tooltip":"Awake — no dim, lock, blank or sleep"}'
+          else
+            printf '%s\n' '{"text":"󰒲","class":"deactivated","tooltip":"Idle actions normal — click to stay awake"}'
+          fi
+          exit 0
+          ;;
+        *)
+          echo "usage: idle-inhibit [toggle|on|off|status]" >&2
+          exit 2
+          ;;
+      esac
+
+      # Refresh the bar now rather than waiting for its next poll. waybar
+      # re-runs a custom module on SIGRTMIN+<signal>; 8 is the number set on
+      # the module in waybar.nix.
+      pkill -RTMIN+8 waybar || true
+
+      if is_on; then
+        notify-send -a idle-inhibit -i preferences-desktop-screensaver \
+          "Staying awake" "Idle actions and sleep are inhibited" || true
+      else
+        notify-send -a idle-inhibit -i preferences-desktop-screensaver \
+          "Idle actions restored" "Screen will dim, lock and blank as usual" || true
+      fi
+    '';
+  };
+
   # Session menu: shown by the waybar power button and a hotkey.
   # Switch to the login greeter, leaving this session running on its own VT.
   #
@@ -336,6 +394,7 @@ in
     lockSession
     switchUser
     sessionMenu
+    idleInhibit
   ];
 
   _module.args.niriScripts = {
@@ -350,6 +409,7 @@ in
       lockSession
       switchUser
       sessionMenu
+      idleInhibit
       ;
   };
 }

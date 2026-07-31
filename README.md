@@ -150,11 +150,34 @@ restored at login.
 | `Print` / `Mod+Shift+S` | region screenshot, annotated in satty |
 | `Ctrl+Print` / `Alt+Print` | screen / window (niri's built-ins) |
 | `Mod+Escape` / `Mod+Shift+Escape` | lock, session menu |
+| `Mod+Shift+I` | stay awake (toggle the sleep inhibitor) |
 | `Mod+Shift+T` / `Mod+Ctrl+T` | cycle theme, pick theme |
 | `Mod+Shift+W` / `Mod+Ctrl+W` | pick wallpaper, random wallpaper |
 | `Mod`+scroll / `Mod+Shift`+scroll | walk windows / workspaces (wheel and touchpad) |
 
 `Mod+Shift+Slash` shows niri's own hotkey overlay.
+
+### Staying awake
+
+`Mod+Shift+I`, or the coffee-cup icon in the bar, holds the machine awake.
+The icon is dim when idling is normal and lit when the inhibitor is on — it's
+a mode that's easy to leave running by accident, so it's meant to be obvious.
+Clicking and keying run the same script, and the state lives in
+`idle-inhibit.service`, so the two can't disagree.
+
+It holds off two unrelated mechanisms, which is why it isn't a one-liner:
+
+- **swayidle** dims, locks and blanks. It takes its cue from the compositor's
+  idle-notify protocol, not from logind, so a logind inhibitor does nothing to
+  it — the timer is stopped outright and restarted on the way back.
+- **logind** handles the idle action, sleep, and the lid switch.
+  `systemd-inhibit` holds a block lock on all three for as long as the unit
+  runs.
+
+This isn't waybar's built-in `idle_inhibitor` module. That one takes a Wayland
+idle-inhibit lock on waybar's own surface — a perfectly good mechanism, but it
+can only be toggled by clicking, with no IPC for a keybind to use, and it
+wouldn't stop logind suspending the machine.
 
 ### Displays
 

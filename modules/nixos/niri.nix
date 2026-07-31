@@ -20,23 +20,26 @@ let
     t:
     {
       # --- background ---------------------------------------------------
-      # Blurred and dimmed so the form stays readable over any wallpaper,
-      # rather than fighting a busy image.
+      # The wallpaper should be visible, so the dim is light and the blur is
+      # gentle. PartialBlur keeps the blur to the strip behind the form and
+      # drops that panel to 0.3 opacity, so the picture reads through there
+      # too; FullBlur would fog the whole screen.
       Background = "file://${sddmWallpaper}";
       CropBackground = "true";
       BackgroundHorizontalAlignment = "center";
       BackgroundVerticalAlignment = "center";
       FullBlur = "false";
       PartialBlur = "true";
-      Blur = "2.0";
-      BlurMax = "48";
-      DimBackground = "0.45";
+      Blur = "1.4";
+      BlurMax = "32";
+      DimBackground = "0.2";
 
       # --- form ---------------------------------------------------------
-      # A rounded card floating over the blur, centred, instead of controls
-      # sitting bare on the image.
+      # Clock and login sit in a column on the right, leaving the rest of the
+      # wallpaper clear. Still vertically centred — the theme has no vertical
+      # position setting, so moving it lower would need a QML patch.
       HaveFormBackground = "true";
-      FormPosition = "center";
+      FormPosition = "right";
       RoundCorners = "24";
       ScreenPadding = "0";
 

@@ -150,188 +150,46 @@ let
   themeStateFile = "${niriStateDir}/current";
   wallpaperStateFile = "${niriStateDir}/wallpaper";
 
-  # --- the greeter's display layout ---------------------------------------
+  # Leftover state from an abandoned experiment.
   #
-  # SDDM's Wayland greeter runs its own kwin_wayland, which knows nothing
-  # about niri and takes its layout from kwinoutputconfig.json in the sddm
-  # user's home. This generates that file from the very same
-  # local.niri.outputs the session uses, so home/joshr/displays/<host>.nix
-  # stays the one place a monitor change is described.
-  #
-  # Why generate rather than copy
-  # -----------------------------
-  # The previous attempt copied the file KWin had written for joshr, on the
-  # theory that a from-scratch file would be ignored for lacking the EDID
-  # fields KWin matches monitors by. That was the wrong read of
-  # OutputConfigurationStore::findOutputIndex: the EDID comparison is only
-  # reached when the *saved entry* carries an EDID identifier. An entry
-  # without one falls through to matching on connector name, which is
-  # exactly what this writes. Copying a whole Plasma arrangement also
-  # dragged along its enabled/disabled state, which is the likeliest reason
-  # the greeter came up on one display.
-  #
-  # Failure modes, deliberately
-  # ---------------------------
-  # Nothing here ever writes "enabled": false. If a connector name doesn't
-  # match what the greeter sees, KWin finds no saved entry and auto-detects
-  # that output — it lights up rather than staying dark. Same if the JSON is
-  # malformed or the setup doesn't match: KWin falls back to detection. The
-  # one genuinely bad case is a mode the display can't take, and these modes
-  # come from the file niri already drives the same monitors with.
-  #
-  # If it still comes out wrong, the recovery is a TTY (Ctrl+Alt+F2):
-  #
-  #     sudo rm /var/lib/sddm/.config/kwinoutputconfig.json
-  #
-  # which restores auto-detection until the next rebuild, or set
-  # local.sddm.syncGreeterDisplays = false to stop generating it. Booting
-  # the previous generation works too.
+  # Earlier versions wrote a kwinoutputconfig.json here so the greeter's
+  # kwin_wayland would reproduce the session's display layout. It never
+  # worked, and the whole idea is gone — but the file is state under
+  # /var/lib, which NixOS does not clean up for code it no longer builds.
+  # Left behind it would keep being applied by any kwin-based greeter, so
+  # the sync service deletes it unconditionally.
   kwinOutputSddm = "/var/lib/sddm/.config/kwinoutputconfig.json";
 
-  # The session's own display config, read straight out of home-manager.
-  greeterOutputs = lib.filter (o: !o.off) config.home-manager.users.joshr.local.niri.outputs;
-
-  # niri writes rotation as "90"/"flipped-90"; KWin spells them differently.
-  kwinTransform =
-    t:
-    if t == null then
-      "normal"
-    else
-      {
-        "normal" = "normal";
-        "90" = "rotate-90";
-        "180" = "rotate-180";
-        "270" = "rotate-270";
-        "flipped" = "flipped";
-        "flipped-90" = "flipped-90";
-        "flipped-180" = "flipped-180";
-        "flipped-270" = "flipped-270";
-      }
-      .${t} or "normal";
-
-  # "2560x1440@180.000" -> { width, height, refreshRate } with the rate in
-  # millihertz, which is what KWin stores. Via fromJSON rather than string
-  # arithmetic so a fractional rate like 59.951 survives, and because
-  # lib.toInt would choke on the leading zeros in "000".
-  parseMode =
-    m:
-    let
-      parts = if m == null then null else builtins.match "([0-9]+)x([0-9]+)@([0-9.]+)" m;
-    in
-    if parts == null then
-      null
-    else
-      {
-        width = lib.toInt (builtins.elemAt parts 0);
-        height = lib.toInt (builtins.elemAt parts 1);
-        refreshRate = builtins.floor (builtins.fromJSON (builtins.elemAt parts 2) * 1000.0 + 0.5);
-      };
-
-  # Per-monitor settings. No edidIdentifier or edidHash on purpose — that's
-  # what selects connector-name matching, and the connector names here are
-  # the ones `niri msg outputs` reports.
-  #
-  # The mode is left out by default, and that is the important part.
-  #
-  # Writing one is the single thing here that can black-screen a display
-  # rather than degrade: KWin looks the mode up among what the connector
-  # reports and hands it to a modeset, so a rate that doesn't match exactly
-  # — DRM reporting 179998 mHz where the config says 180000, or the `flags`
-  # field disagreeing — means the modeset fails and the output stays dark.
-  # A 2560x1440@180 link is the most fragile case of all, since it needs the
-  # full DP negotiation to come up.
-  #
-  # Without a mode, KWin picks each display's preferred one. The arrangement,
-  # scale, rotation and which display is primary are all still honoured —
-  # only the refresh rate is left to KWin, which on a login screen costs
-  # nothing.
-  outputEntry =
-    o:
-    let
-      mode = parseMode o.mode;
-    in
-    {
-      connectorName = o.name;
-      scale = if o.scale == null then 1 else o.scale;
-      transform = kwinTransform o.transform;
-      vrrPolicy = if o.variableRefreshRate then "automatic" else "never";
-    }
-    // lib.optionalAttrs (config.local.sddm.greeterModes && mode != null) {
-      mode = {
-        basic = mode;
-        flags = 0;
-      };
-    };
-
-  # Arrangement. Positions live here rather than on the output entries.
-  #
-  # KWin treats priority 0 as the primary display. niri has no such concept,
-  # so focusAtStartup — the nearest equivalent, and what the session already
-  # uses — is ordered first.
-  orderedOutputs =
-    lib.filter (o: o.focusAtStartup) greeterOutputs ++ lib.filter (o: !o.focusAtStartup) greeterOutputs;
-
-  priorityOf =
-    o:
-    let
-      go = i: l: if l == [ ] then 0 else if (builtins.head l).name == o.name then i else go (i + 1) (builtins.tail l);
-    in
-    go 0 orderedOutputs;
-
-  setupEntry = i: o: {
-    outputIndex = i;
-    enabled = true;
-    priority = priorityOf o;
-    position =
-      if o.position == null then
-        {
-          x = 0;
-          y = 0;
-        }
-      else
-        {
-          inherit (o.position) x y;
-        };
-  };
-
-  kwinOutputFile = pkgs.writeText "kwinoutputconfig.json" (
-    builtins.toJSON [
-      {
-        name = "outputs";
-        data = map outputEntry greeterOutputs;
-      }
-      {
-        name = "setups";
-        data = [ { outputs = lib.imap0 setupEntry greeterOutputs; } ];
-      }
-    ]
-  );
-
-  # Only write one if there's something to say, and something to read it.
-  #
-  # kwinoutputconfig.json is a kwin file: under weston it is simply ignored,
-  # so writing it would leave a misleading artefact on disk suggesting the
-  # greeter's layout comes from displays/<host>.nix when it doesn't. The
-  # laptop leaves outputs empty on purpose, and there auto-detection is the
-  # right answer anyway.
-  writeGreeterOutputs =
-    config.local.sddm.compositor == "kwin"
-    && config.local.sddm.syncGreeterDisplays
-    && greeterOutputs != [ ];
+  themeDropIn = "/etc/sddm.conf.d/99-niri-active-theme.conf";
 
   syncSddmTheme = pkgs.writeShellScript "sddm-theme-sync" ''
     set -eu
 
     # --- palette ------------------------------------------------------
-    name="$(cat ${themeStateFile} 2>/dev/null || true)"
-    case "$name" in
-    ${lib.concatStringsSep "\n" (map (n: "      ${n}) ;;") (lib.attrNames themes))}
-      *) name="${themeSet.default}" ;;
-    esac
+    ${
+      if useAstronaut then
+        ''
+          name="$(cat ${themeStateFile} 2>/dev/null || true)"
+          case "$name" in
+          ${lib.concatStringsSep "\n" (map (n: "            ${n}) ;;") (lib.attrNames themes))}
+            *) name="${themeSet.default}" ;;
+          esac
 
-    mkdir -p /etc/sddm.conf.d
-    printf '[Theme]\nCurrent=niri-%s\n' "$name" \
-      > /etc/sddm.conf.d/99-niri-active-theme.conf
+          mkdir -p /etc/sddm.conf.d
+          printf '[Theme]\nCurrent=niri-%s\n' "$name" > "${themeDropIn}"
+        ''
+      else
+        ''
+          # Stock greeter: drop the override naming a niri-<theme> package.
+          #
+          # This is not tidying, it is the difference between a login screen
+          # and a black one. The drop-in lives in /etc and NixOS only removes
+          # files it declares, so without this it would outlive the packages
+          # it names and point SDDM at a theme directory that is no longer in
+          # the store.
+          rm -f "${themeDropIn}"
+        ''
+    }
 
     # --- wallpaper ----------------------------------------------------
     # The greeter runs as the sddm user and can't read joshr's home, so the
@@ -341,46 +199,30 @@ let
     # Converted to PNG rather than copied: the state file may point at a
     # .jpg, and naming a JPEG "wallpaper.png" leaves the format to QML's
     # content sniffing. Converting removes the guess.
-    install -d -m 0755 /var/lib/sddm-theme
+    ${lib.optionalString useAstronaut ''
+      install -d -m 0755 /var/lib/sddm-theme
 
-    wp="$(cat ${wallpaperStateFile} 2>/dev/null || true)"
-    if [ -n "$wp" ] && [ -f "$wp" ]; then
-      tmp="${sddmWallpaper}.tmp"
-      if ${pkgs.imagemagick}/bin/magick "$wp" -strip "png:$tmp" 2>/dev/null; then
-        mv -f "$tmp" "${sddmWallpaper}"
-        chmod 0644 "${sddmWallpaper}"
-      else
-        # Leave the previous image in place rather than blanking the
-        # greeter over one unreadable file.
-        rm -f "$tmp"
+      wp="$(cat ${wallpaperStateFile} 2>/dev/null || true)"
+      if [ -n "$wp" ] && [ -f "$wp" ]; then
+        tmp="${sddmWallpaper}.tmp"
+        if ${pkgs.imagemagick}/bin/magick "$wp" -strip "png:$tmp" 2>/dev/null; then
+          mv -f "$tmp" "${sddmWallpaper}"
+          chmod 0644 "${sddmWallpaper}"
+        else
+          # Leave the previous image in place rather than blanking the
+          # greeter over one unreadable file.
+          rm -f "$tmp"
+        fi
       fi
-    fi
+    ''}
 
-    # --- greeter display layout ---------------------------------------
-    # See the kwinOutputSddm note above. Written fresh every run rather than
-    # only when absent, so editing displays/<host>.nix and rebuilding is
-    # enough — otherwise a stale file from an earlier build would win
-    # forever, which is state under /var/lib that NixOS won't clean up.
-    ${
-      if writeGreeterOutputs then
-        ''
-          # The parent is the sddm user's home. Created explicitly with the
-          # right owner because this service can run before sddm ever has,
-          # and `install -d` would otherwise leave a root-owned home that
-          # the greeter can't write to.
-          install -d -m 0750 -o sddm -g sddm /var/lib/sddm
-          install -d -m 0700 -o sddm -g sddm /var/lib/sddm/.config
-          install -m 0600 -o sddm -g sddm \
-            ${kwinOutputFile} "${kwinOutputSddm}"
-        ''
-      else
-        ''
-          # No outputs configured for this host: let kwin auto-detect, and
-          # clear anything an earlier build left behind.
-          rm -f "${kwinOutputSddm}"
-        ''
-    }
+    # --- clean up the abandoned display sync --------------------------
+    # See the kwinOutputSddm note above: /var/lib state that NixOS won't
+    # remove on its own, and that a kwin greeter would still obey.
+    rm -f "${kwinOutputSddm}"
   '';
+
+  useAstronaut = config.local.sddm.theme == "astronaut";
 in
 {
   # local.sddm.* lives in its own module so this one can stay a plain config
@@ -390,21 +232,28 @@ in
 
   programs.niri.enable = true;
 
-  # Display manager. SDDM's Wayland greeter is what niri wants; the X11
-  # greeter would start an X server just to draw the login screen.
+  # Display manager.
+  #
+  # `theme` is left unset under local.sddm.theme = "stock", which gives
+  # SDDM's own built-in greeter: no external theme package, no QML of ours,
+  # no runtime state. That is the configuration to fall back to whenever the
+  # login screen misbehaves, because almost nothing in it is our code.
   services.displayManager.sddm = {
     enable = true;
-    wayland.enable = false;
-    # See local.sddm.compositor. Defaults to weston here, not NixOS's kwin.
-    #wayland.compositor = config.local.sddm.compositor;
+    # Both of these are options rather than edits, because they're the two
+    # things worth varying when the greeter misbehaves. See local.sddm.*.
+    wayland.enable = config.local.sddm.wayland;
+    wayland.compositor = config.local.sddm.compositor;
     package = pkgs.kdePackages.sddm;
+  }
+  // lib.optionalAttrs useAstronaut {
     theme = defaultSddmTheme;
     extraPackages = lib.attrValues sddmThemes;
   };
 
   # Every themed variant must be on the system so the greeter can switch
   # between them without a rebuild.
-  environment.systemPackages = lib.attrValues sddmThemes;
+  environment.systemPackages = lib.optionals useAstronaut (lib.attrValues sddmThemes);
 
   # --- keep the login screen in step with the desktop ---------------------
   #
@@ -416,16 +265,28 @@ in
   # read joshr's home nor see the theme symlink, and /etc is store-managed.
   # This writes one unmanaged drop-in under /etc/sddm.conf.d/ — NixOS only
   # removes files it declares, so it survives activation.
+  #
+  # It runs under "stock" too, and has to: it removes the /etc drop-in naming
+  # a theme package that no longer exists, and the abandoned display-sync
+  # file. Both are unmanaged state that would otherwise outlive the code that
+  # made them and keep pointing the greeter at things that aren't there.
   systemd.services.sddm-theme-sync = {
     description = "Mirror the desktop theme and wallpaper to the SDDM greeter";
     wantedBy = [ "multi-user.target" ];
+
+    # Must land before the greeter reads its config, or the first boot after
+    # a switch still uses the state this is about to fix — which would look
+    # exactly like the change not working. Ordering only: if this fails,
+    # SDDM still starts.
+    before = [ "display-manager.service" ];
+
     serviceConfig = {
       Type = "oneshot";
       ExecStart = syncSddmTheme;
     };
   };
 
-  systemd.paths.sddm-theme-sync = {
+  systemd.paths.sddm-theme-sync = lib.mkIf useAstronaut {
     wantedBy = [ "multi-user.target" ];
     pathConfig.PathChanged = [
       themeStateFile

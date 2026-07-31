@@ -128,10 +128,13 @@ bright slots are greys rather than brighter hues. The rest are hand-picked.
 Omitting `ansi` is allowed and falls back to a derivation from the ten roles,
 but it's flat: blue, magenta and cyan all collapse onto the accent.
 
-The login screen follows too: one `sddm-astronaut` instance is built per
-palette, and a system path unit rewrites an SDDM drop-in when the selection
-changes. SDDM only reads its config when the greeter starts, so that lands at
-the next logout or reboot rather than immediately.
+The login screen does **not** follow, by default. It uses SDDM's built-in
+greeter, because the themed one left the primary display black — see "The
+login screen" below. `local.sddm.theme = "astronaut"` turns the themed
+version back on, which builds one `sddm-astronaut` instance per palette and
+has a system path unit rewrite an SDDM drop-in when the selection changes.
+SDDM only reads its config when the greeter starts, so that lands at the next
+logout or reboot rather than immediately.
 
 Wallpapers use `awww` (the renamed `swww`) over `~/.local/share/wallpapers`:
 `Mod+Shift+W` picks one, `Mod+Ctrl+W` is random. The choice is remembered and
@@ -216,80 +219,67 @@ Three things worth knowing:
 Also available per output: `scale`, `transform` (rotation),
 `variableRefreshRate`, and `off`.
 
-**The greeter runs under weston, not kwin.** This is a deviation from NixOS's
-default and the fix for a long-running problem: on this machine — NVIDIA, two
-displays — kwin_wayland left the primary display black, visibly attempting a
-modeset and then giving up. That happened with a generated output config, with
-a copied one, and with no config at all, which rules the config out and leaves
-the compositor. weston is a much smaller thing to have between SDDM and the
-hardware: no output config to get wrong, no session state, it brings up what it
-detects. `local.sddm.compositor = "kwin"` restores the stock behaviour.
+**The greeter does not follow the display config, deliberately.** Several
+attempts to make it do so are gone; see "The login screen" below for why. The
+greeter auto-detects, which lights up every connected display at kwin's choice
+of mode and arrangement.
 
-If weston is no better, the next step is the X11 greeter
-(`services.displayManager.sddm.wayland.enable = false`) — the most reliable
-multi-monitor NVIDIA option, at the cost of an X server that exists only to
-draw the login screen. The niri session stays Wayland either way.
-
-**Under kwin, the greeter follows the same file as the session.** kwin_wayland
-knows nothing about niri and reads its layout from `kwinoutputconfig.json`,
-which is generated from `local.niri.outputs` so that editing
-`displays/<host>.nix` moves both. This is skipped entirely under weston, which
-ignores the file — writing it would only leave a misleading artefact implying
-the greeter's layout came from `displays/<host>.nix`. A host with no outputs
-configured (the laptop) auto-detects.
-
-An earlier version *copied* the file KWin had written for the Plasma session,
-on the theory that a from-scratch one would be ignored for lacking the EDID
-fields KWin matches monitors by. That reading was wrong — the EDID comparison
-in `findOutputIndex` is only reached when the *saved entry* carries an EDID
-identifier, and an entry without one falls through to matching on connector
-name. Copying a whole Plasma arrangement also carried its enabled/disabled
-state across, which is the likeliest reason the greeter came up on one
-display.
-
-**Refresh rates are deliberately not written.** The arrangement, scale,
-rotation and which display is primary all come from `displays/<host>.nix`, but
-the `mode` is left to kwin, which picks each display's preferred one.
-
-That is the one setting here that can black-screen a display rather than
-degrade. KWin looks the mode up among what the connector reports and hands it
-straight to a modeset; if nothing matches exactly — DRM reporting 179998 mHz
-where the config says 180000, or a disagreement over the mode flags — the
-modeset fails and the output stays dark. A 2560x1440@180 DisplayPort link is
-the most fragile case there is, and a login screen gains nothing from 180Hz.
-`local.sddm.greeterModes = true` writes them anyway, if you ever need it.
-
-Everything else fails quietly by construction: nothing writes
-`"enabled": false`, so an unmatched connector name means kwin auto-detects
-that output and lights it up rather than leaving it dark, and a file it can't
-parse means it auto-detects everything.
-
-If the login screen still comes up wrong, recover from a TTY (`Ctrl+Alt+F2`),
-which works even when the greeter is black:
-
-```sh
-sudo rm /var/lib/sddm/.config/kwinoutputconfig.json
-sudo systemctl restart sddm
-```
-
-That restores auto-detection until the next rebuild. To stop generating the
-file at all, set `local.sddm.syncGreeterDisplays = false` — that gets you back
-to plain auto-detection, where every display lights up at kwin's choice of
-mode and arrangement. Booting the previous generation works too.
-
-Like the palette and wallpaper, a change here lands at the next greeter start.
 
 **Workspaces follow a display** via `local.niri.workspaceOutput` in the same
 file. niri creates a workspace on whichever output is focused at the time, so
 without it the numbered workspaces scatter across displays depending on where
 you were when you first used each one. The desk pins them to `DP-3`.
 
-**The login screen shows the form and wallpaper on every display**, which is
-sddm-astronaut's stock behaviour. SDDM does create one view per screen and
-sets a `primaryScreen` bool on each, and binding the form's visibility to it
-looks like the way to get "form on one display, wallpaper on the other" — but
-under the greeter's kwin_wayland that bool came back false on *both* views,
-so the form disappeared entirely. Left alone on purpose.
+### The login screen
+
+**SDDM uses its own built-in greeter**, not a theme of ours. That is
+`local.sddm.theme = "stock"`, and it is the default after the themed one left
+the primary display black.
+
+The evidence for blaming the theme is that the failure did not move. It was
+identical under kwin_wayland, under weston and under X11, and SDDM logged no
+error at any point in the process:
+
+```
+sddm[1734]: Greeter starting...
+sddm-helper[1766]: [PAM] Starting... / Authenticating... / returning.
+sddm[1734]: Greeter session started successfully
+sddm[1734]: Message received from greeter: Connect
+```
+
+The greeter started, authenticated and connected. Three different display
+servers failing the same way, with the stack reporting success, points away
+from all three and at the one component they share.
+
+Things ruled out along the way, so they are not tried again:
+
+- **A generated `kwinoutputconfig.json`** from `local.niri.outputs`. Removed.
+  Writing a mode can black-screen a display outright, because kwin hands it
+  straight to a modeset and a rate that doesn't match exactly — DRM reporting
+  179998 mHz where the config says 180000 — simply fails. Dropping the mode
+  didn't help either: with no config, kwin still picks the preferred mode,
+  which for a 1440p180 panel is 180Hz.
+- **Copying KWin's own file** from the Plasma session. That dragged a whole
+  arrangement across including its enabled/disabled state.
+- **The greeter's compositor.** weston made no difference, and neither did
+  X11.
+
+`local.sddm.theme = "astronaut"` brings back the themed greeter: one
+`sddm-astronaut` build per palette, following the desktop's theme and
+wallpaper. It is worth retrying only once the stock greeter is known good, so
+there is a working baseline to compare against.
+
+One thing that has to happen on the way to stock: the sync service deletes
+`/etc/sddm.conf.d/99-niri-active-theme.conf`. That drop-in names a
+`niri-<palette>` theme package, it lives in `/etc` where NixOS only removes
+what it declares, and left behind it would point SDDM at a theme directory
+that is no longer in the store. The service is ordered before
+`display-manager.service` so this lands before the greeter reads it, rather
+than one boot late.
+
+If the login screen is ever black again, a TTY still works (`Ctrl+Alt+F2`), as
+does booting the previous generation.
+
 
 ### Screenshots
 

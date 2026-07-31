@@ -5,74 +5,71 @@
 # The home-manager equivalents live in home/common/options.nix; these are the
 # ones a NixOS module needs to read, which can't come from there.
 {
+  options.local.sddm.theme = lib.mkOption {
+    type = lib.types.enum [
+      "stock"
+      "astronaut"
+    ];
+    default = "stock";
+    description = ''
+      Which greeter SDDM draws.
+
+      "stock" sets no theme at all, so SDDM uses its own built-in greeter:
+      no external theme package, no QML of ours, no runtime state pointing
+      at it. Almost nothing in that path is our code, which is exactly why
+      it is the default.
+
+      "astronaut" is the themed one — an sddm-astronaut build per palette,
+      following the desktop's theme and wallpaper through a system service.
+
+      The themed greeter left the primary display black on this machine.
+      That happened under kwin_wayland, under weston and under X11 alike,
+      with the display-server layer producing no errors at all: SDDM logged
+      "Greeter session started successfully" and the greeter connected. Three
+      different display servers failing identically points away from all of
+      them and at the one component they share, which is the theme.
+
+      So "stock" is both the fallback and the experiment. If the login screen
+      works here, the theme was at fault and can be rebuilt more carefully.
+      If it is still black, the cause is somewhere neither the compositor nor
+      the theme, and the next thing to suspect is SDDM's multi-monitor
+      handling itself.
+    '';
+  };
+
+  options.local.sddm.wayland = lib.mkOption {
+    type = lib.types.bool;
+    default = true;
+    description = ''
+      Run SDDM's Wayland greeter. False uses the X11 greeter instead, which
+      starts an X server for the sole purpose of drawing the login screen.
+
+      The niri session is Wayland either way — this is only about the greeter.
+
+      True by default because X11 was tried against the black primary display
+      and behaved exactly like the two Wayland compositors, which is what
+      ruled the display server out as the cause. It stays an option because
+      it is one line to flip and worth a try if the greeter breaks again.
+    '';
+  };
+
   options.local.sddm.compositor = lib.mkOption {
     type = lib.types.enum [
       "kwin"
       "weston"
     ];
-    default = "weston";
+    default = "kwin";
     description = ''
       Which compositor SDDM's Wayland greeter runs under.
 
-      Defaults to weston rather than NixOS's own default of kwin. On this
-      machine — NVIDIA, two displays — kwin_wayland left the primary display
-      black: it could be watched attempting a modeset and then giving up.
-      That happened with a generated output config, with a copied one, and
-      with none at all, which rules the config out and leaves the compositor.
+      Back to NixOS's default of kwin. weston was tried against the black
+      primary display and made no difference, which — together with X11
+      behaving the same way — is what ruled the compositor out.
 
-      weston is a far smaller thing to have between SDDM and the hardware. It
-      has no output config to get wrong and no session-restore state, so it
-      brings up what it detects and nothing else.
-
-      "kwin" restores the stock behaviour, and is what to use if weston turns
-      out worse. If neither works, the next step is the X11 greeter
-      (`services.displayManager.sddm.wayland.enable = false`), which is the
-      most reliable multi-monitor NVIDIA option and costs an X server used
-      only to draw the login screen.
-    '';
-  };
-
-  options.local.sddm.syncGreeterDisplays = lib.mkOption {
-    type = lib.types.bool;
-    default = true;
-    description = ''
-      Generate the SDDM greeter's `kwinoutputconfig.json` from
-      `local.niri.outputs`, so the login screen comes up with the same modes
-      and arrangement as the session.
-
-      The greeter runs its own kwin_wayland and cannot see niri's config, so
-      without this it auto-detects: every display lights up, but at whatever
-      mode and arrangement kwin settles on.
-
-      Set false to go back to auto-detection. This is the escape hatch if a
-      generated layout ever leaves a display dark — though note that changing
-      it needs a rebuild, so the faster fix from a TTY is to delete
-      /var/lib/sddm/.config/kwinoutputconfig.json.
-
-      Hosts with no outputs configured (the laptop) auto-detect regardless.
-    '';
-  };
-
-  options.local.sddm.greeterModes = lib.mkOption {
-    type = lib.types.bool;
-    default = false;
-    description = ''
-      Also write each display's `mode` into the greeter's output config,
-      rather than letting kwin pick the preferred one.
-
-      Off by default because this is the one setting here that can leave a
-      display black instead of degrading. KWin looks the mode up among what
-      the connector reports and hands it to a modeset; if nothing matches
-      exactly — DRM reporting 179998 mHz where the config says 180000, or a
-      disagreement over the mode flags — the modeset fails and the output
-      stays dark. High-refresh DisplayPort links are the most fragile case.
-
-      Leaving it off still honours the arrangement, scale, rotation and which
-      display is primary. Only the refresh rate is kwin's choice, which on a
-      login screen costs nothing.
-
-      Turn it on only if the greeter genuinely comes up at the wrong
-      resolution, and be ready to recover from a TTY.
+      Kept as an option because it is a cheap thing to vary if the greeter
+      misbehaves again. To leave Wayland entirely, set
+      `services.displayManager.sddm.wayland.enable = false` for the X11
+      greeter; the niri session stays Wayland regardless.
     '';
   };
 }

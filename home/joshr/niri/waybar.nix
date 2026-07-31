@@ -133,7 +133,10 @@ in
       };
     };
   };
+  
 
+  # Hide nm-applet in system tray
+  services.networkmanager-applet.enable = false;
   # Point waybar at the active theme's stylesheet. home-manager's generated
   # unit has no way to pass `-s`, so override ExecStart.
   systemd.user.services.waybar.Service.ExecStart = lib.mkForce (

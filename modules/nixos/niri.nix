@@ -122,27 +122,18 @@ let
               'passwordMaskDelay: config.HideCompletePassword == "true" ? undefined : 1000' \
               'passwordMaskDelay: 0'
 
-          # Show the login form on the primary display only.
+          # NOTE: no primaryScreen patch here, on purpose.
           #
-          # SDDM creates one QQuickView per screen and sets a `primaryScreen`
-          # bool on each one's context (GreeterApp.cpp: setContextProperty
-          # "primaryScreen", QGuiApplication::primaryScreen() == screen).
-          # sddm-astronaut never reads it, so every display draws a full copy
-          # of the form.
+          # SDDM does set a `primaryScreen` bool per view (GreeterApp.cpp),
+          # and binding the form's visibility to it looked like the clean way
+          # to get "form on one display, wallpaper on the other". In practice
+          # it hid the form on *both* — under the greeter's kwin_wayland,
+          # QGuiApplication::primaryScreen() evidently matches neither view's
+          # screen, so the property is false everywhere rather than undefined,
+          # and the typeof guard never fires.
           #
-          # Binding the form and its backing panel to that property leaves the
-          # secondary display showing just the wallpaper. The `typeof` guard
-          # keeps the theme usable if the property ever goes away — it falls
-          # back to drawing the form rather than to a screen with no login on
-          # it.
-          substituteInPlace "$themeDir/Main.qml" \
-            --replace-fail \
-              'anchors.left: config.FormPosition == "left" ? parent.left : undefined' \
-              'anchors.left: config.FormPosition == "left" ? parent.left : undefined
-            visible: typeof primaryScreen === "undefined" ? true : primaryScreen' \
-            --replace-fail \
-              'visible: config.HaveFormBackground == "true" ? true : false' \
-              'visible: (config.HaveFormBackground == "true" ? true : false) && (typeof primaryScreen === "undefined" ? true : primaryScreen)'
+          # The form and wallpaper therefore render on every display, which is
+          # sddm-astronaut's stock behaviour.
 
           mv "$themeDir" "$out/share/sddm/themes/niri-${name}"
         '';
@@ -158,6 +149,21 @@ let
   niriStateDir = "/home/joshr/.local/state/niri-theme";
   themeStateFile = "${niriStateDir}/current";
   wallpaperStateFile = "${niriStateDir}/wallpaper";
+
+  # The greeter's own display layout.
+  #
+  # SDDM's Wayland greeter runs under kwin_wayland, which takes its output
+  # layout from kwinoutputconfig.json in the sddm user's home — niri's output
+  # config has no bearing on it, which is why the greeter comes up
+  # auto-detected regardless of local.niri.outputs.
+  #
+  # Rather than synthesise that file (an undocumented JSON format, on the
+  # login screen, where a malformed one is expensive), this reuses the one
+  # KWin already wrote for joshr. modules/nixos/desktop.nix does the same
+  # thing for the Plasma greeter. It only exists if a Plasma session has run
+  # on this machine and arranged the displays; absent, kwin auto-detects and
+  # nothing is worse than today.
+  kwinOutputConfig = "/home/joshr/.config/kwinoutputconfig.json";
 
   syncSddmTheme = pkgs.writeShellScript "sddm-theme-sync" ''
     set -eu
@@ -194,6 +200,15 @@ let
         # greeter over one unreadable file.
         rm -f "$tmp"
       fi
+    fi
+
+    # --- greeter display layout ---------------------------------------
+    # See the kwinOutputConfig note above. Copied rather than symlinked so
+    # the greeter can read it without traversing joshr's home.
+    if [ -f "${kwinOutputConfig}" ]; then
+      install -d -m 0700 -o sddm -g sddm /var/lib/sddm/.config
+      install -m 0600 -o sddm -g sddm \
+        "${kwinOutputConfig}" /var/lib/sddm/.config/kwinoutputconfig.json
     fi
   '';
 in
@@ -238,6 +253,7 @@ in
     pathConfig.PathChanged = [
       themeStateFile
       wallpaperStateFile
+      kwinOutputConfig
     ];
   };
 

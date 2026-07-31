@@ -173,7 +173,10 @@ ${workspaceBlocks}
     // waybar runs as a systemd user service (see waybar.nix) so the theme
     // switcher can restart it; starting it here as well would give two bars.
     spawn-at-startup "${bin niriScripts.wallpaperRestore}"
-    spawn-at-startup "${pkgs.networkmanagerapplet}/bin/nm-applet" "--indicator"
+
+    // nm-applet is deliberately not started. Its tray icon duplicates the
+    // waybar `network` module, and that module's click already opens
+    // nm-connection-editor, so the applet added an icon and nothing else.
 
     // Floating dialogs, pickers and popups.
     window-rule {

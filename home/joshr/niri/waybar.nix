@@ -92,6 +92,15 @@ in
         icon-size = 16;
         spacing = 10;
         show-passive-items = true;
+
+        # nm-applet is spawned for its connection menu, but its tray icon
+        # duplicates the `network` module two slots over. Hide the icon and
+        # keep the applet — ignore-list matches any of the item's bus name,
+        # category, icon name, id or title as a substring.
+        ignore-list = [
+          "nm-applet"
+          "NetworkManager"
+        ];
       };
 
       pulseaudio = {
@@ -133,10 +142,17 @@ in
       };
     };
   };
-  
 
-  # Hide nm-applet in system tray
-  services.networkmanager-applet.enable = false;
+  # NOTE: services.networkmanager-applet.enable = false is a no-op here and
+  # was removed. That option gates home-manager's *own* nm-applet user
+  # service, which was never enabled — the applet was started by niri's
+  # spawn-at-startup instead. Setting it false changes nothing.
+  #
+  # The tray icon is dealt with in two places: the spawn is gone from
+  # niri.nix, and the tray's ignore-list above catches it anyway, since the
+  # networkmanagerapplet package ships an XDG autostart entry and niri's
+  # session honours xdg-desktop-autostart.
+
   # Point waybar at the active theme's stylesheet. home-manager's generated
   # unit has no way to pass `-s`, so override ExecStart.
   systemd.user.services.waybar.Service.ExecStart = lib.mkForce (

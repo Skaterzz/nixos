@@ -88,8 +88,9 @@ group is its own rounded floating pill rather than one long bar.
 
 ### Theme switching
 
-18 palettes ship. Greens: `matrix` (bright phosphor, the default), `forest`,
-`mint`. Reds: `blackred`, `crimson`. Then `catppuccin-mocha`,
+20 palettes ship. Greens: `matrix` (bright phosphor, the default), `forest`,
+`mint`. Monochrome: `mono` (white on black), `mono-light` (black on white).
+Reds: `blackred`, `crimson`. Then `catppuccin-mocha`,
 `catppuccin-macchiato`, `catppuccin-frappe`, `rose-pine`, `rose-pine-moon`,
 `nord`, `gruvbox`, `dracula`, `tokyo-night`, `everforest`, `kanagawa`,
 `solarized`, and `rose-pine-dawn` as the one light option.

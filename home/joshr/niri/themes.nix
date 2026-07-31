@@ -70,6 +70,43 @@
       border = "#14806a";
     };
 
+    # ---- monochrome ------------------------------------------------------
+
+    # No hue anywhere. The accent is plain white, so emphasis comes from
+    # contrast rather than colour — the active workspace and focus ring go
+    # white-on-black, and the usual green/amber/red for battery and errors
+    # become greys. warn and err are kept fractionally lighter than fgDim so
+    # a critical notification still reads as louder than a normal one without
+    # introducing a colour.
+    mono = {
+      description = "Monochrome, black and white";
+      bg = "#000000";
+      bgAlt = "#141414";
+      bgUrgent = "#2b2b2b";
+      fg = "#f2f2f2";
+      fgDim = "#8a8a8a";
+      accent = "#ffffff";
+      accentDim = "#4a4a4a";
+      warn = "#c8c8c8";
+      err = "#ffffff";
+      border = "#4a4a4a";
+    };
+
+    # The inverse: black on white, for bright rooms.
+    mono-light = {
+      description = "Monochrome, white and black (light)";
+      bg = "#fafafa";
+      bgAlt = "#ebebeb";
+      bgUrgent = "#d4d4d4";
+      fg = "#0d0d0d";
+      fgDim = "#6b6b6b";
+      accent = "#000000";
+      accentDim = "#b8b8b8";
+      warn = "#4a4a4a";
+      err = "#000000";
+      border = "#b8b8b8";
+    };
+
     # ---- reds ------------------------------------------------------------
 
     blackred = {

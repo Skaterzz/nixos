@@ -4,9 +4,7 @@
 #
 # niri's per-monitor behaviour is driven by the outputs actually present
 # rather than by hardcoded screen indices, so unlike the Plasma variant there
-# is nothing single-display to switch off here — this is the same as the desk
-# profile today. It exists as its own file so laptop-only tweaks have an
-# obvious home.
+# is nothing single-display to switch off here.
 #
 # The display layout lives in ./displays/laptop.nix.
 {
@@ -15,4 +13,14 @@
     ./niri
     ./displays/laptop.nix
   ];
+
+  # No OpenRGB tray applet at login here. The option defaults to true for the
+  # desk, which has RGB hardware worth driving; on the laptop the applet has
+  # nothing to talk to but still costs a tray icon, a Qt process and a failed
+  # profile load every session.
+  #
+  # This only stops the *applet* autostarting. `openrgb` is still installed
+  # (../home.nix) and the daemon is still enabled by modules/nixos/gaming.nix,
+  # so launching it by hand on a docked keyboard or mouse still works.
+  local.openrgb.autostart = false;
 }

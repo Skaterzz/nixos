@@ -108,8 +108,10 @@ in
         "terminal.integrated.defaultProfile.linux"
         "terminal.integrated.profiles.linux"
       ];
-      # Nix tooling, pointed at what home/joshr/dev.nix already installs
-      # rather than letting the extension fetch its own copies.
+      # Nix tooling, pointed at what modules/nixos/development.nix installs
+      # rather than letting the extension fetch its own copies. Both names
+      # resolve from PATH, so they simply don't work on a host with that
+      # module still commented out.
       "nix.enableLanguageServer" = true;
       "nix.serverPath" = "nil";
       "nix.formatterPath" = "nixfmt";

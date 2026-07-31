@@ -108,6 +108,14 @@
             hostModule = ./hosts/laptop-niri/configuration.nix;
             homeModule = ./home/joshr/laptop-niri.nix;
           };
+
+          # --- headless --------------------------------------------------
+          # No desktop at all. Scheduled work lives in its `local.cron`
+          # section; see modules/nixos/cron.nix.
+          server = mkHost {
+            hostModule = ./hosts/server/configuration.nix;
+            homeModule = ./home/joshr/server.nix;
+          };
         };
 
       # Starting points for per-project development environments:

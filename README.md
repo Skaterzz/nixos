@@ -14,17 +14,22 @@ flake.nix                        # inputs: nixpkgs, home-manager, plasma-manager
 hosts/gamestation/                # the desk: NVIDIA, multi-monitor
   configuration.nix               # top-level system config, imports the modules below
   hardware-configuration.nix      # PLACEHOLDER — replace with your real hardware scan
+  kernel-params.nix               # boot.kernelParams, shared with gamestation-niri
 hosts/laptop/                     # portable: no NVIDIA, single display
+  configuration.nix
+  hardware-configuration.nix      # PLACEHOLDER — regenerate on the machine
+hosts/server/                     # headless: no desktop, cron jobs
   configuration.nix
   hardware-configuration.nix      # PLACEHOLDER — regenerate on the machine
 modules/nixos/
   base.nix                        # nix settings, locale/timezone, fish, base fonts
   desktop.nix                     # SDDM (Wayland) + Plasma 6, portals, audio, Flatpak
-  development.nix                 # nix settings dev shells need (see below)
+  development.nix                 # direnv, Docker, libvirtd/QEMU/virt-manager, nix
+                                  #   settings — commented out per host, see below
+  cron.nix                        # local.cron.jobs -> the system crontab
   plasma-xdg-data-dirs.nix        # workaround for nixpkgs#126590 (see below)
   nvidia.nix                      # NVIDIA driver + 32-bit graphics for Steam/Proton
   gaming.nix                      # Steam, MangoHud
-  virtualisation.nix               # Docker + Docker Compose
   laptop.nix                       # power-profiles-daemon, upower, thermald, fstrim
   users.nix                        # the `joshr` and `root` accounts
 home/common/
@@ -34,9 +39,9 @@ home/common/
 home/joshr/
   gamestation.nix                  # host entrypoint: enables the 2nd-monitor panel
   laptop.nix                       # host entrypoint: single-display panels
+  server.nix                       # host entrypoint: shell only, no desktop base
   home.nix                         # packages (Spotify, Discord, ProtonUp-Qt, ...)
   firefox.nix                      # the default browser: profile, prefs, sync
-  dev.nix                          # direnv + dev-init + language-agnostic tooling
   kitty.nix                        # kitty terminal + zenwritten_dark theme
   vscode.nix                       # VS Code settings + extension list
   plasma.nix                       # KDE Plasma settings/panels/shortcuts (plasma-manager)
@@ -549,29 +554,55 @@ problem to be worked around. Per-project shells make it a non-event, and the
 declaration travels with the repo, so the laptop and the desk agree without
 either being configured for that project at all.
 
-### What's installed to make this work
+### One import, and it's off by default
 
-`home/joshr/dev.nix`:
+All of it lives in **`modules/nixos/development.nix`**, and the import line is
+**commented out in every desktop host**. Uncomment it on the machines you
+actually develop on:
 
-- **direnv** with **nix-direnv** underneath it, hooked into fish, bash, zsh
-  and nushell. Plain direnv re-evaluates `use flake` from scratch on every
-  `cd`, which for a flake means seconds of evaluation each time; nix-direnv
-  caches the built profile and only re-evaluates when `flake.nix` or
-  `flake.lock` actually change. It also plants a GC root in `.direnv/`, so
-  the weekly `nix-collect-garbage` in `base.nix` can't delete a shell you're
-  still using.
+```nix
+# hosts/gamestation/configuration.nix
+    # ../../modules/nixos/development.nix     <- delete the #
+```
+
+`server` is the exception — it imports the module for real, since a headless
+box is where containers and a remote `nix develop` are the point.
+
+Note what that costs when it's off: **Docker goes with it.** The old
+`modules/nixos/virtualisation.nix` had nothing in it but Docker and
+docker-compose, so it was folded in here rather than left as a second thing to
+remember. There's no finer granularity on purpose — one switch, one mental
+model. `joshr`'s membership of the `docker` and `libvirtd` groups follows the
+daemons automatically (`modules/nixos/users.nix`), so a host with the module
+off doesn't fail activation naming groups that don't exist.
+
+What the module turns on:
+
+- **direnv** with **nix-direnv**, hooked into bash, zsh and fish. Plain direnv
+  re-evaluates `use flake` from scratch on every `cd`, which for a flake means
+  seconds each time; nix-direnv caches the built profile and only
+  re-evaluates when `flake.nix` or `flake.lock` change. It also plants a GC
+  root in `.direnv/`, so the weekly `nix-collect-garbage` in `base.nix` can't
+  delete a shell you're still using.
+  - This is the NixOS module, not home-manager's, so the whole story is one
+    import. The one gap is **nushell** — the NixOS module doesn't hook it.
+  - Per-user tuning (`hide_env_diff`, `warn_timeout`) is a
+    `~/.config/direnv/direnv.toml` thing that no system module can set.
+- **Docker** + docker-compose.
+- **libvirtd / QEMU / virt-manager**, with `OVMFFull` for UEFI guests, swtpm
+  for the TPM a Windows 11 guest insists on, and SPICE USB redirection so a
+  passed-through YubiKey or flash drive works.
 - **`dev-init`**, the one-command path below.
-- Language-agnostic tools that are genuinely wanted everywhere: `nil`,
-  `nixfmt-rfc-style`, `nix-output-monitor`, `nix-tree`, `cachix`, `just`,
-  `jq`, `yq-go`, `ripgrep`, `fd`, `lazygit`, `gnumake`.
-
-`modules/nixos/development.nix` adds the system settings this depends on, all
-of which need root: `keep-outputs` and `keep-derivations`, without which
-garbage collection deletes the *build* inputs of a dev shell (a shell isn't a
-package, so nothing points at its output); `trusted-users = [ "root"
-"@wheel" ]`, without which `cachix use` can't write a substituter; and
-`log-lines = 25`, because ten lines of a failed builder's output usually
-isn't the part that says what went wrong.
+- The nix settings the rest depends on, all of which need root: `keep-outputs`
+  and `keep-derivations`, without which garbage collection deletes the *build*
+  inputs of a dev shell (a shell isn't a package, so nothing points at its
+  output); `trusted-users = [ "root" "@wheel" ]`, without which `cachix use`
+  can't write a substituter; and `log-lines = 25`, because ten lines of a
+  failed builder's output usually isn't the part that says what went wrong.
+- Language-agnostic tools: `nil`, `nixfmt-rfc-style`, `nix-output-monitor`,
+  `nix-tree`, `cachix`, `just`, `jq`, `yq-go`, `ripgrep`, `fd`, `lazygit`,
+  `gnumake`. Nothing language-specific — a compiler or an interpreter goes in
+  the project's own devShell.
 
 ### The one-command path
 
@@ -685,7 +716,64 @@ something still looks wrong, launching `code .` from inside a directory
 direnv has already loaded is the quick way to tell the two apart.
 
 `jnoortheen.nix-ide` is in the list too, pointed at the `nil` and `nixfmt`
-from `dev.nix` rather than downloading its own.
+from `development.nix` rather than downloading its own — so on a host with
+that module still commented out, neither name resolves and both settings are
+inert.
+
+## Scheduled jobs
+
+`server` runs its recurring work as **actual cronjobs**. The section is in
+`hosts/server/configuration.nix`, and the option behind it is
+`modules/nixos/cron.nix`:
+
+```nix
+local.cron = {
+  enable = true;
+
+  jobs = [
+    {
+      name = "nix-gc";
+      description = "Trim the store beyond what base.nix's weekly GC keeps";
+      schedule = "30 3 * * 0";
+      command = "nix-collect-garbage --delete-older-than 30d";
+    }
+  ];
+};
+```
+
+Each entry becomes one line of the system crontab plus a comment, so
+`/etc/crontab` stays readable. `user` defaults to `root`. `schedule` is
+standard five-field crontab syntax, and the `@daily` / `@weekly` / `@reboot`
+shorthands work too. Schedules are in the system timezone (`time.timeZone`),
+not UTC.
+
+Three things worth knowing:
+
+- **Bare command names work here**, which is the opposite of the usual cron
+  advice. nixpkgs' cron module writes `SHELL=…/bash` and
+  `PATH=<system.path>/bin:<system.path>/sbin` above our jobs, so anything in
+  `environment.systemPackages` resolves by name. `local.cron.path` exists for
+  tools that *aren't* installed system-wide, and it extends that PATH rather
+  than replacing it — replacing it is the easy mistake, since a second `PATH=`
+  line in a crontab wins over the first.
+- **`%` is a crontab metacharacter**, meaning "newline" — everything after the
+  first one is fed to the job on stdin. `date +%F` has to be written
+  `date +\%F`.
+- **A job missed while the machine was off never runs.** Cron has no catch-up.
+
+### When not to use it
+
+Cron was chosen because crontab syntax is familiar and these jobs are the
+boring kind. It is genuinely the weaker tool: output goes to a mail spool that
+no MTA is reading, so a job that's been failing for a month is invisible;
+`systemctl list-timers` has no equivalent; and there's the missed-job problem
+above.
+
+So if a job *matters* — skipping it silently is a problem, or you'll want to
+know why it failed three days ago — write it as a systemd service plus a timer
+with `Persistent = true` directly in the host config. Nothing stops the two
+coexisting. For output you actually want to read from a cron job, redirect it
+yourself: `... 2>&1 | systemd-cat -t backup`.
 
 ## The root account
 
@@ -933,20 +1021,25 @@ from the systemd-boot menu at startup — nothing is destroyed by a bad switch.
 
 ## Hosts
 
-Two are defined. Pick one with the flake attribute:
+Five are defined. Pick one with the flake attribute:
 
 | Host | For | Differences |
 |---|---|---|
-| `gamestation` | the desk | NVIDIA module; second-monitor panel |
-| `laptop` | portable | no NVIDIA; power management; single-display panels |
+| `gamestation` | the desk, Plasma | NVIDIA; second-monitor panel; kernel params |
+| `laptop` | portable, Plasma | no NVIDIA; power management; single-display panels |
+| `gamestation-niri` | the desk, niri | as above, niri + SDDM instead of Plasma |
+| `laptop-niri` | portable, niri | as above; no OpenRGB applet at login |
+| `server` | headless | no desktop at all; systemd-boot; cron jobs |
 
 ```bash
 sudo nixos-rebuild switch --flake .#gamestation
 sudo nixos-rebuild switch --flake .#laptop
+sudo nixos-rebuild switch --flake .#server
 ```
 
-Both share everything else — the same modules, the same `home/joshr` profile,
-the same Plasma theming, the same package set.
+The two desk hosts and the two laptop hosts share everything else — the same
+modules, the same `home/joshr` profile, the same package set. `server` is the
+outlier and is described below.
 
 ### What actually differs
 
@@ -968,11 +1061,48 @@ offload, not that module as written.
 Plasma's power-profile switcher and the `Meta+B` shortcut from the dotfiles),
 upower, thermald and fstrim.
 
+**Kernel command line.** `hosts/gamestation/kernel-params.nix` is imported by
+both desk hosts — it's the same physical box, so the flags belong to the
+hardware rather than to either session. It's a separate file because
+`hardware-configuration.nix` is regenerated by `nixos-generate-config` and
+says so at the top.
+
+| | |
+|---|---|
+| `acpi_enforce_resources=lax` | lets i2c drivers touch ACPI-claimed regions, which is what OpenRGB needs to see SMBus RGB controllers — RAM and most motherboard headers. Without it OpenRGB finds the GPU and nothing else. It is a guard being switched off, not a feature switched on. |
+| `nvidia_drm.fbdev=1` | gives the NVIDIA DRM driver a framebuffer console. `nvidia.nix` already sets the `modeset=1` half; this is the other, and it's what removes the flicker/black VT between bootloader and greeter. |
+| `amd_iommu=on` + `iommu=pt` | AMD IOMMU on, in passthrough mode — identity-map the host's own devices so remapping is only paid for devices handed to a guest. Prerequisite for VFIO passthrough; does nothing on its own. |
+
+**RGB.** The OpenRGB tray applet autostarts on the desk and **not** on the
+laptop — `local.openrgb.autostart = false` in `home/joshr/laptop-niri.nix`.
+The laptop has nothing for it to drive, so all it bought was a tray icon, a Qt
+process and a failed profile load every session. The package is still
+installed and the daemon still enabled, so launching it by hand for a docked
+peripheral works.
+
+### The server
+
+`server` doesn't build on `home/joshr/home.nix`. That file is the *desktop*
+base — kitty, VS Code, ranger, spicetify, Firefox, Discord, OBS, a cursor
+theme, fonts pulled from the dotfiles repo — none of which a headless machine
+uses and all of which it would still build. So `home/joshr/server.nix` is
+shaped like `home/root/home.nix` instead: `home/common/shell.nix`, git, and
+nothing else. Add to it directly rather than reaching for the desktop base.
+
+It takes `base.nix`, `boot.nix`, `cron.nix` and `users.nix`, imports
+`development.nix` for real rather than commented out, and pins
+`local.boot.loader = "systemd-boot"` — there's no wallpaper to draw, and this
+is the machine most likely to reboot unattended.
+
+Get in over SSH. `base.nix` already enables sshd with password auth **off**,
+so put a key in place before the first boot or the only way in is a physical
+console. Tailscale is enabled there too and still needs `tailscale up` once.
+
 Each host still needs its own hardware scan —
 `hosts/laptop/hardware-configuration.nix` is the same placeholder as
 gamestation's and must be regenerated on the machine.
 
-### Adding a third host
+### Adding another host
 
 1. `mkdir -p hosts/<newhost>`, write a `configuration.nix` importing the
    modules that apply, and generate its `hardware-configuration.nix`.

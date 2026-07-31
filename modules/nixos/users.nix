@@ -9,7 +9,21 @@
     isNormalUser = true;
     description = "Joshua Randall";
     shell = pkgs.fish;
-    extraGroups = [ "wheel" "networkmanager" "video" "input" "docker" ];
+
+    # `docker` and `libvirtd` are conditional because the groups only exist
+    # when their daemons do, and those live in modules/nixos/development.nix,
+    # which is commented out per host. Naming a group that nothing declares
+    # fails activation with "group does not exist" — so the membership
+    # follows the daemon rather than assuming it.
+    extraGroups =
+      [
+        "wheel"
+        "networkmanager"
+        "video"
+        "input"
+      ]
+      ++ lib.optional config.virtualisation.docker.enable "docker"
+      ++ lib.optional config.virtualisation.libvirtd.enable "libvirtd";
 
     # Only applied when the account is first created, so that a fresh install
     # can actually log in at SDDM. Change it immediately after first login:

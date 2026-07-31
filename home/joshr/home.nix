@@ -11,7 +11,6 @@
     ./ranger.nix
     ./vscode.nix
     ./spicetify.nix
-    ./dev.nix
     ./firefox.nix
   ];
 
@@ -32,7 +31,8 @@
   };
 
   # The browser is not here — it's ./firefox.nix, which has prefs and a
-  # profile to declare as well as a package. Development tooling is ./dev.nix.
+  # profile to declare as well as a package. Development tooling isn't here
+  # either: it's modules/nixos/development.nix, one import per host.
   home.packages = with pkgs; [
     discord
     protonup-qt

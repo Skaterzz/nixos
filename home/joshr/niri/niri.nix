@@ -248,6 +248,7 @@ ${workspaceBlocks}
         // --- launching -------------------------------------------------
         Mod+Return hotkey-overlay-title="Terminal" { spawn-sh "${terminal}"; }
         Mod+D      hotkey-overlay-title="Applications" { spawn-sh "${launcher}"; }
+        Alt+Space  hotkey-overlay-title="Applications" { spawn-sh "${launcher}"; } 
         Mod+E      hotkey-overlay-title="Files" { spawn-sh "${fileManager}"; }
         Mod+Ctrl+E hotkey-overlay-title="Files (ranger)" { spawn-sh "${fileManagerTui}"; }
         Mod+B      hotkey-overlay-title="Browser" { spawn-sh "${browser}"; }

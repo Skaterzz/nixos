@@ -57,8 +57,22 @@ let
       # Qt date/time format strings, not strftime: `h` is the hour without a
       # leading zero and drops to 1–12 as soon as an AM/PM field is present,
       # and `AP` is that field. Month before day, same as the session.
+      #
+      # No comma in DateFormat, and that is load-bearing rather than
+      # typographic. SDDM reads a theme's config with
+      # `QSettings(path, QSettings::IniFormat)` (src/common/ThemeConfig.cpp),
+      # and QSettings' INI format treats an unquoted comma as a *list*
+      # separator — so "dddd, MMMM d" comes back as the two-element list
+      # ["dddd", "MMMM d"] rather than as a string. Clock.qml then hands that
+      # list to `Date.toLocaleDateString(locale, format)`, which accepts a
+      # string or a format enum and nothing else, and the month goes missing.
+      #
+      # A middle dot separates the fields instead. Quoting the value would
+      # also work — QSettings strips surrounding quotes, which is the
+      # documented remedy — but that leaves a file whose correctness depends
+      # on the reader being QSettings, and this doesn't.
       HourFormat = "h:mm AP";
-      DateFormat = "dddd, MMMM d";
+      DateFormat = "dddd · MMMM d";
 
       HeaderTextColor = t.accent;
       DateTextColor = t.fg;

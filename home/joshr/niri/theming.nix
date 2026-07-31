@@ -1186,8 +1186,17 @@ let
     LOCK_WARN=${lib.removePrefix "#" t.warn}
   '';
 
-  # sddm-astronaut's themeConfig, so the login screen matches. Consumed by
-  # modules/nixos/niri.nix, which builds one themed package per palette.
+  # sddm-astronaut's themeConfig, so the login screen matches.
+  #
+  # NOTE: nothing reads this. It is published in `_module.args.niriTheming`
+  # below, but modules/nixos/niri.nix — the module that actually builds one
+  # themed SDDM package per palette — is a *NixOS* module and cannot see
+  # home-manager's args, so it carries its own copy of this function and uses
+  # that. Editing the version here changes nothing on screen; the live one is
+  # `sddmThemeConfig` in modules/nixos/niri.nix.
+  #
+  # Kept in step with that copy rather than deleted, so the two don't quietly
+  # diverge if the dependency is ever wired up properly.
   sddmThemeConfig = t: {
     FullBlur = "false";
     PartialBlur = "true";
@@ -1197,11 +1206,12 @@ let
 
     HeaderText = "Welcome";
     # Qt format strings, not strftime — `h` plus an `AP` field gives a
-    # 12-hour clock. Month before day. Kept in step with the copy in
-    # modules/nixos/niri.nix, which is the one the greeter is actually
-    # built from.
+    # 12-hour clock. Month before day. No comma in the date: SDDM reads theme
+    # configs through QSettings, which splits an unquoted comma into a list
+    # and loses the month. See the copy in modules/nixos/niri.nix, which is
+    # the one the greeter is actually built from.
     HourFormat = "h:mm AP";
-    DateFormat = "dddd, MMMM d";
+    DateFormat = "dddd · MMMM d";
     FormPosition = "center";
 
     HeaderTextColor = t.accent;

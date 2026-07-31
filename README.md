@@ -122,7 +122,14 @@ Reds: `blackred`, `crimson`. Then `catppuccin-mocha`,
 `nord`, `gruvbox`, `dracula`, `tokyo-night`, `everforest`, `kanagawa`,
 `solarized`, and `rose-pine-dawn` as the one light option.
 
-`Mod+Shift+T` cycles, `Mod+Ctrl+T` opens a picker (more useful at this count).
+`Mod+Shift+T` jumps to a random one, `Mod+Ctrl+T` opens a picker (more useful
+at this count). That matches the wallpaper keys — `Mod+Shift` is the random
+half of both pairs, `Mod+Ctrl` the deliberate half. The theme currently active
+is excluded from the draw, so the key always visibly does something; at 20
+palettes a plain random pick would land on the current one about one press in
+twenty, and a keybind that occasionally appears to do nothing reads as broken
+rather than as chance. `theme-cycle` is still on PATH if you want the ordered
+walk.
 
 The mechanism is worth knowing, because it's what keeps this declarative.
 home-manager owns `~/.config/...` as read-only symlinks into the store, so a
@@ -178,6 +185,16 @@ bright slots are greys rather than brighter hues. The rest are hand-picked.
 Omitting `ansi` is allowed and falls back to a derivation from the ten roles,
 but it's flat: blue, magenta and cyan all collapse onto the accent.
 
+One trap worth knowing if you ever edit the greeter's clock: SDDM reads a
+theme's config through `QSettings(path, QSettings::IniFormat)`, and QSettings'
+INI format treats an **unquoted comma as a list separator**. So a `DateFormat`
+of `dddd, MMMM d` comes back as the two-element list `["dddd", "MMMM d"]`,
+which `Clock.qml` then hands to `Date.toLocaleDateString(locale, format)` —
+a function that takes a string or a format enum and nothing else. The month
+silently disappears. The format here uses a middle dot instead of a comma for
+that reason; quoting the value also works, but only because the reader happens
+to be QSettings.
+
 The login screen does **not** follow, by default. It uses SDDM's built-in
 greeter, because the themed one left the primary display black — see "The
 login screen" below. `local.sddm.theme = "astronaut"` turns the themed
@@ -205,7 +222,7 @@ restored at login.
 | `Ctrl+Print` / `Alt+Print` | screen / window (niri's built-ins) |
 | `Mod+L` / `Mod+Shift+Escape` | lock, session menu |
 | `Mod+Shift+I` | stay awake (toggle the sleep inhibitor) |
-| `Mod+Shift+T` / `Mod+Ctrl+T` | cycle theme, pick theme |
+| `Mod+Shift+T` / `Mod+Ctrl+T` | random theme, pick theme |
 | `Mod+Shift+W` / `Mod+Ctrl+W` | random wallpaper, pick wallpaper |
 | `Mod`+scroll / `Mod+Shift`+scroll | walk windows / workspaces (wheel and touchpad) |
 

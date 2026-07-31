@@ -270,8 +270,10 @@ ${workspaceBlocks}
         Mod+Shift+I hotkey-overlay-title="Stay awake (toggle)" { spawn "${bin niriScripts.idleInhibit}" "toggle"; }
 
         // --- theming ---------------------------------------------------
-        // Cycle themes, or pick one / a wallpaper from a menu.
-        Mod+Shift+T hotkey-overlay-title="Next theme" { spawn "${bin niriScripts.themeCycle}"; }
+        // Random theme, or pick one / a wallpaper from a menu. Mod+Shift is
+        // the random half of both pairs, Mod+Ctrl the deliberate half.
+        // `theme-cycle` still exists on PATH if you want the ordered walk.
+        Mod+Shift+T hotkey-overlay-title="Random theme" { spawn "${bin niriScripts.themeRandom}"; }
         Mod+Ctrl+T  hotkey-overlay-title="Choose theme" { spawn "${bin niriScripts.themeMenu}"; }
         Mod+Shift+W hotkey-overlay-title="Random wallpaper" { spawn "${bin niriScripts.wallpaperRandom}"; }
         Mod+Ctrl+W  hotkey-overlay-title="Choose wallpaper" { spawn "${bin niriScripts.wallpaperMenu}"; }

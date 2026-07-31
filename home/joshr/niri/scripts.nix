@@ -111,6 +111,38 @@ let
     '';
   };
 
+  # Jump to a random theme. This is what Mod+Shift+T runs.
+  #
+  # The current theme is excluded from the draw, so the key always visibly
+  # does something. With 20 palettes a plain random pick would land on the
+  # one already active about one press in twenty, and a keybind that
+  # occasionally appears to do nothing reads as broken rather than as chance.
+  #
+  # themeCycle above is still built and still on PATH as `theme-cycle`; it
+  # just isn't bound to anything any more. This mirrors the wallpaper keys —
+  # Mod+Shift+W is random, Mod+Ctrl+W picks — so the two pairs now behave the
+  # same way.
+  themeRandom = pkgs.writeShellApplication {
+    name = "theme-random";
+    runtimeInputs = with pkgs; [ coreutils gnugrep themeApply ];
+    text = ''
+      current="$(cat "${stateDir}/current" 2>/dev/null || echo "")"
+
+      # -x so a name can't match as a substring of another, -F so nothing in
+      # a theme name is read as a pattern. `|| true` because grep exits 1 when
+      # it selects nothing, which under pipefail would abort the script.
+      pick="$(printf '%s\n' "${themeNames}" \
+                | grep -vxF -- "$current" \
+                | shuf -n1 || true)"
+
+      # Only reachable if themes.nix defines exactly one theme, in which case
+      # there is nothing to switch to.
+      [ -n "$pick" ] || exit 0
+
+      theme-apply "$pick"
+    '';
+  };
+
   # Pick a theme from a wofi menu.
   themeMenu = pkgs.writeShellApplication {
     name = "theme-menu";
@@ -408,6 +440,7 @@ in
   home.packages = [
     themeApply
     themeCycle
+    themeRandom
     themeMenu
     wallpaperSet
     wallpaperMenu
@@ -424,6 +457,7 @@ in
     inherit
       themeApply
       themeCycle
+      themeRandom
       themeMenu
       wallpaperMenu
       wallpaperRandom

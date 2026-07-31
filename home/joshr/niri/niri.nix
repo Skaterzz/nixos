@@ -34,7 +34,7 @@ let
 
   outputBlocks = lib.concatMapStringsSep "\n" renderOutput config.local.niri.outputs;
 
-  workspaceNames = [ "1" "2" "3" "4" "5" ];
+  workspaceNames = [ "1" "2" "3" ];
 
   workspaceBlocks = lib.concatMapStringsSep "\n" (
     n:

@@ -4,62 +4,103 @@
 # and the bits home-manager can't write (PAM, polkit, system services).
 #
 # This replaces modules/nixos/desktop.nix on a host — importing both would
-# enable two desktop sessions and two display-manager configs.
+# enable two desktop sessions and two display managers.
 let
-  # SDDM theme, recoloured green/black to match the desktop.
-  #
-  # sddm-astronaut takes a `themeConfig` attrset that is rendered into the
-  # theme's .conf, so the palette is set declaratively rather than by patching
-  # files in the store.
-  sddmTheme = pkgs.sddm-astronaut.override {
-    embeddedTheme = "black_hole";
-    themeConfig = {
-      # Background handled by the theme's own art; keep it dark.
+  themeSet = import ../../home/joshr/niri/themes.nix { inherit lib; };
+  inherit (themeSet) themes;
+
+  # The palette renderer lives with the home modules so both sides agree on
+  # the colours. Only the SDDM part is needed here.
+  sddmThemeConfig =
+    t:
+    {
       FullBlur = "false";
       PartialBlur = "true";
       BlurRadius = "60";
       DimBackground = "0.25";
+      CropBackground = "true";
 
       HeaderText = "Welcome";
       HourFormat = "HH:mm";
       DateFormat = "dddd, d MMMM";
-
       FormPosition = "center";
-      BackgroundHorizontalAlignment = "center";
-      BackgroundVerticalAlignment = "center";
 
-      # Green on black.
-      HeaderTextColor = "#39ff14";
-      DateTextColor = "#c8f5c8";
-      TimeTextColor = "#39ff14";
-      FormBackgroundColor = "#0a0e0a";
-      BackgroundColor = "#0a0e0a";
+      HeaderTextColor = t.accent;
+      DateTextColor = t.fg;
+      TimeTextColor = t.accent;
+      FormBackgroundColor = t.bg;
+      BackgroundColor = t.bg;
       DimBackgroundColor = "#000000";
-      LoginFieldBackgroundColor = "#111811";
-      PasswordFieldBackgroundColor = "#111811";
-      LoginFieldTextColor = "#c8f5c8";
-      PasswordFieldTextColor = "#c8f5c8";
-      UserIconColor = "#39ff14";
-      PasswordIconColor = "#39ff14";
-      PlaceholderTextColor = "#5c7a5c";
-      WarningColor = "#ff5555";
-      LoginButtonTextColor = "#0a0e0a";
-      LoginButtonBackgroundColor = "#39ff14";
-      SystemButtonsIconsColor = "#39ff14";
-      SessionButtonTextColor = "#c8f5c8";
-      VirtualKeyboardButtonTextColor = "#c8f5c8";
-      DropdownTextColor = "#c8f5c8";
-      DropdownSelectedBackgroundColor = "#1f8b0d";
-      DropdownBackgroundColor = "#111811";
-      HighlightTextColor = "#0a0e0a";
-      HighlightBackgroundColor = "#39ff14";
-      HighlightBorderColor = "#39ff14";
-      HoverUserIconColor = "#c8f5c8";
-      HoverSystemButtonsIconsColor = "#c8f5c8";
+      LoginFieldBackgroundColor = t.bgAlt;
+      PasswordFieldBackgroundColor = t.bgAlt;
+      LoginFieldTextColor = t.fg;
+      PasswordFieldTextColor = t.fg;
+      UserIconColor = t.accent;
+      PasswordIconColor = t.accent;
+      PlaceholderTextColor = t.fgDim;
+      WarningColor = t.err;
+      LoginButtonTextColor = t.bg;
+      LoginButtonBackgroundColor = t.accent;
+      SystemButtonsIconsColor = t.accent;
+      SessionButtonTextColor = t.fg;
+      VirtualKeyboardButtonTextColor = t.fg;
+      DropdownTextColor = t.fg;
+      DropdownSelectedBackgroundColor = t.accentDim;
+      DropdownBackgroundColor = t.bgAlt;
+      HighlightTextColor = t.bg;
+      HighlightBackgroundColor = t.accent;
+      HighlightBorderColor = t.accent;
+      HoverUserIconColor = t.fg;
+      HoverSystemButtonsIconsColor = t.fg;
+
       Font = "FiraCode Nerd Font";
       FontSize = "11";
     };
-  };
+
+  # One sddm-astronaut instance per palette. They're cheap — the derivation
+  # only copies the upstream theme and writes a .conf — and having all of
+  # them installed is what lets the greeter follow a runtime theme switch
+  # without a rebuild.
+  #
+  # Each is renamed so the themes don't collide in the SDDM theme directory.
+  mkSddmTheme =
+    name: t:
+    (pkgs.sddm-astronaut.override {
+      embeddedTheme = "black_hole";
+      themeConfig = sddmThemeConfig t;
+    }).overrideAttrs
+      (old: {
+        pname = "sddm-astronaut-${name}";
+        postInstall = (old.postInstall or "") + ''
+          mv "$out/share/sddm/themes/sddm-astronaut-theme" \
+             "$out/share/sddm/themes/niri-${name}"
+        '';
+      });
+
+  sddmThemes = lib.mapAttrs mkSddmTheme themes;
+
+  defaultSddmTheme = "niri-${themeSet.default}";
+
+  # Watches the user's theme selection and rewrites an SDDM drop-in so the
+  # login screen matches. SDDM only reads its config when the greeter starts,
+  # so this takes effect at the next logout/reboot rather than immediately.
+  themeStateFile = "/home/joshr/.local/state/niri-theme/current";
+
+  syncSddmTheme = pkgs.writeShellScript "sddm-theme-sync" ''
+    set -eu
+    name="$(cat ${themeStateFile} 2>/dev/null || true)"
+    [ -n "$name" ] || exit 0
+
+    # Only accept names we actually built a theme for.
+    case "$name" in
+    ${lib.concatStringsSep "\n" (map (n: "      ${n}) ;;") (lib.attrNames themes))}
+      *) exit 0 ;;
+    esac
+
+    mkdir -p /etc/sddm.conf.d
+    printf '[Theme]\nCurrent=niri-%s\n' "$name" \
+      > /etc/sddm.conf.d/99-niri-active-theme.conf
+  '';
 in
 {
   programs.niri.enable = true;
@@ -70,15 +111,33 @@ in
     enable = true;
     wayland.enable = true;
     package = pkgs.kdePackages.sddm;
-    theme = "sddm-astronaut-theme";
-    extraPackages = [ sddmTheme ];
+    theme = defaultSddmTheme;
+    extraPackages = lib.attrValues sddmThemes;
   };
 
-  environment.systemPackages = [
-    sddmTheme
-    # qtsvg/qtmultimedia/qtvirtualkeyboard come through the theme's
-    # propagatedBuildInputs.
-  ];
+  # Every themed variant must be on the system so the greeter can switch
+  # between them without a rebuild.
+  environment.systemPackages = lib.attrValues sddmThemes;
+
+  # --- keep the login screen in step with the desktop theme --------------
+  #
+  # The greeter runs as the sddm user before anyone logs in, so it can't read
+  # joshr's state directly, and /etc is store-managed. This writes one
+  # unmanaged drop-in under /etc/sddm.conf.d/ (NixOS only removes files it
+  # declares, so it survives) naming the matching theme.
+  systemd.services.sddm-theme-sync = {
+    description = "Match the SDDM theme to the selected desktop theme";
+    wantedBy = [ "multi-user.target" ];
+    serviceConfig = {
+      Type = "oneshot";
+      ExecStart = syncSddmTheme;
+    };
+  };
+
+  systemd.paths.sddm-theme-sync = {
+    wantedBy = [ "multi-user.target" ];
+    pathConfig.PathChanged = [ themeStateFile ];
+  };
 
   # swaylock authenticates through PAM and ships no entry of its own, so
   # without this the lock screen accepts a password and then refuses it —
@@ -122,7 +181,6 @@ in
   # Mount/unmount removable media from the file manager without a password.
   services.udisks2.enable = true;
 
-  # Secrets for apps that expect a keyring (the niri module enables
-  # gnome-keyring with mkDefault; this unlocks it at login).
+  # Unlock the keyring at login (the niri module enables gnome-keyring).
   security.pam.services.sddm.enableGnomeKeyring = true;
 }

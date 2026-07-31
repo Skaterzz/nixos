@@ -24,13 +24,19 @@ let
 
   # Apply a theme by name: repoint the symlink, then reload consumers.
   #
-  # niri picks the change up on its own (it watches its config, and the
-  # include target changed). waybar needs SIGUSR2. dunst is launched with
-  # `-config <path under active/>` so it needs a restart. wofi reads its CSS
-  # fresh on each launch, so it needs nothing.
+  #   niri    watches its config and the include target changed, so it
+  #           reloads on its own.
+  #   waybar  restarted. It's started with `-s <active>/waybar.css`, and a
+  #           restart is the only way to be sure the stylesheet is re-read —
+  #           SIGUSR2 alone did not reliably repaint.
+  #   dunst   restarted; it's launched with `-config <active>/dunstrc`.
+  #   wofi    nothing — it reads its stylesheet fresh on each launch.
+  #   SDDM    picked up by a system path unit watching the file written
+  #           below; applies at the next greeter start. See
+  #           modules/nixos/niri.nix.
   themeApply = pkgs.writeShellApplication {
     name = "theme-apply";
-    runtimeInputs = with pkgs; [ libnotify systemd procps ];
+    runtimeInputs = with pkgs; [ libnotify systemd ];
     text = ''
       name="''${1:-}"
       if [ -z "$name" ]; then
@@ -48,10 +54,7 @@ let
       ln -sfn "$target" "${activeDir}"
       printf %s "$name" > "${stateDir}/current"
 
-      # waybar: reload stylesheet in place.
-      pkill -USR2 -x waybar || true
-
-      # dunst: relaunch against the new -config path.
+      systemctl --user restart waybar.service || true
       systemctl --user restart dunst.service || true
 
       notify-send -a theme -i preferences-desktop-theme \

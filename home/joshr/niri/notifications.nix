@@ -2,19 +2,22 @@
 
 # dunst (notifications) and wofi (launcher / menus).
 #
-# dunst has no include mechanism, so the whole dunstrc is rendered per theme
-# in theming.nix and selected here through `configFile`, which the
-# home-manager module turns into `dunst -config <path>`.
+# Both are pointed at the active theme directory rather than at a store path,
+# so a theme switch reaches them:
 #
-# Note that home-manager still writes a ~/.config/dunst/dunstrc of its own —
-# the module unconditionally injects `settings.global.icon_path`, so its
+#   dunst  `configFile`, which the home-manager module turns into
+#          `dunst -config <path>`; the switcher restarts the service.
+#   wofi   its own `style` config key, re-read on every launch, so no reload
+#          is needed at all.
+#
+# `programs.wofi.style` is deliberately unused: home-manager writes it to a
+# store path, which by definition cannot change at runtime.
+#
+# Note home-manager still writes a ~/.config/dunst/dunstrc of its own — the
+# module unconditionally injects `settings.global.icon_path`, so its
 # `settings != {}` guard is always true. dunst ignores that file because
-# `-config` takes precedence, which is why the rendered dunstrc sets
-# `icon_theme` + `enable_recursive_icon_lookup` instead of relying on the
-# `icon_path` home-manager computes.
-#
-# wofi uses GTK CSS, so it can @import the active palette like waybar does,
-# and it re-reads its stylesheet on every launch — no reload needed.
+# `-config` wins, which is why the rendered dunstrc sets `icon_theme` +
+# `enable_recursive_icon_lookup` rather than relying on that `icon_path`.
 let
   inherit (niriTheming) activeDir;
 in
@@ -44,89 +47,10 @@ in
       term = "${pkgs.kitty}/bin/kitty";
       key_expand = "Tab";
       hide_scroll = true;
+
+      # Follows the active theme; wofi re-reads this on every launch.
+      style = "${activeDir}/wofi.css";
     };
-
-    style = ''
-      /* Palette from the active theme; see home/joshr/niri/theming.nix. */
-      @import url("file://${activeDir}/wofi.css");
-
-      * {
-        font-family: "FiraCode Nerd Font", "Noto Sans", sans-serif;
-        font-size: 14px;
-      }
-
-      window {
-        background-color: alpha(@bg, 0.96);
-        border: 1px solid @accent;
-        border-radius: 14px;
-      }
-
-      #outer-box {
-        padding: 14px;
-      }
-
-      #input {
-        background-color: @bg-alt;
-        color: @fg;
-        border: 1px solid @border;
-        border-radius: 10px;
-        padding: 9px 12px;
-        margin-bottom: 12px;
-      }
-
-      #input:focus {
-        border-color: @accent;
-      }
-
-      #input image {
-        color: @accent;
-      }
-
-      #scroll {
-        margin: 0;
-      }
-
-      #inner-box {
-        background-color: transparent;
-      }
-
-      #entry {
-        padding: 8px 10px;
-        border-radius: 9px;
-        color: @fg;
-        background-color: transparent;
-      }
-
-      #entry:selected {
-        background-color: @accent;
-        color: @bg;
-        font-weight: 700;
-      }
-
-      #entry image {
-        margin-right: 10px;
-      }
-
-      #text {
-        color: inherit;
-      }
-
-      #text:selected {
-        color: @bg;
-      }
-
-      /* Fuzzy-match highlight inside a row. */
-      #entry #text mark {
-        background-color: transparent;
-        color: @accent;
-        font-weight: 700;
-      }
-
-      #entry:selected #text mark {
-        color: @bg;
-        text-decoration: underline;
-      }
-    '';
   };
 
   # Notification helpers used by scripts and keybinds.

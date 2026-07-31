@@ -127,7 +127,8 @@ in
         zoom 0.5
     }
 
-    spawn-at-startup "${bin pkgs.waybar}"
+    // waybar runs as a systemd user service (see waybar.nix) so the theme
+    // switcher can restart it; starting it here as well would give two bars.
     spawn-at-startup "${bin niriScripts.wallpaperRestore}"
     spawn-at-startup "${pkgs.networkmanagerapplet}/bin/nm-applet" "--indicator"
 

@@ -6,9 +6,10 @@
 #   centre  clock and date
 #   right   tray, audio, network, battery, session menu
 #
-# Colours are pulled in with a GTK CSS @import from the active theme
-# directory, so `theme-apply` recolours the bar without home-manager
-# rebuilding anything. Layout and geometry stay here.
+# Theming: waybar is started with `-s <active theme>/waybar.css` and the
+# switcher restarts it, so a theme change swaps the whole stylesheet. The
+# `programs.waybar.style` option is deliberately not used — home-manager
+# would write it to a store path that can't change at runtime.
 let
   inherit (niriTheming) activeDir;
 in
@@ -16,9 +17,11 @@ in
   programs.waybar = {
     enable = true;
 
-    # niri spawns waybar itself (spawn-at-startup), so the systemd unit would
-    # be a second copy.
-    systemd.enable = false;
+    # Run as a user service rather than niri's spawn-at-startup, so the theme
+    # switcher can `systemctl --user restart waybar` and be certain the
+    # stylesheet is re-read. (SIGUSR2 alone did not reliably repaint.)
+    systemd.enable = true;
+    systemd.target = "graphical-session.target";
 
     settings.main = {
       layer = "top";
@@ -45,11 +48,6 @@ in
       "niri/workspaces" = {
         format = "{value}";
         all-outputs = false;
-        # Named workspaces "1".."5" come from the niri config.
-        format-icons = {
-          active = "";
-          default = "";
-        };
         on-click = "activate";
       };
 
@@ -67,17 +65,20 @@ in
       };
 
       clock = {
-        format = "  {:%H:%M}   {:%a, %b %d}";
-        format-alt = "  {:%H:%M:%S}   {:%A, %d %B %Y}";
+        # One replacement field only. waybar passes the clock module a single
+        # time argument, so a format string with two `{:...}` placeholders
+        # refers to an argument that doesn't exist and the module renders
+        # nothing at all — which is why the centre of the bar was empty.
+        # Everything therefore goes through one strftime.
+        format = "  {:%H:%M     %a, %b %d}";
+        format-alt = "  {:%H:%M:%S     %A, %d %B %Y}";
         tooltip-format = "<tt><small>{calendar}</small></tt>";
         calendar = {
           mode = "month";
           on-scroll = 1;
           format = {
-            months = "<span color='#c8f5c8'><b>{}</b></span>";
-            days = "<span color='#5c7a5c'>{}</span>";
-            weekdays = "<span color='#39ff14'><b>{}</b></span>";
-            today = "<span color='#39ff14'><b><u>{}</u></b></span>";
+            months = "<b>{}</b>";
+            today = "<b><u>{}</u></b>";
           };
         };
         actions = {
@@ -131,151 +132,11 @@ in
         on-click = lib.getExe niriScripts.sessionMenu;
       };
     };
-
-    style = ''
-      /* Palette comes from the active theme; see home/joshr/niri/theming.nix.
-         theme-apply repoints that symlink and sends waybar SIGUSR2. */
-      @import url("file://${activeDir}/waybar.css");
-
-      * {
-        font-family: "FiraCode Nerd Font", "Noto Sans", sans-serif;
-        font-size: 13px;
-        font-weight: 500;
-        border: none;
-        border-radius: 0;
-        min-height: 0;
-      }
-
-      window#waybar {
-        background: transparent;
-        color: @fg;
-      }
-
-      /* Each group is its own floating pill rather than one long bar. */
-      .modules-left,
-      .modules-center,
-      .modules-right {
-        background-color: alpha(@bg, 0.88);
-        border: 1px solid alpha(@accent-dim, 0.55);
-        border-radius: 12px;
-        padding: 0 6px;
-      }
-
-      #workspaces {
-        padding: 0 2px;
-      }
-
-      #workspaces button {
-        padding: 0 9px;
-        margin: 4px 2px;
-        color: @fg-dim;
-        background: transparent;
-        border-radius: 8px;
-        transition: background-color 160ms ease, color 160ms ease;
-      }
-
-      #workspaces button:hover {
-        background-color: alpha(@accent, 0.15);
-        color: @fg;
-        /* waybar's default hover adds a box-shadow; suppress it. */
-        box-shadow: none;
-        text-shadow: none;
-      }
-
-      #workspaces button.active {
-        background-color: @accent;
-        color: @bg;
-        font-weight: 700;
-      }
-
-      #workspaces button.urgent {
-        background-color: @err;
-        color: @bg;
-      }
-
-      #window {
-        padding: 0 10px;
-        color: @fg;
-      }
-
-      /* Empty title: collapse the padding so the pill doesn't float alone. */
-      window#waybar.empty #window {
-        padding: 0;
-        margin: 0;
-        background: transparent;
-      }
-
-      #clock {
-        padding: 0 14px;
-        color: @accent;
-        font-weight: 700;
-      }
-
-      #tray,
-      #pulseaudio,
-      #network,
-      #battery,
-      #custom-session {
-        padding: 0 10px;
-        margin: 4px 1px;
-        border-radius: 8px;
-        color: @fg;
-      }
-
-      #tray > .passive {
-        -gtk-icon-effect: dim;
-      }
-
-      #tray > .needs-attention {
-        -gtk-icon-effect: highlight;
-        background-color: @err;
-        border-radius: 8px;
-      }
-
-      #pulseaudio:hover,
-      #network:hover,
-      #battery:hover {
-        background-color: alpha(@accent, 0.14);
-      }
-
-      #pulseaudio.muted {
-        color: @fg-dim;
-      }
-
-      #network.disconnected {
-        color: @err;
-      }
-
-      #battery.warning:not(.charging) {
-        color: @warn;
-      }
-
-      #battery.critical:not(.charging) {
-        color: @bg;
-        background-color: @err;
-      }
-
-      #custom-session {
-        color: @accent;
-        font-size: 15px;
-        padding: 0 12px;
-      }
-
-      #custom-session:hover {
-        background-color: @err;
-        color: @bg;
-      }
-
-      tooltip {
-        background-color: @bg;
-        border: 1px solid @accent-dim;
-        border-radius: 10px;
-      }
-
-      tooltip label {
-        color: @fg;
-        padding: 4px;
-      }
-    '';
   };
+
+  # Point waybar at the active theme's stylesheet. home-manager's generated
+  # unit has no way to pass `-s`, so override ExecStart.
+  systemd.user.services.waybar.Service.ExecStart = lib.mkForce (
+    "${pkgs.waybar}/bin/waybar -s ${activeDir}/waybar.css"
+  );
 }

@@ -47,6 +47,7 @@
     localsend
     sshfs
     openrgb
+    playerctl
   ];
 
   programs.btop = {

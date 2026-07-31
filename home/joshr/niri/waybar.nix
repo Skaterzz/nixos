@@ -39,6 +39,7 @@ in
       modules-center = [ "clock" ];
       modules-right = [
         "tray"
+        "mpris"
         "pulseaudio"
         "network"
         "battery"
@@ -65,6 +66,67 @@ in
         };
       };
 
+      mpris = {
+        player = "playerctld";
+
+        format = "{player_icon} {dynamic}";
+        format-paused = "{status_icon} {dynamic}";
+        format-stopped = "";
+
+        tooltip = true;
+        tooltip-format = ''
+          {player_icon}  {title}
+          {artist}
+          {album}
+          {position} / {length}
+        '';
+
+        title-len = 40;
+        artist-len = 25;
+        album-len = 25;
+        dynamic-len = 55;
+
+        dynamic-order = [
+          "title"
+          "artist"
+        ];
+
+        dynamic-importance-order = [
+          "title"
+          "artist"
+        ];
+
+        dynamic-separator = "  •  ";
+
+        player-icons = {
+          default = "󰎆";
+          spotify = "";
+          firefox = "󰈹";
+          chromium = "";
+          chrome = "";
+          mpv = "";
+          vlc = "󰕼";
+        };
+
+        status-icons = {
+          playing = "";
+          paused = "";
+          stopped = "";
+        };
+
+        # Left click: play/pause
+        on-click = "playerctl play-pause";
+
+        # Middle click: previous track
+        on-click-middle = "playerctl previous";
+
+        # Right click: next track
+        on-click-right = "playerctl next";
+
+        # Scroll over the widget to change volume
+        on-scroll-up = "playerctl volume 0.05+";
+        on-scroll-down = "playerctl volume 0.05-";
+      };
       clock = {
         # One replacement field only. waybar passes the clock module a single
         # time argument, so a format string with two `{:...}` placeholders
@@ -108,7 +170,7 @@ in
         format = "{icon}  {volume}%";
         format-muted = "󰝟  muted";
         format-icons.default = [ "󰕿" "󰖀" "󰕾" ];
-        scroll-step = 2;
+        scroll-step = 5;
         on-click = "${pkgs.wireplumber}/bin/wpctl set-mute @DEFAULT_AUDIO_SINK@ toggle";
         on-click-right = "${pkgs.pavucontrol}/bin/pavucontrol";
         tooltip-format = "{desc}";

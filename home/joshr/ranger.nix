@@ -15,7 +15,7 @@ let
     bat # syntax-highlighted text
     imagemagick # image identify / conversion
     ffmpegthumbnailer # video thumbnails
-    poppler_utils # pdftoppm, pdftotext
+    poppler-utils # pdftoppm, pdftotext
     mediainfo # audio/video metadata
     atool # archive listings
     odt2txt # opendocument text

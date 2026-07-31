@@ -23,6 +23,7 @@
     # it's what every RGB-control setup runs with, but it is a guard being
     # switched off, not a feature being switched on.
     "acpi_enforce_resources=lax"
+    "i2c-dev"
 
     # Give the NVIDIA DRM driver a framebuffer console.
     #

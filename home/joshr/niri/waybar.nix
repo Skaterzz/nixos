@@ -44,6 +44,7 @@ in
         "network"
         "battery"
         "custom/idle-inhibitor"
+        "custom/lock"
         "custom/session"
       ];
 
@@ -218,6 +219,20 @@ in
         interval = 30;
         signal = 8;
         on-click = "${lib.getExe niriScripts.idleInhibit} toggle";
+      };
+
+      # Lock, immediately to the left of the power button.
+      #
+      # Same `lock-session` the Mod+L bind and the session menu's "Lock" entry
+      # run, so all three routes take the theme's colours and can't drift
+      # apart. The power button next door opens a menu that also offers Lock;
+      # this is the one-click version of the thing you do most often, which is
+      # why it gets its own slot rather than living behind that menu.
+      "custom/lock" = {
+        format = "󰌾";
+        tooltip = true;
+        tooltip-format = "Lock the session";
+        on-click = lib.getExe niriScripts.lockSession;
       };
 
       "custom/session" = {

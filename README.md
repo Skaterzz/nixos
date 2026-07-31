@@ -104,8 +104,14 @@ home/joshr/niri/
 ### The bar
 
 Left is workspaces and the focused window title, centre is the clock and
-date, right is the tray, volume, network, battery and a session button. Each
+date, right is the tray, media controls, volume, network, battery, the idle
+inhibitor, then **lock** and **power** as a matched pair at the far end. Each
 group is its own rounded floating pill rather than one long bar.
+
+Lock and power are styled identically and differ only on hover — the power
+button goes red, because it's the one that can end the session. The lock
+button runs the same `lock-session` as `Mod+L` and the session menu's "Lock"
+entry, so all three take the active theme's colours.
 
 ### Theme switching
 
@@ -116,7 +122,14 @@ Reds: `blackred`, `crimson`. Then `catppuccin-mocha`,
 `nord`, `gruvbox`, `dracula`, `tokyo-night`, `everforest`, `kanagawa`,
 `solarized`, and `rose-pine-dawn` as the one light option.
 
-`Mod+Shift+T` cycles, `Mod+Ctrl+T` opens a picker (more useful at this count).
+`Mod+Shift+T` jumps to a random one, `Mod+Ctrl+T` opens a picker (more useful
+at this count). That matches the wallpaper keys — `Mod+Shift` is the random
+half of both pairs, `Mod+Ctrl` the deliberate half. The theme currently active
+is excluded from the draw, so the key always visibly does something; at 20
+palettes a plain random pick would land on the current one about one press in
+twenty, and a keybind that occasionally appears to do nothing reads as broken
+rather than as chance. `theme-cycle` is still on PATH if you want the ordered
+walk.
 
 The mechanism is worth knowing, because it's what keeps this declarative.
 home-manager owns `~/.config/...` as read-only symlinks into the store, so a
@@ -172,6 +185,16 @@ bright slots are greys rather than brighter hues. The rest are hand-picked.
 Omitting `ansi` is allowed and falls back to a derivation from the ten roles,
 but it's flat: blue, magenta and cyan all collapse onto the accent.
 
+One trap worth knowing if you ever edit the greeter's clock: SDDM reads a
+theme's config through `QSettings(path, QSettings::IniFormat)`, and QSettings'
+INI format treats an **unquoted comma as a list separator**. So a `DateFormat`
+of `dddd, MMMM d` comes back as the two-element list `["dddd", "MMMM d"]`,
+which `Clock.qml` then hands to `Date.toLocaleDateString(locale, format)` —
+a function that takes a string or a format enum and nothing else. The month
+silently disappears. The format here uses a middle dot instead of a comma for
+that reason; quoting the value also works, but only because the reader happens
+to be QSettings.
+
 The login screen does **not** follow, by default. It uses SDDM's built-in
 greeter, because the themed one left the primary display black — see "The
 login screen" below. `local.sddm.theme = "astronaut"` turns the themed
@@ -199,7 +222,7 @@ restored at login.
 | `Ctrl+Print` / `Alt+Print` | screen / window (niri's built-ins) |
 | `Mod+L` / `Mod+Shift+Escape` | lock, session menu |
 | `Mod+Shift+I` | stay awake (toggle the sleep inhibitor) |
-| `Mod+Shift+T` / `Mod+Ctrl+T` | cycle theme, pick theme |
+| `Mod+Shift+T` / `Mod+Ctrl+T` | random theme, pick theme |
 | `Mod+Shift+W` / `Mod+Ctrl+W` | random wallpaper, pick wallpaper |
 | `Mod`+scroll / `Mod+Shift`+scroll | walk windows / workspaces (wheel and touchpad) |
 
@@ -209,6 +232,31 @@ restored at login.
 
 `Mod+Ctrl+V` opens the history in wofi; picking an entry puts it back on the
 clipboard. `clipboard-wipe` empties it, and isn't bound to a key on purpose.
+
+**Removing single entries**, two ways, because wofi has no way to put a button
+on a row:
+
+- **`Delete`** in the picker removes the entry under the cursor and reopens
+  it, so several can go in a row.
+- **`✕  Delete entries…`**, the first row of the list, switches the picker
+  into a mode where Enter — or a mouse click — removes instead of copies.
+  `←  Back to copying` returns. This is the discoverable version, and the
+  only one reachable with a mouse.
+
+`Backspace` is deliberately not bound. wofi's dmenu mode puts the cursor in a
+search box and Backspace is how you correct what you typed there, so binding
+it would make the history impossible to search. `Delete` is free, which is
+why it's the one. Adding another (`Shift-BackSpace`, say) is one more
+`--define=key_custom_1=…` in `clipboard.nix` plus its exit code in the case
+at the bottom of the loop.
+
+The bind is passed with wofi's `--define`, not set in `programs.wofi.settings`
+— that config is shared with the launcher and the theme, wallpaper and session
+menus, and binding `Delete` globally would arm a delete exit code in all of
+them. One caveat from wofi(5): a custom key *"will not cause wofi to exit, it
+will only set its exit code for when it does"*, so on wofi 1.5.3 `Delete` takes
+effect when the picker is next dismissed. Either way it's the entry under the
+cursor that goes, and the script handles both behaviours.
 
 Wayland has no clipboard manager in the compositor — a copied selection lives
 in the process that copied it and vanishes when that process exits, which is
@@ -276,6 +324,26 @@ and powerdevil under Plasma, and "don't fall asleep" is not "don't lock the
 screen". On battery, nothing changes at all. The Plasma hosts also set
 `powerdevil.AC.autoSuspend.action = "nothing"` directly, so the behaviour
 doesn't rest on one daemon asking another the right question.
+
+### The lid
+
+`modules/nixos/laptop.nix` is the single owner: **suspend** on battery,
+**ignore** on mains, **ignore** when docked.
+
+It didn't used to be. `modules/nixos/niri.nix` set the same three
+`services.logind.settings.Login` keys, and the two disagreed — `lock` there
+against `ignore` here for external power and docked. `laptop-niri` imports
+both modules, and two modules setting one option to different values is a
+conflict NixOS refuses to merge, so that host could not evaluate at all. A
+lid is hardware rather than a desktop session, which is why `laptop.nix` is
+where it lives — `niri.nix` also runs on `gamestation-niri`, which has no
+lid.
+
+The values are unchanged by that untangling: the fix was to stop `niri.nix`
+setting them, not to pick a new behaviour. If you'd rather the lid locked
+than did nothing while plugged in, `"lock"` is the word — it doesn't suspend,
+it just doesn't leave the session open on a machine you've shut and walked
+away from.
 
 ### Displays
 

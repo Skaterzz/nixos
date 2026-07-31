@@ -37,6 +37,21 @@
 
   # Closing the lid suspends only on battery.
   #
+  # This module is the single owner of lid behaviour. modules/nixos/niri.nix
+  # used to set the same three keys as well, and disagreed — `lock` there
+  # against `ignore` here for external power and docked. laptop-niri imports
+  # both, and two modules setting one option to different values is a
+  # conflict NixOS refuses to merge, so that host could not build at all.
+  #
+  # The values below are deliberately unchanged by that untangling. The fix
+  # was to stop niri.nix setting them, not to pick a new behaviour, and
+  # quietly flipping what the lid does while resolving a module conflict is
+  # exactly the kind of change nobody asks for and everybody notices.
+  #
+  # `lock` is the alternative worth knowing about for the two non-battery
+  # cases: it doesn't suspend, it just doesn't leave the session open on a
+  # machine you've shut and walked away from. Worth switching to on purpose.
+  #
   # HandleLidSwitchExternalPower defaults to whatever HandleLidSwitch is, so
   # it has to be set explicitly to get the "battery only" behaviour — setting
   # HandleLidSwitch alone would suspend on AC too.

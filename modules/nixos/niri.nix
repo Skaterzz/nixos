@@ -57,8 +57,22 @@ let
       # Qt date/time format strings, not strftime: `h` is the hour without a
       # leading zero and drops to 1–12 as soon as an AM/PM field is present,
       # and `AP` is that field. Month before day, same as the session.
+      #
+      # No comma in DateFormat, and that is load-bearing rather than
+      # typographic. SDDM reads a theme's config with
+      # `QSettings(path, QSettings::IniFormat)` (src/common/ThemeConfig.cpp),
+      # and QSettings' INI format treats an unquoted comma as a *list*
+      # separator — so "dddd, MMMM d" comes back as the two-element list
+      # ["dddd", "MMMM d"] rather than as a string. Clock.qml then hands that
+      # list to `Date.toLocaleDateString(locale, format)`, which accepts a
+      # string or a format enum and nothing else, and the month goes missing.
+      #
+      # A middle dot separates the fields instead. Quoting the value would
+      # also work — QSettings strips surrounding quotes, which is the
+      # documented remedy — but that leaves a file whose correctness depends
+      # on the reader being QSettings, and this doesn't.
       HourFormat = "h:mm AP";
-      DateFormat = "dddd, MMMM d";
+      DateFormat = "dddd · MMMM d";
 
       HeaderTextColor = t.accent;
       DateTextColor = t.fg;
@@ -402,14 +416,22 @@ in
   # Unlock the keyring at login (the niri module enables gnome-keyring).
   security.pam.services.sddm.enableGnomeKeyring = true;
 
-  #services.logind.settings.Login = {
-    # On battery, preserve the current suspend behaviour.
-    #HandleLidSwitch = "suspend";
-
-    # While plugged in, lock without suspending.
-    #HandleLidSwitchExternalPower = "lock";
-
-    # A system with multiple displays may count as docked.
-    #HandleLidSwitchDocked = "lock";
-  #};
+  # Lid switch behaviour is deliberately NOT set here — see
+  # modules/nixos/laptop.nix, which owns it.
+  #
+  # It used to be, and that was an evaluation error rather than a stylistic
+  # problem: laptop-niri imports this module *and* laptop.nix, both defined
+  # the same three `services.logind.settings.Login` keys, and they disagreed
+  # (lock vs ignore on external power and docked). Two modules setting one
+  # option to different values is a conflict NixOS refuses to merge, so that
+  # host could not build at all.
+  #
+  # main worked around it by commenting the whole block out, which fixed the
+  # build and left the values stranded. This deletes it instead and says
+  # where the setting lives, so there is one place to look rather than a
+  # commented-out block that reads like it might still do something.
+  #
+  # A lid is hardware, not a desktop session, so laptop.nix is where it
+  # belongs: gamestation-niri runs this module on a machine with no lid, and
+  # anything set here would be meaningless there.
 }

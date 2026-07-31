@@ -100,8 +100,26 @@ let
       (old: {
         pname = "sddm-astronaut-${name}";
         postInstall = (old.postInstall or "") + ''
-          mv "$out/share/sddm/themes/sddm-astronaut-theme" \
-             "$out/share/sddm/themes/niri-${name}"
+          themeDir="$out/share/sddm/themes/sddm-astronaut-theme"
+          chmod -R u+w "$themeDir"
+
+          # Force the password field to mask immediately.
+          #
+          # Upstream binds passwordMaskDelay to `undefined` when
+          # HideCompletePassword is "true", which doesn't mean "no delay" — it
+          # drops the binding back to Qt's platform default, so how long a
+          # typed character stays visible depends on the platform and on the
+          # theme config being parsed exactly as the QML expects. That is a
+          # bad thing to leave to chance on a login screen.
+          #
+          # 0 is unambiguous: characters are replaced the instant they're
+          # typed, regardless of any config value.
+          substituteInPlace "$themeDir/Components/Input.qml" \
+            --replace-fail \
+              'passwordMaskDelay: config.HideCompletePassword == "true" ? undefined : 1000' \
+              'passwordMaskDelay: 0'
+
+          mv "$themeDir" "$out/share/sddm/themes/niri-${name}"
         '';
       });
 

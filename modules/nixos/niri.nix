@@ -230,6 +230,21 @@ let
   # Per-monitor settings. No edidIdentifier or edidHash on purpose — that's
   # what selects connector-name matching, and the connector names here are
   # the ones `niri msg outputs` reports.
+  #
+  # The mode is left out by default, and that is the important part.
+  #
+  # Writing one is the single thing here that can black-screen a display
+  # rather than degrade: KWin looks the mode up among what the connector
+  # reports and hands it to a modeset, so a rate that doesn't match exactly
+  # — DRM reporting 179998 mHz where the config says 180000, or the `flags`
+  # field disagreeing — means the modeset fails and the output stays dark.
+  # A 2560x1440@180 link is the most fragile case of all, since it needs the
+  # full DP negotiation to come up.
+  #
+  # Without a mode, KWin picks each display's preferred one. The arrangement,
+  # scale, rotation and which display is primary are all still honoured —
+  # only the refresh rate is left to KWin, which on a login screen costs
+  # nothing.
   outputEntry =
     o:
     let
@@ -241,7 +256,7 @@ let
       transform = kwinTransform o.transform;
       vrrPolicy = if o.variableRefreshRate then "automatic" else "never";
     }
-    // lib.optionalAttrs (mode != null) {
+    // lib.optionalAttrs (config.local.sddm.greeterModes && mode != null) {
       mode = {
         basic = mode;
         flags = 0;

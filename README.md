@@ -231,22 +231,35 @@ name. Copying a whole Plasma arrangement also carried its enabled/disabled
 state across, which is the likeliest reason the greeter came up on one
 display.
 
-The generated file is built so its failure modes are quiet: nothing ever
-writes `"enabled": false`, so an unmatched connector name means KWin
-auto-detects that output and lights it up rather than leaving it dark, and a
-file it can't parse means it auto-detects everything. The one case that could
-genuinely go wrong is a mode a display won't take — and these are the modes
-niri already drives the same monitors with.
+**Refresh rates are deliberately not written.** The arrangement, scale,
+rotation and which display is primary all come from `displays/<host>.nix`, but
+the `mode` is left to kwin, which picks each display's preferred one.
 
-If the login screen does come up wrong, recover from a TTY (`Ctrl+Alt+F2`):
+That is the one setting here that can black-screen a display rather than
+degrade. KWin looks the mode up among what the connector reports and hands it
+straight to a modeset; if nothing matches exactly — DRM reporting 179998 mHz
+where the config says 180000, or a disagreement over the mode flags — the
+modeset fails and the output stays dark. A 2560x1440@180 DisplayPort link is
+the most fragile case there is, and a login screen gains nothing from 180Hz.
+`local.sddm.greeterModes = true` writes them anyway, if you ever need it.
+
+Everything else fails quietly by construction: nothing writes
+`"enabled": false`, so an unmatched connector name means kwin auto-detects
+that output and lights it up rather than leaving it dark, and a file it can't
+parse means it auto-detects everything.
+
+If the login screen still comes up wrong, recover from a TTY (`Ctrl+Alt+F2`),
+which works even when the greeter is black:
 
 ```sh
 sudo rm /var/lib/sddm/.config/kwinoutputconfig.json
+sudo systemctl restart sddm
 ```
 
-That restores auto-detection until the next rebuild. To stop generating it
-altogether, set `local.sddm.syncGreeterDisplays = false`. Booting the previous
-generation works too.
+That restores auto-detection until the next rebuild. To stop generating the
+file at all, set `local.sddm.syncGreeterDisplays = false` — that gets you back
+to plain auto-detection, where every display lights up at kwin's choice of
+mode and arrangement. Booting the previous generation works too.
 
 Like the palette and wallpaper, a change here lands at the next greeter start.
 

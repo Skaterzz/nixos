@@ -108,7 +108,7 @@ in
         format = "{icon}  {volume}%";
         format-muted = "󰝟  muted";
         format-icons.default = [ "󰕿" "󰖀" "󰕾" ];
-        scroll-step = 5;
+        scroll-step = 2;
         on-click = "${pkgs.wireplumber}/bin/wpctl set-mute @DEFAULT_AUDIO_SINK@ toggle";
         on-click-right = "${pkgs.pavucontrol}/bin/pavucontrol";
         tooltip-format = "{desc}";

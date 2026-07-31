@@ -76,7 +76,21 @@
 
   xdg.dataFile."wallpapers".source = "${inputs.dotfiles}/dot_local/share/wallpapers";
 
-  home.file.".icons/Bibata-Modern-Ice".source = "${inputs.dotfiles}/dot_icons/Bibata-Modern-Ice";
-
   xdg.dataFile."color-schemes/DarkObsidianII.colors".source = ./files/DarkObsidianII.colors;
+
+  # Cursor theme, shared by both the Plasma and niri sessions.
+  #
+  # This uses nixpkgs' bibata-cursors rather than the copy under
+  # dot_icons/ in the dotfiles repo. home-manager's pointerCursor module
+  # writes ~/.icons/<name> itself, so linking the dotfiles copy to that same
+  # path as well is a conflicting definition — and the module expects a
+  # package laid out as ${package}/share/icons/<name>, which the raw
+  # dot_icons/ directory isn't.
+  home.pointerCursor = {
+    package = pkgs.bibata-cursors;
+    name = "Bibata-Modern-Ice";
+    size = 24;
+    gtk.enable = true;
+    x11.enable = true;
+  };
 }

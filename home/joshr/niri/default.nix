@@ -36,13 +36,8 @@
     xwayland-satellite
   ];
 
-  # Cursor theme, applied to both GTK and the compositor.
-  home.pointerCursor = {
-    package = pkgs.bibata-cursors;
-    name = "Bibata-Modern-Ice";
-    size = 24;
-    gtk.enable = true;
-  };
+  # Cursor theme is set in ../home.nix so the Plasma and niri sessions share
+  # one definition; niri.nix just names it in `cursor { xcursor-theme … }`.
 
   gtk = {
     enable = true;

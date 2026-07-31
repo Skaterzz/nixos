@@ -25,6 +25,13 @@
       ++ lib.optional config.virtualisation.docker.enable "docker"
       ++ lib.optional config.virtualisation.libvirtd.enable "libvirtd";
 
+
+    # OpenSSH Public Keys
+    openssh.authorizedKeys.keys = [
+      "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIHhGu88k2qhLbZRr2eGl9rPGV22Z4SPpqHSp/oQ1H5kc"
+    ];
+
+    
     # Only applied when the account is first created, so that a fresh install
     # can actually log in at SDDM. Change it immediately after first login:
     #   passwd

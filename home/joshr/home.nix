@@ -49,6 +49,8 @@
     yt-dlp
     vivaldi
     haruna
+    kdePackages.gwenview
+    kdePackages.elisa
   ];
 
   programs.btop = {

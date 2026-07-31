@@ -328,20 +328,22 @@ doesn't rest on one daemon asking another the right question.
 ### The lid
 
 `modules/nixos/laptop.nix` is the single owner: **suspend** on battery,
-**lock** on mains, **lock** when docked.
+**ignore** on mains, **ignore** when docked.
 
 It didn't used to be. `modules/nixos/niri.nix` set the same three
 `services.logind.settings.Login` keys, and the two disagreed — `lock` there
 against `ignore` here for external power and docked. `laptop-niri` imports
 both modules, and two modules setting one option to different values is a
-conflict NixOS refuses to merge, so that host could not evaluate at all. The
-`lock` values won the merge: `ignore` leaves the session open on a machine
-you've just shut and walked away from. A lid is hardware rather than a
-desktop session, which is why `laptop.nix` is where it lives — `niri.nix`
-also runs on `gamestation-niri`, which has no lid.
+conflict NixOS refuses to merge, so that host could not evaluate at all. A
+lid is hardware rather than a desktop session, which is why `laptop.nix` is
+where it lives — `niri.nix` also runs on `gamestation-niri`, which has no
+lid.
 
-Set `HandleLidSwitchDocked = "ignore"` if you'd rather close the lid with
-external screens attached and keep working without re-authenticating.
+The values are unchanged by that untangling: the fix was to stop `niri.nix`
+setting them, not to pick a new behaviour. If you'd rather the lid locked
+than did nothing while plugged in, `"lock"` is the word — it doesn't suspend,
+it just doesn't leave the session open on a machine you've shut and walked
+away from.
 
 ### Displays
 

@@ -307,9 +307,17 @@ let
     ]
   );
 
-  # Only write one if there's something to say. The laptop leaves outputs
-  # empty on purpose, and there auto-detection is the right answer.
-  writeGreeterOutputs = config.local.sddm.syncGreeterDisplays && greeterOutputs != [ ];
+  # Only write one if there's something to say, and something to read it.
+  #
+  # kwinoutputconfig.json is a kwin file: under weston it is simply ignored,
+  # so writing it would leave a misleading artefact on disk suggesting the
+  # greeter's layout comes from displays/<host>.nix when it doesn't. The
+  # laptop leaves outputs empty on purpose, and there auto-detection is the
+  # right answer anyway.
+  writeGreeterOutputs =
+    config.local.sddm.compositor == "kwin"
+    && config.local.sddm.syncGreeterDisplays
+    && greeterOutputs != [ ];
 
   syncSddmTheme = pkgs.writeShellScript "sddm-theme-sync" ''
     set -eu
@@ -387,6 +395,8 @@ in
   services.displayManager.sddm = {
     enable = true;
     wayland.enable = true;
+    # See local.sddm.compositor. Defaults to weston here, not NixOS's kwin.
+    wayland.compositor = config.local.sddm.compositor;
     package = pkgs.kdePackages.sddm;
     theme = defaultSddmTheme;
     extraPackages = lib.attrValues sddmThemes;

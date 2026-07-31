@@ -5,6 +5,33 @@
 # The home-manager equivalents live in home/common/options.nix; these are the
 # ones a NixOS module needs to read, which can't come from there.
 {
+  options.local.sddm.compositor = lib.mkOption {
+    type = lib.types.enum [
+      "kwin"
+      "weston"
+    ];
+    default = "weston";
+    description = ''
+      Which compositor SDDM's Wayland greeter runs under.
+
+      Defaults to weston rather than NixOS's own default of kwin. On this
+      machine — NVIDIA, two displays — kwin_wayland left the primary display
+      black: it could be watched attempting a modeset and then giving up.
+      That happened with a generated output config, with a copied one, and
+      with none at all, which rules the config out and leaves the compositor.
+
+      weston is a far smaller thing to have between SDDM and the hardware. It
+      has no output config to get wrong and no session-restore state, so it
+      brings up what it detects and nothing else.
+
+      "kwin" restores the stock behaviour, and is what to use if weston turns
+      out worse. If neither works, the next step is the X11 greeter
+      (`services.displayManager.sddm.wayland.enable = false`), which is the
+      most reliable multi-monitor NVIDIA option and costs an X server used
+      only to draw the login screen.
+    '';
+  };
+
   options.local.sddm.syncGreeterDisplays = lib.mkOption {
     type = lib.types.bool;
     default = true;

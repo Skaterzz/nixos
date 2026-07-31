@@ -216,11 +216,27 @@ Three things worth knowing:
 Also available per output: `scale`, `transform` (rotation),
 `variableRefreshRate`, and `off`.
 
-**The greeter follows the same file.** SDDM's greeter runs its own
-kwin_wayland, which knows nothing about niri and reads its layout from
-`kwinoutputconfig.json`. That file is generated from `local.niri.outputs`, so
-editing `displays/<host>.nix` and rebuilding moves both the session and the
-login screen. A host with no outputs configured (the laptop) auto-detects.
+**The greeter runs under weston, not kwin.** This is a deviation from NixOS's
+default and the fix for a long-running problem: on this machine — NVIDIA, two
+displays — kwin_wayland left the primary display black, visibly attempting a
+modeset and then giving up. That happened with a generated output config, with
+a copied one, and with no config at all, which rules the config out and leaves
+the compositor. weston is a much smaller thing to have between SDDM and the
+hardware: no output config to get wrong, no session state, it brings up what it
+detects. `local.sddm.compositor = "kwin"` restores the stock behaviour.
+
+If weston is no better, the next step is the X11 greeter
+(`services.displayManager.sddm.wayland.enable = false`) — the most reliable
+multi-monitor NVIDIA option, at the cost of an X server that exists only to
+draw the login screen. The niri session stays Wayland either way.
+
+**Under kwin, the greeter follows the same file as the session.** kwin_wayland
+knows nothing about niri and reads its layout from `kwinoutputconfig.json`,
+which is generated from `local.niri.outputs` so that editing
+`displays/<host>.nix` moves both. This is skipped entirely under weston, which
+ignores the file — writing it would only leave a misleading artefact implying
+the greeter's layout came from `displays/<host>.nix`. A host with no outputs
+configured (the laptop) auto-detects.
 
 An earlier version *copied* the file KWin had written for the Plasma session,
 on the theory that a from-scratch one would be ignored for lacking the EDID

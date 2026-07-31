@@ -137,14 +137,6 @@ in
       # escape being a root escape.
       runAsRoot = false;
 
-      # UEFI firmware for guests. OVMFFull rather than the default OVMF
-      # because it's the build that carries the Secure Boot variables, which
-      # a Windows 11 guest checks for.
-      ovmf = {
-        enable = true;
-        packages = [ pkgs.OVMFFull.fd ];
-      };
-
       # Software TPM. The other half of what Windows 11 refuses to install
       # without, and harmless for guests that don't ask.
       swtpm.enable = true;

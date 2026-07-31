@@ -137,7 +137,7 @@ SDDM only reads its config when the greeter starts, so that lands at the next
 logout or reboot rather than immediately.
 
 Wallpapers use `awww` (the renamed `swww`) over `~/.local/share/wallpapers`:
-`Mod+Shift+W` picks one, `Mod+Ctrl+W` is random. The choice is remembered and
+`Mod+Shift+W` is random, `Mod+Ctrl+W` picks one. The choice is remembered and
 restored at login.
 
 ### Keys
@@ -147,15 +147,15 @@ restored at login.
 | `Mod+Return` / `Mod+D` / `Mod+E` / `Mod+B` | terminal, launcher, Dolphin, browser |
 | `Mod+Ctrl+E` | ranger, in a terminal |
 | `Mod+Q` / `Mod+O` | close window, overview |
-| `Mod+H/J/K/L` | focus (arrows also work) |
+| `Mod+H/J/K` | focus (arrows also work; `Mod+L` is lock, so use `Mod+Right`) |
 | `Mod+1..5` | named workspaces |
 | `Mod+R` / `Mod+F` / `Mod+V` | preset widths, maximize, float |
 | `Print` / `Mod+Shift+S` | region screenshot, annotated in satty |
 | `Ctrl+Print` / `Alt+Print` | screen / window (niri's built-ins) |
-| `Mod+Escape` / `Mod+Shift+Escape` | lock, session menu |
+| `Mod+L` / `Mod+Shift+Escape` | lock, session menu |
 | `Mod+Shift+I` | stay awake (toggle the sleep inhibitor) |
 | `Mod+Shift+T` / `Mod+Ctrl+T` | cycle theme, pick theme |
-| `Mod+Shift+W` / `Mod+Ctrl+W` | pick wallpaper, random wallpaper |
+| `Mod+Shift+W` / `Mod+Ctrl+W` | random wallpaper, pick wallpaper |
 | `Mod`+scroll / `Mod+Shift`+scroll | walk windows / workspaces (wheel and touchpad) |
 
 `Mod+Shift+Slash` shows niri's own hotkey overlay.

@@ -1,0 +1,310 @@
+{ config, lib, pkgs, niriTheming, ... }:
+
+# Runtime helpers, all built as store scripts and bound to keys in config.kdl.
+#
+# The theme switcher only ever moves one symlink (see theming.nix) and then
+# nudges each tool to re-read its config. Nothing writes generated content at
+# runtime.
+let
+  inherit (niriTheming)
+    themes
+    themeDirs
+    stateDir
+    activeDir
+    ;
+
+  wallpaperDir = "${config.home.homeDirectory}/.local/share/wallpapers";
+
+  # name -> store path, as a shell case statement.
+  themeCases = lib.concatStringsSep "\n" (
+    lib.mapAttrsToList (n: d: ''      ${n}) target="${d}" ;;'') themeDirs
+  );
+
+  themeNames = lib.concatStringsSep "\n" (lib.attrNames themes);
+
+  # Apply a theme by name: repoint the symlink, then reload consumers.
+  #
+  # niri picks the change up on its own (it watches its config, and the
+  # include target changed). waybar needs SIGUSR2. dunst is launched with
+  # `-config <path under active/>` so it needs a restart. wofi reads its CSS
+  # fresh on each launch, so it needs nothing.
+  themeApply = pkgs.writeShellApplication {
+    name = "theme-apply";
+    runtimeInputs = with pkgs; [ libnotify systemd procps ];
+    text = ''
+      name="''${1:-}"
+      if [ -z "$name" ]; then
+        echo "usage: theme-apply <name>" >&2
+        exit 2
+      fi
+
+      target=""
+      case "$name" in
+      ${themeCases}
+        *) echo "unknown theme: $name" >&2; exit 1 ;;
+      esac
+
+      mkdir -p "${stateDir}"
+      ln -sfn "$target" "${activeDir}"
+      printf %s "$name" > "${stateDir}/current"
+
+      # waybar: reload stylesheet in place.
+      pkill -USR2 -x waybar || true
+
+      # dunst: relaunch against the new -config path.
+      systemctl --user restart dunst.service || true
+
+      notify-send -a theme -i preferences-desktop-theme \
+        "Theme" "Switched to $name" || true
+    '';
+  };
+
+  # Cycle to the next theme in the list, wrapping around. Bound to a key.
+  themeCycle = pkgs.writeShellApplication {
+    name = "theme-cycle";
+    runtimeInputs = [ themeApply ];
+    text = ''
+      themes="${themeNames}"
+      current="$(cat "${stateDir}/current" 2>/dev/null || echo "")"
+
+      next="$(echo "$themes" | awk -v cur="$current" '
+        { list[NR] = $0 }
+        END {
+          for (i = 1; i <= NR; i++) if (list[i] == cur) { print list[i % NR + 1]; exit }
+          print list[1]
+        }')"
+
+      theme-apply "$next"
+    '';
+  };
+
+  # Pick a theme from a wofi menu.
+  themeMenu = pkgs.writeShellApplication {
+    name = "theme-menu";
+    runtimeInputs = with pkgs; [ wofi themeApply ];
+    text = ''
+      choice="$(printf '%s\n' ${
+        lib.escapeShellArgs (lib.attrNames themes)
+      } | wofi --dmenu --prompt "Theme" --insensitive)"
+      [ -n "$choice" ] && theme-apply "$choice"
+    '';
+  };
+
+  # Wallpaper: awww daemon plus a picker over ~/.local/share/wallpapers.
+  # The chosen path is remembered so it can be restored at login.
+  wallpaperSet = pkgs.writeShellApplication {
+    name = "wallpaper-set";
+    runtimeInputs = with pkgs; [ awww libnotify ];
+    text = ''
+      img="''${1:-}"
+      [ -z "$img" ] && { echo "usage: wallpaper-set <image>" >&2; exit 2; }
+      [ -f "$img" ] || { echo "no such file: $img" >&2; exit 1; }
+
+      # Start the daemon if it isn't already up.
+      awww query >/dev/null 2>&1 || { awww-daemon & sleep 0.5; }
+
+      awww img "$img" \
+        --transition-type grow \
+        --transition-pos center \
+        --transition-duration 1 \
+        --transition-fps 60
+
+      mkdir -p "${stateDir}"
+      printf %s "$img" > "${stateDir}/wallpaper"
+    '';
+  };
+
+  wallpaperMenu = pkgs.writeShellApplication {
+    name = "wallpaper-menu";
+    runtimeInputs = with pkgs; [ wofi findutils coreutils wallpaperSet ];
+    text = ''
+      dir="${wallpaperDir}"
+      [ -d "$dir" ] || { echo "no wallpaper dir: $dir" >&2; exit 1; }
+
+      # -L so the symlink home-manager creates into the dotfiles store path
+      # is followed.
+      choice="$(find -L "$dir" -type f \
+                  \( -iname '*.png' -o -iname '*.jpg' -o -iname '*.jpeg' \) \
+                  -printf '%P\n' 2>/dev/null \
+                | sort \
+                | wofi --dmenu --prompt "Wallpaper" --insensitive)"
+
+      [ -n "$choice" ] && wallpaper-set "$dir/$choice"
+    '';
+  };
+
+  wallpaperRandom = pkgs.writeShellApplication {
+    name = "wallpaper-random";
+    runtimeInputs = with pkgs; [ findutils coreutils wallpaperSet ];
+    text = ''
+      dir="${wallpaperDir}"
+      [ -d "$dir" ] || exit 0
+      pick="$(find -L "$dir" -type f \
+                \( -iname '*.png' -o -iname '*.jpg' -o -iname '*.jpeg' \) \
+              2>/dev/null | shuf -n1)"
+      [ -n "$pick" ] && wallpaper-set "$pick"
+    '';
+  };
+
+  # Restore the remembered wallpaper at login, falling back to a random one.
+  wallpaperRestore = pkgs.writeShellApplication {
+    name = "wallpaper-restore";
+    runtimeInputs = [ pkgs.awww wallpaperSet wallpaperRandom ];
+    text = ''
+      awww query >/dev/null 2>&1 || { awww-daemon & sleep 0.5; }
+      saved="$(cat "${stateDir}/wallpaper" 2>/dev/null || echo "")"
+      if [ -n "$saved" ] && [ -f "$saved" ]; then
+        wallpaper-set "$saved"
+      else
+        wallpaper-random
+      fi
+    '';
+  };
+
+  screenshotDir = "${config.home.homeDirectory}/Pictures/Screenshots";
+
+  # Annotated region capture: slurp selects, grim captures, satty annotates
+  # and writes the result.
+  #
+  # Plain screen and window captures are bound straight to niri's built-in
+  # `screenshot-screen` / `screenshot-window` actions instead — the compositor
+  # already knows the exact geometry, so there's nothing for a script to
+  # compute and get wrong.
+  screenshot = pkgs.writeShellApplication {
+    name = "screenshot";
+    runtimeInputs = with pkgs; [
+      grim
+      slurp
+      satty
+      wl-clipboard
+      libnotify
+      coreutils
+    ];
+    text = ''
+      mkdir -p "${screenshotDir}"
+      stamp="$(date +%Y-%m-%d_%H-%M-%S)"
+      out="${screenshotDir}/screenshot_$stamp.png"
+
+      # Cancelled selection exits non-zero; that's not an error.
+      geom="$(slurp -d -b '#0a0e0acc' -c '#39ff14' -s '#39ff1420' -w 2)" || exit 0
+
+      grim -g "$geom" - \
+        | satty --filename - \
+            --output-filename "$out" \
+            --early-exit \
+            --copy-command wl-copy
+
+      if [ -f "$out" ]; then
+        notify-send -a screenshot -i "$out" "Screenshot" "Saved $(basename "$out")"
+      fi
+    '';
+  };
+
+  # Lock the session. Colours come from the active theme's swaylock.env, so
+  # the lock screen follows whatever theme is current.
+  lockSession = pkgs.writeShellApplication {
+    name = "lock-session";
+    runtimeInputs = with pkgs; [ swaylock-effects ];
+    text = ''
+      # shellcheck disable=SC1091
+      if [ -r "${activeDir}/swaylock.env" ]; then . "${activeDir}/swaylock.env"; fi
+
+      : "''${LOCK_BG:=0a0e0a}"
+      : "''${LOCK_ACCENT:=39ff14}"
+      : "''${LOCK_ACCENT_DIM:=1f8b0d}"
+      : "''${LOCK_FG:=c8f5c8}"
+      : "''${LOCK_FG_DIM:=5c7a5c}"
+      : "''${LOCK_ERR:=ff5555}"
+      : "''${LOCK_WARN:=f5d76e}"
+
+      exec swaylock \
+        --screenshots \
+        --clock \
+        --indicator \
+        --indicator-radius 110 \
+        --indicator-thickness 8 \
+        --effect-blur 8x5 \
+        --effect-vignette 0.4:0.4 \
+        --datestr "%A, %d %B" \
+        --timestr "%H:%M" \
+        --font "FiraCode Nerd Font" \
+        --ring-color "$LOCK_ACCENT_DIM" \
+        --ring-clear-color "$LOCK_WARN" \
+        --ring-ver-color "$LOCK_ACCENT" \
+        --ring-wrong-color "$LOCK_ERR" \
+        --key-hl-color "$LOCK_ACCENT" \
+        --bs-hl-color "$LOCK_ERR" \
+        --inside-color "$LOCK_BG"cc \
+        --inside-clear-color "$LOCK_BG"cc \
+        --inside-ver-color "$LOCK_BG"cc \
+        --inside-wrong-color "$LOCK_BG"cc \
+        --line-color 00000000 \
+        --line-clear-color 00000000 \
+        --line-ver-color 00000000 \
+        --line-wrong-color 00000000 \
+        --separator-color 00000000 \
+        --text-color "$LOCK_FG" \
+        --text-clear-color "$LOCK_FG" \
+        --text-ver-color "$LOCK_FG" \
+        --text-wrong-color "$LOCK_ERR" \
+        --fade-in 0.2 \
+        --grace 2
+    '';
+  };
+
+  # Session menu: shown by the waybar power button and a hotkey.
+  sessionMenu = pkgs.writeShellApplication {
+    name = "session-menu";
+    runtimeInputs = with pkgs; [
+      wofi
+      systemd
+      niri
+      lockSession
+    ];
+    text = ''
+      choice="$(printf '%s\n' \
+        "  Lock" \
+        "  Log out" \
+        "  Suspend" \
+        "  Reboot" \
+        "  Shut down" \
+        | wofi --dmenu --prompt "Session" --insensitive --width 260 --height 260)"
+
+      case "$choice" in
+        *Lock*)     lock-session ;;
+        *"Log out"*) niri msg action quit --skip-confirmation ;;
+        *Suspend*)  systemctl suspend ;;
+        *Reboot*)   systemctl reboot ;;
+        *"Shut down"*) systemctl poweroff ;;
+      esac
+    '';
+  };
+in
+{
+  home.packages = [
+    themeApply
+    themeCycle
+    themeMenu
+    wallpaperSet
+    wallpaperMenu
+    wallpaperRandom
+    wallpaperRestore
+    screenshot
+    lockSession
+    sessionMenu
+  ];
+
+  _module.args.niriScripts = {
+    inherit
+      themeApply
+      themeCycle
+      themeMenu
+      wallpaperMenu
+      wallpaperRandom
+      wallpaperRestore
+      screenshot
+      lockSession
+      sessionMenu
+      ;
+  };
+}

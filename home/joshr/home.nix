@@ -1,12 +1,14 @@
 { pkgs, inputs, ... }:
 
 {
+  # Everything here is desktop-agnostic. The desktop itself — ./plasma.nix or
+  # ./niri — is imported by the per-host entrypoint next to this file, so the
+  # Plasma and niri variants of a machine can share this base.
   imports = [
     ../common/options.nix
     ../common/shell.nix
     ./kitty.nix
     ./vscode.nix
-    ./plasma.nix
   ];
 
   home.username = "joshr";

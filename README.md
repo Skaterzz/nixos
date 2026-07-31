@@ -42,6 +42,109 @@ home/root/
   home.nix                         # fish + starship only, no desktop
 ```
 
+## niri (experimental alternative to Plasma)
+
+There are niri variants of both machines. They're separate hosts rather than
+a switch inside the existing ones, because Plasma here uses
+plasma-login-manager and niri uses SDDM — NixOS won't enable two display
+managers at once.
+
+```bash
+sudo nixos-rebuild switch --flake .#gamestation-niri   # try niri
+sudo nixos-rebuild switch --flake .#gamestation        # back to Plasma
+```
+
+Nothing is destroyed either way, and the previous generation stays in the
+boot menu. `laptop-niri` is the same deal for the laptop.
+
+The niri hosts deliberately **don't** import `plasma-xdg-data-dirs.nix`.
+That workaround exists because plasma-workspace's Qt wrapper builds an ~18 KB
+`XDG_DATA_DIRS`; there's no plasma-workspace in a niri session, so the bug
+can't occur — and neither can the from-source rebuild the workaround costs.
+
+### Layout
+
+```
+modules/nixos/niri.nix        # session, SDDM + theme, polkit, PAM, portals
+home/joshr/niri/
+  default.nix                 # entrypoint: packages, GTK/Qt/cursor
+  themes.nix                  # the palettes — edit colours here
+  theming.nix                 # renders each palette into per-tool configs
+  niri.nix                    # config.kdl: binds, layout, window rules
+  waybar.nix                  # bar layout + style
+  notifications.nix           # dunst + wofi
+  lock.nix                    # swayidle timers
+  scripts.nix                 # theme/wallpaper/screenshot/session helpers
+```
+
+### The bar
+
+Left is workspaces and the focused window title, centre is the clock and
+date, right is the tray, volume, network, battery and a session button. Each
+group is its own rounded floating pill rather than one long bar.
+
+### Theme switching
+
+Three green/black palettes ship: `matrix` (bright phosphor, the default),
+`forest` (deeper, softer) and `mint` (cooler, cyan-leaning). They're the same
+layout in different colours, so switching recolours without rearranging.
+
+`Mod+Shift+T` cycles, `Mod+Ctrl+T` opens a picker.
+
+The mechanism is worth knowing, because it's what keeps this declarative.
+home-manager owns `~/.config/...` as read-only symlinks into the store, so a
+script can't rewrite them. Instead every theme is **built ahead of time**, and
+the only mutable state is one symlink:
+
+```
+~/.local/state/niri-theme/active -> /nix/store/...-niri-theme-matrix
+```
+
+Each tool reaches its colours through its own indirection: niri via its
+`include` node (and it live-reloads), waybar and wofi via GTK CSS `@import`,
+dunst via `services.dunst.configFile`. So `theme-apply` moves one symlink and
+pokes waybar (`SIGUSR2`) and dunst (restart). Adding a theme means adding an
+attrset to `themes.nix` — everything else is generated.
+
+Wallpapers use `awww` (the renamed `swww`) over `~/.local/share/wallpapers`:
+`Mod+Shift+W` picks one, `Mod+Ctrl+W` is random. The choice is remembered and
+restored at login.
+
+### Keys
+
+| Key | Action |
+|---|---|
+| `Mod+Return` / `Mod+D` / `Mod+E` / `Mod+B` | terminal, launcher, files, browser |
+| `Mod+Q` / `Mod+O` | close window, overview |
+| `Mod+H/J/K/L` | focus (arrows also work) |
+| `Mod+1..5` | named workspaces |
+| `Mod+R` / `Mod+F` / `Mod+V` | preset widths, maximize, float |
+| `Print` / `Mod+Shift+S` | region screenshot, annotated in satty |
+| `Ctrl+Print` / `Alt+Print` | screen / window (niri's built-ins) |
+| `Mod+Escape` / `Mod+Shift+Escape` | lock, session menu |
+| `Mod+Shift+T` / `Mod+Ctrl+T` | cycle theme, pick theme |
+| `Mod+Shift+W` / `Mod+Ctrl+W` | pick wallpaper, random wallpaper |
+
+`Mod+Shift+Slash` shows niri's own hotkey overlay.
+
+### Screenshots
+
+Region capture goes `slurp` → `grim` → `satty`, so you land in an annotation
+editor (arrows, boxes, blur, text) and it copies to the clipboard on save.
+Plain screen and window capture use niri's built-in `screenshot-screen` and
+`screenshot-window` actions instead — the compositor already knows the exact
+geometry, so there's nothing for a script to compute wrong.
+
+### Lock screen
+
+`swaylock-effects` with a blurred screenshot background, ring colours from
+the active theme. `swayidle` dims at 4 minutes, locks at 5, blanks at 10, and
+locks before suspend.
+
+The system module adds `security.pam.services.swaylock` — without that PAM
+entry swaylock accepts your password and then rejects it, which locks you out
+of your own session.
+
 ## Shells
 
 Fish is the login shell for both `joshr` and `root`, but zsh, bash and

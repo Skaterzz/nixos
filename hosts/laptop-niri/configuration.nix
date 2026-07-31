@@ -13,6 +13,7 @@
 
     ../../modules/nixos/base.nix
     ../../modules/nixos/boot.nix
+    ../../modules/nixos/development.nix
 
     # niri replaces desktop.nix.
     ../../modules/nixos/niri.nix

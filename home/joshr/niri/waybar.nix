@@ -59,7 +59,6 @@ in
         separate-outputs = true;
         rewrite = {
           "(.*) — Mozilla Firefox" = "󰈹  $1";
-          "(.*) - Vivaldi" = "󰖟  $1";
           "(.*) - Visual Studio Code" = "󰨞  $1";
           "^kitty$" = "  Terminal";
           "^$" = "  Desktop";

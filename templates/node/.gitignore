@@ -1,0 +1,9 @@
+# Built by nix-direnv when you cd in. Holds the GC root for this
+# project's dev shell.
+.direnv/
+
+# nix build output symlink.
+result
+result-*
+node_modules/
+.npm-global/

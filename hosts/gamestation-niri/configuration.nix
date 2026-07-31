@@ -19,6 +19,7 @@
 
     ../../modules/nixos/base.nix
     ../../modules/nixos/boot.nix
+    ../../modules/nixos/development.nix
 
     # niri replaces desktop.nix: it brings its own session, SDDM, portals,
     # audio and polkit agent.

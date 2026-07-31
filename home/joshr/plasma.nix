@@ -113,7 +113,7 @@
         General = {
           # Default browser/terminal, used by "open link" and
           # "open terminal here" actions across KDE.
-          BrowserApplication = "vivaldi-stable.desktop";
+          BrowserApplication = "firefox.desktop";
           TerminalApplication = "kitty";
           TerminalService = "kitty.desktop";
 
@@ -173,7 +173,7 @@
               # config, so those three will show as dead entries until you
               # add the packages (or drop the lines).
               launchers = [
-                "applications:vivaldi-stable.desktop"
+                "applications:firefox.desktop"
                 "applications:kitty.desktop"
                 "applications:org.kde.dolphin.desktop"
                 "applications:spotify.desktop"

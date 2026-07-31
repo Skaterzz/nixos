@@ -14,6 +14,7 @@
     ./notifications.nix
     ./lock.nix
     ./openrgb.nix
+    ./firefox.nix
   ];
 
   # Dolphin as the graphical file manager. It follows the active theme

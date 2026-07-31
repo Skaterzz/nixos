@@ -37,6 +37,9 @@ let
   #   KDE     nothing to send. Dolphin and friends read kdeglobals once at
   #           startup, so an open window keeps its old palette until
   #           relaunched.
+  #   firefox nothing to send either — userChrome.css is read while the
+  #           browser starts, and there is no supported way to make a running
+  #           Firefox re-read it. Same deal as Dolphin: next launch.
   #   SDDM    picked up by a system path unit watching the file written
   #           below; applies at the next greeter start. See
   #           modules/nixos/niri.nix.

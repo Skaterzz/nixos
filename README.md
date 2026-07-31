@@ -20,6 +20,7 @@ hosts/laptop/                     # portable: no NVIDIA, single display
 modules/nixos/
   base.nix                        # nix settings, locale/timezone, fish, base fonts
   desktop.nix                     # SDDM (Wayland) + Plasma 6, portals, audio, Flatpak
+  development.nix                 # nix settings dev shells need (see below)
   plasma-xdg-data-dirs.nix        # workaround for nixpkgs#126590 (see below)
   nvidia.nix                      # NVIDIA driver + 32-bit graphics for Steam/Proton
   gaming.nix                      # Steam, MangoHud
@@ -33,13 +34,17 @@ home/common/
 home/joshr/
   gamestation.nix                  # host entrypoint: enables the 2nd-monitor panel
   laptop.nix                       # host entrypoint: single-display panels
-  home.nix                         # packages (Vivaldi, Spotify, Discord, ProtonUp-Qt, ...)
+  home.nix                         # packages (Spotify, Discord, ProtonUp-Qt, ...)
+  firefox.nix                      # the default browser: profile, prefs, sync
+  dev.nix                          # direnv + dev-init + language-agnostic tooling
   kitty.nix                        # kitty terminal + zenwritten_dark theme
   vscode.nix                       # VS Code settings + extension list
   plasma.nix                       # KDE Plasma settings/panels/shortcuts (plasma-manager)
   files/                           # DarkObsidianII.colors
 home/root/
   home.nix                         # fish + starship only, no desktop
+templates/                         # `nix flake init -t` dev environments
+  generic/ python/ node/ rust/ go/
 ```
 
 ## niri (experimental alternative to Plasma)
@@ -114,10 +119,14 @@ Each tool is pointed at a file under that symlink: niri via its `include` node
 waybar and dunst, and sends kitty SIGUSR1 so open terminals repaint in place;
 wofi re-reads on each launch. KDE apps read `~/.config/kdeglobals`, which is a
 symlink into the active theme — Dolphin picks up a switch when it next starts.
+Firefox is the same: its profile's `chrome/userChrome.css` and
+`userContent.css` are symlinks into the active theme, read once at startup.
+See "The browser" below.
 
 Adding a theme is one attrset in `themes.nix` — the niri fragment, both
-stylesheets, the dunstrc, the swaylock palette, the SDDM config and
-Dolphin's kdeglobals are all generated from its ten colour roles.
+stylesheets, the dunstrc, the swaylock palette, the SDDM config, Dolphin's
+kdeglobals and Firefox's two chrome stylesheets are all generated from its ten
+colour roles.
 
 kitty is the exception, because a terminal needs sixteen ANSI colours and ten
 semantic roles don't contain them — there's no blue, magenta or cyan in a
@@ -358,6 +367,78 @@ icon from a pixmap compiled into the binary rather than looking it up in the
 icon theme, so nothing outside the package can change that one. Upstream has
 an open request for it (OpenRGB issue #2453).
 
+## The browser
+
+**Firefox**, on every host, in `home/joshr/firefox.nix`. It replaced Vivaldi.
+
+The requirement was cloud sync, a Chromium or Firefox base, and colours that
+follow the desktop theme. Firefox is the only candidate that does all three
+without a workaround:
+
+- **Sync** is Firefox Sync over a Mozilla account — first-party, end-to-end
+  encrypted, carrying bookmarks, history, open tabs, logins, add-ons and
+  preferences between the desk and the laptop with no server of your own.
+  Sign in from the toolbar's account button; nothing about it is configured
+  here beyond leaving `identity.fxaccounts.enabled` alone.
+- **Theming** is the part that ruled the others out. A Chromium UI takes its
+  colours from a signed theme extension or from GTK, and neither reads a file
+  you generate. Vivaldi *can* take arbitrary colours, but only through its own
+  settings UI, into a preferences blob that isn't declarative and can't be
+  repointed at a symlink. Firefox reads `chrome/userChrome.css` out of the
+  profile directory at startup, so it plugs straight into the mechanism
+  already in place for everything else.
+
+### How it follows the theme
+
+`themes.nix` grows two more generated files per palette,
+`firefox-userChrome.css` and `firefox-userContent.css`, and
+`home/joshr/niri/firefox.nix` symlinks the profile's `chrome/userChrome.css`
+and `chrome/userContent.css` at the active theme — the same out-of-store
+symlink trick as `kdeglobals`. Tab strip, toolbars, address bar, menus,
+sidebar, findbar and the `about:` pages all end up on the palette's ten
+colour roles, with the accent on the selected tab and the focused address
+bar, exactly like niri's focus ring and waybar's active workspace.
+
+Two honest caveats:
+
+- Firefox reads those stylesheets **once, while it starts**. There's no
+  supported way to make a running Firefox re-read them, so a theme switch
+  lands at the next launch — same as Dolphin, unlike kitty and waybar which
+  the switcher can nudge.
+- `userChrome.css` works against Firefox's internal CSS variables, not a
+  documented config format. The names have been stable since the Proton
+  redesign, but they aren't API. If an update renames one, that surface falls
+  back to the built-in dark theme rather than breaking; the fix is to diff
+  against `browser.css` in the new version.
+
+All of that is niri-only, for the same reason the kitty `include` is: the
+Plasma hosts have no theme state for the symlinks to point at, so there
+Firefox wears its own dark theme and takes its accent from Plasma like any
+other GTK app.
+
+The niri hosts also get `xdg.mimeApps`, so `xdg-open` and every "open link"
+in the session resolve to Firefox. The Plasma hosts don't — they set
+`kdeglobals.General.BrowserApplication` instead, because letting home-manager
+own `~/.config/mimeapps.list` underneath a running Plasma means its "Default
+Applications" page silently can't save. The trade under niri is that "Set as
+default" inside Firefox, and any "always open with" choice, no longer stick:
+the file is a read-only symlink into the store, so those go in
+`home/joshr/niri/firefox.nix` instead.
+
+### What Nix owns and what Sync owns
+
+Nix owns the *shape* of the browser — which prefs are set, that custom
+stylesheets are on, that it handles `http(s)`. Sync owns the *contents* —
+bookmarks, history, tabs, logins, add-ons.
+
+That split is deliberate. Declaring add-ons here would need the NUR or the
+firefox-addons flake, and would then fight Sync every time the two disagreed:
+Nix would reinstall on the desk what you removed on the laptop. The prefs in
+`firefox.nix` are written to `user.js`, which Firefox re-applies on **every**
+start, so where the two overlap the declared value always wins. The practical
+rule: anything you want to change from inside the browser and have stick must
+not be listed in `firefox.nix`.
+
 ## Bootloader
 
 `local.boot.loader` picks one of three, in `modules/nixos/boot.nix`:
@@ -453,6 +534,158 @@ the prompt silently doesn't appear.
 Note that only fish carries the eza aliases (`ls`, `ll`, `la`, `lt`, `lg`) —
 those came from the dotfiles' `config.fish.tmpl` and haven't been mirrored
 into the other shells.
+
+## Development environments
+
+Both machines are set up so that **no language toolchain is installed
+globally**. Python, node, a Rust compiler, JDKs, `gcc`, database clients —
+none of it lives in the user profile. Each project declares what it needs in
+its own `flake.nix`, and direnv puts those tools on `PATH` when you `cd` in
+and takes them away again when you leave.
+
+That's not asceticism. Two projects wanting different Python minor versions
+is the normal case, and the moment toolchains are global, the second one is a
+problem to be worked around. Per-project shells make it a non-event, and the
+declaration travels with the repo, so the laptop and the desk agree without
+either being configured for that project at all.
+
+### What's installed to make this work
+
+`home/joshr/dev.nix`:
+
+- **direnv** with **nix-direnv** underneath it, hooked into fish, bash, zsh
+  and nushell. Plain direnv re-evaluates `use flake` from scratch on every
+  `cd`, which for a flake means seconds of evaluation each time; nix-direnv
+  caches the built profile and only re-evaluates when `flake.nix` or
+  `flake.lock` actually change. It also plants a GC root in `.direnv/`, so
+  the weekly `nix-collect-garbage` in `base.nix` can't delete a shell you're
+  still using.
+- **`dev-init`**, the one-command path below.
+- Language-agnostic tools that are genuinely wanted everywhere: `nil`,
+  `nixfmt-rfc-style`, `nix-output-monitor`, `nix-tree`, `cachix`, `just`,
+  `jq`, `yq-go`, `ripgrep`, `fd`, `lazygit`, `gnumake`.
+
+`modules/nixos/development.nix` adds the system settings this depends on, all
+of which need root: `keep-outputs` and `keep-derivations`, without which
+garbage collection deletes the *build* inputs of a dev shell (a shell isn't a
+package, so nothing points at its output); `trusted-users = [ "root"
+"@wheel" ]`, without which `cachix use` can't write a substituter; and
+`log-lines = 25`, because ten lines of a failed builder's output usually
+isn't the part that says what went wrong.
+
+### The one-command path
+
+In the project directory:
+
+```bash
+dev-init            # generic skeleton
+dev-init python     # or: node, rust, go
+```
+
+That copies a template's `flake.nix`, `.envrc` and `.gitignore` in and marks
+the `.envrc` trusted, so the shell is built and entered at the prompt you get
+back. Commit all three files — the whole point is that the next machine gets
+the same environment by cloning.
+
+`dev-init` refuses to run where a `flake.nix` already exists rather than
+overwrite one.
+
+### The manual path
+
+Two files. `flake.nix`:
+
+```nix
+{
+  inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+
+  outputs = { nixpkgs, ... }:
+    let
+      system = "x86_64-linux";
+      pkgs = nixpkgs.legacyPackages.${system};
+    in {
+      devShells.${system}.default = pkgs.mkShell {
+        packages = with pkgs; [ python312 postgresql ];
+
+        # Exported on entry, gone on exit.
+        env.DATABASE_URL = "postgres://localhost/dev";
+
+        shellHook = ''
+          echo "ready"
+        '';
+      };
+    };
+}
+```
+
+and `.envrc`:
+
+```
+use flake
+```
+
+Then `direnv allow`. direnv refuses to run an `.envrc` it hasn't been told to
+trust — that message on first entry, and after every edit, is the safety
+check working, not a failure.
+
+### Day to day
+
+| | |
+|---|---|
+| add a tool | put it in `packages`, save; direnv rebuilds on the next prompt |
+| find the attribute name | `nix search nixpkgs ripgrep`, or search.nixos.org |
+| pin the exact versions | commit `flake.lock` — it's what makes the shell reproducible |
+| update them | `nix flake update`, or `nix flake update nixpkgs` for one input |
+| force a rebuild | `direnv reload` |
+| run one command without entering | `nix develop -c pytest` |
+| a second shell (e.g. CI) | `devShells.${system}.ci = ...`, entered with `use flake .#ci` |
+
+Anything the project writes at runtime — a venv, `node_modules`, `GOPATH` —
+stays inside the project directory. The templates set that up and ignore the
+paths in `.gitignore`, because the Nix store is read-only and the alternative
+is a tool failing halfway through an install with a confusing error.
+
+### Secrets
+
+Don't put them in `flake.nix` — it goes in the store, world-readable. Use a
+gitignored `.env` and read it from `.envrc`, which direnv evaluates on your
+machine and never copies anywhere:
+
+```bash
+# .envrc
+use flake
+dotenv_if_exists .env
+```
+
+### A project that isn't yours
+
+Most repos don't ship a flake. Add one anyway — `dev-init` in a clone works
+fine, and `flake.nix`, `.envrc` and `.direnv/` can stay out of the repo's
+history via `.git/info/exclude` if you'd rather not commit them upstream.
+
+If a project has a `shell.nix` or `default.nix` already, skip the flake
+entirely and let direnv use it:
+
+```
+# .envrc
+use nix
+```
+
+And when the dependency really is a whole service rather than a binary —
+Postgres, Redis, a message queue — reach for Docker Compose instead; both
+hosts have it via `modules/nixos/virtualisation.nix`. A dev shell is for
+tools, not daemons.
+
+### VS Code
+
+The editor has to be told about direnv, or it sees the bare system `PATH` and
+reports every import in the project as unresolved. `mkhl.direnv` is in the
+extension list in `home/joshr/vscode.nix` for that reason — it hands the
+shell's environment to language servers, terminals and the debugger. If
+something still looks wrong, launching `code .` from inside a directory
+direnv has already loaded is the quick way to tell the two apart.
+
+`jnoortheen.nix-ide` is in the list too, pointed at the `nil` and `nixfmt`
+from `dev.nix` rather than downloading its own.
 
 ## The root account
 
@@ -760,6 +993,10 @@ than from memory, but please run `nix flake check` before your first
 - exact widget/option names in `plasma.nix` if plasma-manager's schema has
   moved since this was written
 - the NVIDIA `open` kernel module flag for your specific GPU
+- the Firefox `userChrome.css` variable names in `theming.nix`, which are
+  Firefox internals rather than API — a surface that comes out stock-coloured
+  instead of themed means one of them was renamed, not that anything is
+  broken. See "The browser".
 
 ## Updating the dotfiles-derived assets
 

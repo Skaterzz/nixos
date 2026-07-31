@@ -351,15 +351,15 @@ let
             seen_labels="$seen_labels|$label|"
 
             # Strip the leading slash from $rel to prevent double slashes (://)
-            local rel="''${rel#/}"
+            local limine_rel="''${rel#/}"
 
             # if_fw_type hides the entry if the machine is ever booted in BIOS
             # mode, where chainloading an EFI binary cannot work.
             printf '//%s\n' "$label"
-            printf '    comment: Chainloaded from %s/%s\n' "$volume" "$rel"
+            printf '    comment: Chainloaded from %s/%s\n' "$volume" "''${limine_rel}"
             printf '    protocol: efi\n'
             printf '    if_fw_type: UEFI\n'
-            printf '    path: %s/%s\n' "$volume" "$rel"
+            printf '    path: %s/%s\n' "$volume" "''${limine_rel}"
           done
         }
 

@@ -256,6 +256,32 @@ let
   };
 
   # Session menu: shown by the waybar power button and a hotkey.
+  # Switch to the login greeter, leaving this session running on its own VT.
+  #
+  # SDDM implements the org.freedesktop.DisplayManager D-Bus interface, whose
+  # Seat object has SwitchToGreeter — that's the supported way to do this;
+  # there's no CLI equivalent. SDDM exports the seat path as XDG_SEAT_PATH in
+  # the session, with Seat0 as the fallback for a single-seat machine.
+  #
+  # The session is locked first. SwitchToGreeter doesn't lock anything, so
+  # without this, switching back would land straight in an unlocked desktop.
+  switchUser = pkgs.writeShellApplication {
+    name = "switch-user";
+    runtimeInputs = with pkgs; [ dbus lockSession ];
+    text = ''
+      seat="''${XDG_SEAT_PATH:-/org/freedesktop/DisplayManager/Seat0}"
+
+      # Lock in the background — lock-session blocks until unlocked.
+      lock-session &
+      sleep 0.3
+
+      dbus-send --system --print-reply \
+        --dest=org.freedesktop.DisplayManager \
+        "$seat" \
+        org.freedesktop.DisplayManager.Seat.SwitchToGreeter
+    '';
+  };
+
   sessionMenu = pkgs.writeShellApplication {
     name = "session-menu";
     runtimeInputs = with pkgs; [
@@ -263,21 +289,24 @@ let
       systemd
       niri
       lockSession
+      switchUser
     ];
     text = ''
       choice="$(printf '%s\n' \
         "  Lock" \
+        "  Switch user" \
         "  Log out" \
         "  Suspend" \
         "  Reboot" \
         "  Shut down" \
-        | wofi --dmenu --prompt "Session" --insensitive --width 260 --height 260)"
+        | wofi --dmenu --prompt "Session" --insensitive --width 260 --height 300)"
 
       case "$choice" in
-        *Lock*)     lock-session ;;
-        *"Log out"*) niri msg action quit --skip-confirmation ;;
-        *Suspend*)  systemctl suspend ;;
-        *Reboot*)   systemctl reboot ;;
+        *Lock*)        lock-session ;;
+        *"Switch user"*) switch-user ;;
+        *"Log out"*)   niri msg action quit --skip-confirmation ;;
+        *Suspend*)     systemctl suspend ;;
+        *Reboot*)      systemctl reboot ;;
         *"Shut down"*) systemctl poweroff ;;
       esac
     '';
@@ -294,6 +323,7 @@ in
     wallpaperRestore
     screenshot
     lockSession
+    switchUser
     sessionMenu
   ];
 
@@ -307,6 +337,7 @@ in
       wallpaperRestore
       screenshot
       lockSession
+      switchUser
       sessionMenu
       ;
   };

@@ -34,4 +34,21 @@
 
   # Trim for the SSD.
   services.fstrim.enable = true;
+
+  # Closing the lid suspends only on battery.
+  #
+  # HandleLidSwitchExternalPower defaults to whatever HandleLidSwitch is, so
+  # it has to be set explicitly to get the "battery only" behaviour — setting
+  # HandleLidSwitch alone would suspend on AC too.
+  #
+  # Docked is ignored separately: with the lid shut and external displays
+  # attached, suspending is rarely what's wanted.
+  #
+  # (These live under services.logind.settings.Login now; the old
+  # services.logind.lidSwitch* options are renamed aliases that warn.)
+  services.logind.settings.Login = {
+    HandleLidSwitch = "suspend";
+    HandleLidSwitchExternalPower = "ignore";
+    HandleLidSwitchDocked = "ignore";
+  };
 }

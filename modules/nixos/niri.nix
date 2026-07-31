@@ -406,6 +406,6 @@ in
     HandleLidSwitchExternalPower = "lock";
 
     # A system with multiple displays may count as docked.
-    HandleLidSwitchDocked = "lock";
+    #HandleLidSwitchDocked = "lock";
   };
 }

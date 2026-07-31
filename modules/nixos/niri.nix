@@ -157,12 +157,16 @@ let
   # config has no bearing on it, which is why the greeter comes up
   # auto-detected regardless of local.niri.outputs.
   #
-  # Rather than synthesise that file (an undocumented JSON format, on the
-  # login screen, where a malformed one is expensive), this reuses the one
-  # KWin already wrote for joshr. modules/nixos/desktop.nix does the same
-  # thing for the Plasma greeter. It only exists if a Plasma session has run
-  # on this machine and arranged the displays; absent, kwin auto-detects and
-  # nothing is worse than today.
+  # Two sources, in priority order:
+  #
+  #   1. the one `niri-sync-displays` generates from niri's live layout
+  #      (home/joshr/niri/displays-sync.nix), which runs on every rebuild
+  #   2. whatever KWin last wrote for joshr, i.e. the Plasma arrangement
+  #
+  # The generated file is KWin's own, edited in place — the EDID identifiers
+  # KWin matches monitors by are preserved, only mode/scale/position change.
+  # Absent both, kwin auto-detects and nothing is worse than today.
+  kwinOutputGenerated = "/home/joshr/.local/state/niri-theme/kwinoutputconfig.json";
   kwinOutputConfig = "/home/joshr/.config/kwinoutputconfig.json";
 
   syncSddmTheme = pkgs.writeShellScript "sddm-theme-sync" ''
@@ -205,11 +209,14 @@ let
     # --- greeter display layout ---------------------------------------
     # See the kwinOutputConfig note above. Copied rather than symlinked so
     # the greeter can read it without traversing joshr's home.
-    if [ -f "${kwinOutputConfig}" ]; then
-      install -d -m 0700 -o sddm -g sddm /var/lib/sddm/.config
-      install -m 0600 -o sddm -g sddm \
-        "${kwinOutputConfig}" /var/lib/sddm/.config/kwinoutputconfig.json
-    fi
+    for src in "${kwinOutputGenerated}" "${kwinOutputConfig}"; do
+      if [ -f "$src" ]; then
+        install -d -m 0700 -o sddm -g sddm /var/lib/sddm/.config
+        install -m 0600 -o sddm -g sddm \
+          "$src" /var/lib/sddm/.config/kwinoutputconfig.json
+        break
+      fi
+    done
   '';
 in
 {
@@ -253,6 +260,7 @@ in
     pathConfig.PathChanged = [
       themeStateFile
       wallpaperStateFile
+      kwinOutputGenerated
       kwinOutputConfig
     ];
   };

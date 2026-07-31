@@ -13,6 +13,7 @@
     ./waybar.nix
     ./notifications.nix
     ./lock.nix
+    ./displays-sync.nix
   ];
 
   home.packages = with pkgs; [

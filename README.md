@@ -179,6 +179,21 @@ Three things worth knowing:
 Also available per output: `scale`, `transform` (rotation),
 `variableRefreshRate`, and `off`.
 
+**The greeter's own display layout** is a separate thing from
+`local.niri.outputs`: SDDM's greeter runs its own kwin_wayland, which reads
+`kwinoutputconfig.json`. `niri-sync-displays` (alias `sync-displays`) copies
+niri's live layout into that file, and it runs automatically on every
+`nixos-rebuild switch`.
+
+It *edits* the config KWin already wrote rather than generating one, because
+KWin matches saved entries to monitors by EDID identifier first — a file
+written from scratch has no EDID fields and would be silently ignored. So it
+needs KWin to have written one at least once, which means arranging the
+displays in a Plasma session on this machine. Without it the script says so
+and the greeter just auto-detects.
+
+Like the palette and wallpaper, this lands at the next greeter start.
+
 **Workspaces follow a display** via `local.niri.workspaceOutput` in the same
 file. niri creates a workspace on whichever output is focused at the time, so
 without it `Mod+1`–`Mod+5` scatter across displays depending on where you

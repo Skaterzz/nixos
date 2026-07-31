@@ -164,6 +164,7 @@ let
     #network,
     #battery,
     #custom-idle-inhibitor,
+    #custom-lock,
     #custom-session {
       padding: 0 10px;
       margin: 4px 1px;
@@ -184,7 +185,8 @@ let
     #pulseaudio:hover,
     #network:hover,
     #battery:hover,
-    #custom-idle-inhibitor:hover {
+    #custom-idle-inhibitor:hover,
+    #custom-lock:hover {
       background-color: alpha(@accent, 0.14);
     }
 
@@ -217,6 +219,10 @@ let
       background-color: @err;
     }
 
+    /* Lock and power are a matched pair at the end of the bar: same size,
+       same padding, so they read as one group of session controls. They
+       differ only on hover — the destructive one goes red. */
+    #custom-lock,
     #custom-session {
       color: @accent;
       font-size: 15px;

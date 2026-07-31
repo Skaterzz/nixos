@@ -35,20 +35,31 @@
   # Trim for the SSD.
   services.fstrim.enable = true;
 
-  # Closing the lid suspends only on battery.
+  # Closing the lid suspends only on battery. On mains it locks instead.
+  #
+  # This module is the single owner of lid behaviour. modules/nixos/niri.nix
+  # used to set the same three keys as well, with `lock` where this file had
+  # `ignore` — and since laptop-niri imports both, that was a conflicting
+  # definition NixOS refuses to merge, not merely a duplicate. The `lock`
+  # values won on the merge here, because they're the safer half of the
+  # disagreement: `ignore` leaves the session open on a machine you've just
+  # shut and walked away from.
   #
   # HandleLidSwitchExternalPower defaults to whatever HandleLidSwitch is, so
   # it has to be set explicitly to get the "battery only" behaviour — setting
   # HandleLidSwitch alone would suspend on AC too.
   #
-  # Docked is ignored separately: with the lid shut and external displays
-  # attached, suspending is rarely what's wanted.
+  # Docked is separate because a machine with external displays attached
+  # counts as docked, and suspending that is rarely what's wanted. It locks
+  # rather than suspends for the same reason as external power; `ignore` is
+  # the one word to change if you'd rather close the lid and keep working on
+  # the external screens without re-authenticating.
   #
   # (These live under services.logind.settings.Login now; the old
   # services.logind.lidSwitch* options are renamed aliases that warn.)
   services.logind.settings.Login = {
     HandleLidSwitch = "suspend";
-    HandleLidSwitchExternalPower = "ignore";
-    HandleLidSwitchDocked = "ignore";
+    HandleLidSwitchExternalPower = "lock";
+    HandleLidSwitchDocked = "lock";
   };
 }

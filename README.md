@@ -104,8 +104,14 @@ home/joshr/niri/
 ### The bar
 
 Left is workspaces and the focused window title, centre is the clock and
-date, right is the tray, volume, network, battery and a session button. Each
+date, right is the tray, media controls, volume, network, battery, the idle
+inhibitor, then **lock** and **power** as a matched pair at the far end. Each
 group is its own rounded floating pill rather than one long bar.
+
+Lock and power are styled identically and differ only on hover — the power
+button goes red, because it's the one that can end the session. The lock
+button runs the same `lock-session` as `Mod+L` and the session menu's "Lock"
+entry, so all three take the active theme's colours.
 
 ### Theme switching
 
@@ -210,6 +216,31 @@ restored at login.
 `Mod+Ctrl+V` opens the history in wofi; picking an entry puts it back on the
 clipboard. `clipboard-wipe` empties it, and isn't bound to a key on purpose.
 
+**Removing single entries**, two ways, because wofi has no way to put a button
+on a row:
+
+- **`Delete`** in the picker removes the entry under the cursor and reopens
+  it, so several can go in a row.
+- **`✕  Delete entries…`**, the first row of the list, switches the picker
+  into a mode where Enter — or a mouse click — removes instead of copies.
+  `←  Back to copying` returns. This is the discoverable version, and the
+  only one reachable with a mouse.
+
+`Backspace` is deliberately not bound. wofi's dmenu mode puts the cursor in a
+search box and Backspace is how you correct what you typed there, so binding
+it would make the history impossible to search. `Delete` is free, which is
+why it's the one. Adding another (`Shift-BackSpace`, say) is one more
+`--define=key_custom_1=…` in `clipboard.nix` plus its exit code in the case
+at the bottom of the loop.
+
+The bind is passed with wofi's `--define`, not set in `programs.wofi.settings`
+— that config is shared with the launcher and the theme, wallpaper and session
+menus, and binding `Delete` globally would arm a delete exit code in all of
+them. One caveat from wofi(5): a custom key *"will not cause wofi to exit, it
+will only set its exit code for when it does"*, so on wofi 1.5.3 `Delete` takes
+effect when the picker is next dismissed. Either way it's the entry under the
+cursor that goes, and the script handles both behaviours.
+
 Wayland has no clipboard manager in the compositor — a copied selection lives
 in the process that copied it and vanishes when that process exits, which is
 why closing a browser tab loses what you just copied out of it. `cliphist`
@@ -276,6 +307,24 @@ and powerdevil under Plasma, and "don't fall asleep" is not "don't lock the
 screen". On battery, nothing changes at all. The Plasma hosts also set
 `powerdevil.AC.autoSuspend.action = "nothing"` directly, so the behaviour
 doesn't rest on one daemon asking another the right question.
+
+### The lid
+
+`modules/nixos/laptop.nix` is the single owner: **suspend** on battery,
+**lock** on mains, **lock** when docked.
+
+It didn't used to be. `modules/nixos/niri.nix` set the same three
+`services.logind.settings.Login` keys, and the two disagreed — `lock` there
+against `ignore` here for external power and docked. `laptop-niri` imports
+both modules, and two modules setting one option to different values is a
+conflict NixOS refuses to merge, so that host could not evaluate at all. The
+`lock` values won the merge: `ignore` leaves the session open on a machine
+you've just shut and walked away from. A lid is hardware rather than a
+desktop session, which is why `laptop.nix` is where it lives — `niri.nix`
+also runs on `gamestation-niri`, which has no lid.
+
+Set `HandleLidSwitchDocked = "ignore"` if you'd rather close the lid with
+external screens attached and keep working without re-authenticating.
 
 ### Displays
 

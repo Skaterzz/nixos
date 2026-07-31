@@ -77,6 +77,7 @@ home/joshr/niri/
   waybar.nix                  # bar layout + style
   notifications.nix           # dunst + wofi
   lock.nix                    # swayidle timers
+  openrgb.nix                 # tray applet autostart + icon
   scripts.nix                 # theme/wallpaper/screenshot/session helpers
 ```
 
@@ -333,6 +334,108 @@ locks before suspend.
 The system module adds `security.pam.services.swaylock` — without that PAM
 entry swaylock accepts your password and then rejects it, which locks you out
 of your own session.
+
+### RGB lighting
+
+The OpenRGB daemon is a system service (`modules/nixos/gaming.nix`); the niri
+session starts its tray applet at login and applies a profile:
+
+```nix
+local.openrgb.profile = "main";   # ~/.config/OpenRGB/main.orp
+```
+
+Profiles are made from OpenRGB's own UI ("Save Profile") and are runtime
+state, not something this repo writes — naming one that doesn't exist yet is
+harmless, OpenRGB says so and carries on. The applet is launched with
+`--startminimized`, which is load-bearing twice over: OpenRGB drops to CLI
+mode and *exits* as soon as it's given any option, so `--profile` on its own
+would set the lighting and quit with no tray icon. `--startminimized` implies
+`--gui` and keeps the window out of the way.
+
+`local.openrgb.monochromeIcon` (on by default) swaps the multicolour logo for
+a plain one. It reaches the **launcher** icon only: OpenRGB loads its tray
+icon from a pixmap compiled into the binary rather than looking it up in the
+icon theme, so nothing outside the package can change that one. Upstream has
+an open request for it (OpenRGB issue #2453).
+
+## Bootloader
+
+`local.boot.loader` picks one of three, in `modules/nixos/boot.nix`:
+
+| | themed | finds other OSes by |
+|---|---|---|
+| `limine` (default) | wallpaper + full palette, follows runtime switches | scanning the ESP for other loaders |
+| `grub` | palette + fixed splash, build time only | `os-prober` |
+| `systemd-boot` | not at all | itself, no setting needed |
+
+limine is the default because it's the only one that can put the desktop's
+wallpaper and colours on the boot menu. grub is the fallback for anything it
+can't handle — BIOS/MBR, odd partition layouts, firmware that dislikes
+limine's EFI binary — and it detects *more*, since os-prober looks inside
+other partitions rather than only reading this ESP. systemd-boot is the
+escape hatch and what this repo used before the module existed:
+
+```nix
+local.boot.loader = "systemd-boot";
+```
+
+**Changing this rewrites how the machine boots.** Do it on a rebuild you can
+watch, with install media to hand. The previous generation stays in the *old*
+loader's menu — but only while that loader is still installed and still the
+one your firmware runs.
+
+### How the boot menu ends up wearing the desktop's colours
+
+The menu is drawn before any of the desktop exists, from a text file on the
+EFI System Partition. So the palette and wallpaper are *pushed* there ahead of
+time, the same way the SDDM greeter is fed, and for the same reason: the thing
+being themed can't read your home directory.
+
+The NixOS limine module regenerates `<esp>/limine/limine.conf` on every
+rebuild, so a runtime edit can't just go anywhere in it. What makes it work is
+that the module emits two verbatim blocks at known ends of the file —
+`extraConfig` first, `extraEntries` last. Each gets a sentinel-delimited
+region, filled at build time with the default palette and no detected systems.
+`limine-theme-sync` then rewrites the *inside* of each region, running at
+boot, whenever you pick a theme or wallpaper, and at the end of every
+bootloader install. If it never runs, the menu is still valid and still
+themed, just with the default palette.
+
+The regions sit where they do because limine's config has no separator between
+global options and menu entries: an entry is opened by a line starting with
+`/` and swallows every option after it. Theming keys are global and must go
+above the first entry; detected-OS entries must go below the NixOS ones.
+
+Three things keep this from being a way to brick the machine, and all three
+are enforced in the module:
+
+- **`enrollConfig` stays off.** Enrolling hashes the config into the limine
+  binary; a rewritten file then fails its own integrity check and you stop at
+  the bootloader. This is the one setting that turns a cosmetic feature into
+  an unbootable system.
+- **The wallpaper lives outside `<esp>/limine/`.** The installer walks that
+  directory and deletes every file it didn't itself write, so an image parked
+  there survives exactly until the next rebuild.
+- **The config never names a wallpaper that isn't there.** Both the build-time
+  block and the sync emit the `wallpaper:` line only alongside a file that
+  exists.
+
+`style.wallpapers` and the `style.graphicalTerminal.*` options are deliberately
+left alone — they'd write the same keys from build-time values, duplicating
+every line, and `style.wallpapers` additionally appends a BLAKE2b hash of the
+image to the path, which is exactly what stops a file being swapped underneath
+it at runtime.
+
+Detection is ESP-only under limine: an OS on a disk that isn't mounted here
+won't be seen, and a distro shipping both shim and grub is listed once (shim
+wins — it's what boots under Secure Boot and hands over to grub itself).
+
+```nix
+local.boot.detectOtherSystems = false;   # skip the scan entirely
+local.boot.wallpaper = ./some.png;       # menu image before niri picks one
+local.boot.branding = "gamestation";     # text above the menu
+local.boot.menuTransparency = "50";      # TT of limine's TTRRGGBB
+```
 
 ## Shells
 

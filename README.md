@@ -216,21 +216,39 @@ Three things worth knowing:
 Also available per output: `scale`, `transform` (rotation),
 `variableRefreshRate`, and `off`.
 
-**The greeter's own display layout is left to auto-detection**, and is a
-separate thing from `local.niri.outputs`: SDDM's greeter runs its own
-kwin_wayland, which reads `kwinoutputconfig.json` and knows nothing about
-niri's config.
+**The greeter follows the same file.** SDDM's greeter runs its own
+kwin_wayland, which knows nothing about niri and reads its layout from
+`kwinoutputconfig.json`. That file is generated from `local.niri.outputs`, so
+editing `displays/<host>.nix` and rebuilding moves both the session and the
+login screen. A host with no outputs configured (the laptop) auto-detects.
 
-An earlier version wrote that file to make the greeter match niri's
-arrangement. It's been removed — it brought the greeter up on one display
-instead of both. A saved layout is all-or-nothing: kwin matches entries to
-monitors by EDID and applies enabled/disabled state along with mode and
-position, so a file that doesn't match the hardware exactly is worse than no
-file. Auto-detection lights up every connected display, which is what a login
-screen should do.
+An earlier version *copied* the file KWin had written for the Plasma session,
+on the theory that a from-scratch one would be ignored for lacking the EDID
+fields KWin matches monitors by. That reading was wrong — the EDID comparison
+in `findOutputIndex` is only reached when the *saved entry* carries an EDID
+identifier, and an entry without one falls through to matching on connector
+name. Copying a whole Plasma arrangement also carried its enabled/disabled
+state across, which is the likeliest reason the greeter came up on one
+display.
 
-The greeter may therefore use different modes or a different arrangement than
-your niri session. That's the trade for having it show up reliably.
+The generated file is built so its failure modes are quiet: nothing ever
+writes `"enabled": false`, so an unmatched connector name means KWin
+auto-detects that output and lights it up rather than leaving it dark, and a
+file it can't parse means it auto-detects everything. The one case that could
+genuinely go wrong is a mode a display won't take — and these are the modes
+niri already drives the same monitors with.
+
+If the login screen does come up wrong, recover from a TTY (`Ctrl+Alt+F2`):
+
+```sh
+sudo rm /var/lib/sddm/.config/kwinoutputconfig.json
+```
+
+That restores auto-detection until the next rebuild. To stop generating it
+altogether, set `local.sddm.syncGreeterDisplays = false`. Booting the previous
+generation works too.
+
+Like the palette and wallpaper, a change here lands at the next greeter start.
 
 **Workspaces follow a display** via `local.niri.workspaceOutput` in the same
 file. niri creates a workspace on whichever output is focused at the time, so

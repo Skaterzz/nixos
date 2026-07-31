@@ -150,18 +150,151 @@ let
   themeStateFile = "${niriStateDir}/current";
   wallpaperStateFile = "${niriStateDir}/wallpaper";
 
-  # The greeter's display layout is deliberately left alone.
+  # --- the greeter's display layout ---------------------------------------
   #
-  # An earlier version copied a kwinoutputconfig.json into the sddm user's
-  # home so the greeter's kwin_wayland would match niri's arrangement. It
-  # didn't work: the greeter came up on one display instead of both. A saved
-  # layout is all-or-nothing — kwin matches entries to monitors by EDID and
-  # applies enabled/disabled state along with mode and position, so a file
-  # that doesn't match the hardware exactly is worse than none at all.
+  # SDDM's Wayland greeter runs its own kwin_wayland, which knows nothing
+  # about niri and takes its layout from kwinoutputconfig.json in the sddm
+  # user's home. This generates that file from the very same
+  # local.niri.outputs the session uses, so home/joshr/displays/<host>.nix
+  # stays the one place a monitor change is described.
   #
-  # With no file, kwin auto-detects and lights up everything it finds, which
-  # is what a login screen should do.
+  # Why generate rather than copy
+  # -----------------------------
+  # The previous attempt copied the file KWin had written for joshr, on the
+  # theory that a from-scratch file would be ignored for lacking the EDID
+  # fields KWin matches monitors by. That was the wrong read of
+  # OutputConfigurationStore::findOutputIndex: the EDID comparison is only
+  # reached when the *saved entry* carries an EDID identifier. An entry
+  # without one falls through to matching on connector name, which is
+  # exactly what this writes. Copying a whole Plasma arrangement also
+  # dragged along its enabled/disabled state, which is the likeliest reason
+  # the greeter came up on one display.
+  #
+  # Failure modes, deliberately
+  # ---------------------------
+  # Nothing here ever writes "enabled": false. If a connector name doesn't
+  # match what the greeter sees, KWin finds no saved entry and auto-detects
+  # that output — it lights up rather than staying dark. Same if the JSON is
+  # malformed or the setup doesn't match: KWin falls back to detection. The
+  # one genuinely bad case is a mode the display can't take, and these modes
+  # come from the file niri already drives the same monitors with.
+  #
+  # If it still comes out wrong, the recovery is a TTY (Ctrl+Alt+F2):
+  #
+  #     sudo rm /var/lib/sddm/.config/kwinoutputconfig.json
+  #
+  # which restores auto-detection until the next rebuild, or set
+  # local.sddm.syncGreeterDisplays = false to stop generating it. Booting
+  # the previous generation works too.
   kwinOutputSddm = "/var/lib/sddm/.config/kwinoutputconfig.json";
+
+  # The session's own display config, read straight out of home-manager.
+  greeterOutputs = lib.filter (o: !o.off) config.home-manager.users.joshr.local.niri.outputs;
+
+  # niri writes rotation as "90"/"flipped-90"; KWin spells them differently.
+  kwinTransform =
+    t:
+    if t == null then
+      "normal"
+    else
+      {
+        "normal" = "normal";
+        "90" = "rotate-90";
+        "180" = "rotate-180";
+        "270" = "rotate-270";
+        "flipped" = "flipped";
+        "flipped-90" = "flipped-90";
+        "flipped-180" = "flipped-180";
+        "flipped-270" = "flipped-270";
+      }
+      .${t} or "normal";
+
+  # "2560x1440@180.000" -> { width, height, refreshRate } with the rate in
+  # millihertz, which is what KWin stores. Via fromJSON rather than string
+  # arithmetic so a fractional rate like 59.951 survives, and because
+  # lib.toInt would choke on the leading zeros in "000".
+  parseMode =
+    m:
+    let
+      parts = if m == null then null else builtins.match "([0-9]+)x([0-9]+)@([0-9.]+)" m;
+    in
+    if parts == null then
+      null
+    else
+      {
+        width = lib.toInt (builtins.elemAt parts 0);
+        height = lib.toInt (builtins.elemAt parts 1);
+        refreshRate = builtins.floor (builtins.fromJSON (builtins.elemAt parts 2) * 1000.0 + 0.5);
+      };
+
+  # Per-monitor settings. No edidIdentifier or edidHash on purpose — that's
+  # what selects connector-name matching, and the connector names here are
+  # the ones `niri msg outputs` reports.
+  outputEntry =
+    o:
+    let
+      mode = parseMode o.mode;
+    in
+    {
+      connectorName = o.name;
+      scale = if o.scale == null then 1 else o.scale;
+      transform = kwinTransform o.transform;
+      vrrPolicy = if o.variableRefreshRate then "automatic" else "never";
+    }
+    // lib.optionalAttrs (mode != null) {
+      mode = {
+        basic = mode;
+        flags = 0;
+      };
+    };
+
+  # Arrangement. Positions live here rather than on the output entries.
+  #
+  # KWin treats priority 0 as the primary display. niri has no such concept,
+  # so focusAtStartup — the nearest equivalent, and what the session already
+  # uses — is ordered first.
+  orderedOutputs =
+    lib.filter (o: o.focusAtStartup) greeterOutputs ++ lib.filter (o: !o.focusAtStartup) greeterOutputs;
+
+  priorityOf =
+    o:
+    let
+      go = i: l: if l == [ ] then 0 else if (builtins.head l).name == o.name then i else go (i + 1) (builtins.tail l);
+    in
+    go 0 orderedOutputs;
+
+  setupEntry = i: o: {
+    outputIndex = i;
+    enabled = true;
+    priority = priorityOf o;
+    position =
+      if o.position == null then
+        {
+          x = 0;
+          y = 0;
+        }
+      else
+        {
+          inherit (o.position) x y;
+        };
+  };
+
+  kwinOutputFile = pkgs.writeText "kwinoutputconfig.json" (
+    builtins.toJSON [
+      {
+        name = "outputs";
+        data = map outputEntry greeterOutputs;
+      }
+      {
+        name = "setups";
+        data = [ { outputs = lib.imap0 setupEntry greeterOutputs; } ];
+      }
+    ]
+  );
+
+  # Only write one if there's something to say. The laptop leaves outputs
+  # empty on purpose, and there auto-detection is the right answer.
+  writeGreeterOutputs = config.local.sddm.syncGreeterDisplays && greeterOutputs != [ ];
 
   syncSddmTheme = pkgs.writeShellScript "sddm-theme-sync" ''
     set -eu
@@ -201,14 +334,37 @@ let
     fi
 
     # --- greeter display layout ---------------------------------------
-    # Remove any layout an earlier build copied here. This is state under
-    # /var/lib, so NixOS won't clean it up on its own — dropping the code
-    # that wrote it would otherwise leave the greeter stuck on the bad
-    # layout forever. See the kwinOutputSddm note above.
-    rm -f "${kwinOutputSddm}"
+    # See the kwinOutputSddm note above. Written fresh every run rather than
+    # only when absent, so editing displays/<host>.nix and rebuilding is
+    # enough — otherwise a stale file from an earlier build would win
+    # forever, which is state under /var/lib that NixOS won't clean up.
+    ${
+      if writeGreeterOutputs then
+        ''
+          # The parent is the sddm user's home. Created explicitly with the
+          # right owner because this service can run before sddm ever has,
+          # and `install -d` would otherwise leave a root-owned home that
+          # the greeter can't write to.
+          install -d -m 0750 -o sddm -g sddm /var/lib/sddm
+          install -d -m 0700 -o sddm -g sddm /var/lib/sddm/.config
+          install -m 0600 -o sddm -g sddm \
+            ${kwinOutputFile} "${kwinOutputSddm}"
+        ''
+      else
+        ''
+          # No outputs configured for this host: let kwin auto-detect, and
+          # clear anything an earlier build left behind.
+          rm -f "${kwinOutputSddm}"
+        ''
+    }
   '';
 in
 {
+  # local.sddm.* lives in its own module so this one can stay a plain config
+  # attrset — declaring an option here would mean wrapping everything below
+  # in `config = { … }`.
+  imports = [ ./options.nix ];
+
   programs.niri.enable = true;
 
   # Display manager. SDDM's Wayland greeter is what niri wants; the X11

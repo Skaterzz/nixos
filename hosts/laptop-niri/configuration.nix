@@ -19,8 +19,14 @@
 
     ../../modules/nixos/laptop.nix
     ../../modules/nixos/gaming.nix
-    ../../modules/nixos/virtualisation.nix
     ../../modules/nixos/users.nix
+
+    # Development tooling: direnv, Docker, libvirtd/QEMU/virt-manager, and
+    # the nix settings per-project dev shells need. Uncomment to enable.
+    #
+    # This is where Docker now lives — the old virtualisation.nix was folded
+    # into it — so leaving it off means no containers on this host either.
+    # ../../modules/nixos/development.nix
 
     # NOT imported: plasma-xdg-data-dirs.nix — there is no plasma-workspace
     # in a niri session, so nixpkgs#126590 can't bite here.

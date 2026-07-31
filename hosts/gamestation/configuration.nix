@@ -3,6 +3,7 @@
 {
   imports = [
     ./hardware-configuration.nix
+    ./kernel-params.nix
     ../../modules/nixos/base.nix
     ../../modules/nixos/boot.nix
     ../../modules/nixos/desktop.nix
@@ -12,8 +13,14 @@
     ../../modules/nixos/plasma-xdg-data-dirs.nix
     ../../modules/nixos/nvidia.nix
     ../../modules/nixos/gaming.nix
-    ../../modules/nixos/virtualisation.nix
     ../../modules/nixos/users.nix
+
+    # Development tooling: direnv, Docker, libvirtd/QEMU/virt-manager, and
+    # the nix settings per-project dev shells need. Uncomment to enable.
+    #
+    # This is where Docker now lives — the old virtualisation.nix was folded
+    # into it — so leaving it off means no containers on this host either.
+    # ../../modules/nixos/development.nix
   ];
 
   networking.hostName = "gamestation";

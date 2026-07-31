@@ -21,9 +21,15 @@ let
     "github.vscode-pull-request-github"
     "glenn2223.live-sass"
     "icrawl.discord-vscode"
+    # Nix language support, and the bridge that lets the editor see a
+    # project's direnv shell — without it every import in a flake-managed
+    # project reads as unresolved. See "Development environments" in the
+    # README.
+    "jnoortheen.nix-ide"
     "lakshits11.monokai-pirokai"
     "mathematic.vscode-latex"
     "mhutchie.git-graph"
+    "mkhl.direnv"
     "mjpvs.latex-previewer"
     "ms-azuretools.vscode-containers"
     "ms-azuretools.vscode-docker"
@@ -102,6 +108,17 @@ in
         "terminal.integrated.defaultProfile.linux"
         "terminal.integrated.profiles.linux"
       ];
+      # Nix tooling, pointed at what modules/nixos/development.nix installs
+      # rather than letting the extension fetch its own copies. Both names
+      # resolve from PATH, so they simply don't work on a host with that
+      # module still commented out.
+      "nix.enableLanguageServer" = true;
+      "nix.serverPath" = "nil";
+      "nix.formatterPath" = "nixfmt";
+      "nix.serverSettings" = {
+        nil.formatting.command = [ "nixfmt" ];
+      };
+
       "security.workspace.trust.untrustedFiles" = "open";
       "workbench.editor.empty.hint" = "hidden";
       "github.copilot.nextEditSuggestions.enabled" = true;

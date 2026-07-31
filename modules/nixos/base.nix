@@ -3,7 +3,7 @@
 {
   nix.settings.experimental-features = [ "nix-command" "flakes" ];
 
-  # NVIDIA, Steam, VS Code, Vivaldi, Spotify and Discord are all unfree.
+  # NVIDIA, Steam, VS Code, Spotify and Discord are all unfree.
   # This has to be set as a module option so it applies to the system pkgs
   # (and, via home-manager.useGlobalPkgs, to joshr's profile too).
   nixpkgs.config.allowUnfree = true;

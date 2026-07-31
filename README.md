@@ -14,16 +14,22 @@ flake.nix                        # inputs: nixpkgs, home-manager, plasma-manager
 hosts/gamestation/                # the desk: NVIDIA, multi-monitor
   configuration.nix               # top-level system config, imports the modules below
   hardware-configuration.nix      # PLACEHOLDER — replace with your real hardware scan
+  kernel-params.nix               # boot.kernelParams, shared with gamestation-niri
 hosts/laptop/                     # portable: no NVIDIA, single display
+  configuration.nix
+  hardware-configuration.nix      # PLACEHOLDER — regenerate on the machine
+hosts/server/                     # headless: no desktop, cron jobs
   configuration.nix
   hardware-configuration.nix      # PLACEHOLDER — regenerate on the machine
 modules/nixos/
   base.nix                        # nix settings, locale/timezone, fish, base fonts
   desktop.nix                     # SDDM (Wayland) + Plasma 6, portals, audio, Flatpak
+  development.nix                 # direnv, Docker, libvirtd/QEMU/virt-manager, nix
+                                  #   settings — commented out per host, see below
+  cron.nix                        # local.cron.jobs -> the system crontab
   plasma-xdg-data-dirs.nix        # workaround for nixpkgs#126590 (see below)
   nvidia.nix                      # NVIDIA driver + 32-bit graphics for Steam/Proton
   gaming.nix                      # Steam, MangoHud
-  virtualisation.nix               # Docker + Docker Compose
   laptop.nix                       # power-profiles-daemon, upower, thermald, fstrim
   users.nix                        # the `joshr` and `root` accounts
 home/common/
@@ -33,13 +39,17 @@ home/common/
 home/joshr/
   gamestation.nix                  # host entrypoint: enables the 2nd-monitor panel
   laptop.nix                       # host entrypoint: single-display panels
-  home.nix                         # packages (Vivaldi, Spotify, Discord, ProtonUp-Qt, ...)
+  server.nix                       # host entrypoint: shell only, no desktop base
+  home.nix                         # packages (Spotify, Discord, ProtonUp-Qt, ...)
+  firefox.nix                      # the default browser: profile, prefs, sync
   kitty.nix                        # kitty terminal + zenwritten_dark theme
   vscode.nix                       # VS Code settings + extension list
   plasma.nix                       # KDE Plasma settings/panels/shortcuts (plasma-manager)
   files/                           # DarkObsidianII.colors
 home/root/
   home.nix                         # fish + starship only, no desktop
+templates/                         # `nix flake init -t` dev environments
+  generic/ python/ node/ rust/ go/
 ```
 
 ## niri (experimental alternative to Plasma)
@@ -114,10 +124,14 @@ Each tool is pointed at a file under that symlink: niri via its `include` node
 waybar and dunst, and sends kitty SIGUSR1 so open terminals repaint in place;
 wofi re-reads on each launch. KDE apps read `~/.config/kdeglobals`, which is a
 symlink into the active theme — Dolphin picks up a switch when it next starts.
+Firefox is the same: its profile's `chrome/userChrome.css` and
+`userContent.css` are symlinks into the active theme, read once at startup.
+See "The browser" below.
 
 Adding a theme is one attrset in `themes.nix` — the niri fragment, both
-stylesheets, the dunstrc, the swaylock palette, the SDDM config and
-Dolphin's kdeglobals are all generated from its ten colour roles.
+stylesheets, the dunstrc, the swaylock palette, the SDDM config, Dolphin's
+kdeglobals and Firefox's two chrome stylesheets are all generated from its ten
+colour roles.
 
 kitty is the exception, because a terminal needs sixteen ANSI colours and ten
 semantic roles don't contain them — there's no blue, magenta or cyan in a
@@ -358,6 +372,78 @@ icon from a pixmap compiled into the binary rather than looking it up in the
 icon theme, so nothing outside the package can change that one. Upstream has
 an open request for it (OpenRGB issue #2453).
 
+## The browser
+
+**Firefox**, on every host, in `home/joshr/firefox.nix`. It replaced Vivaldi.
+
+The requirement was cloud sync, a Chromium or Firefox base, and colours that
+follow the desktop theme. Firefox is the only candidate that does all three
+without a workaround:
+
+- **Sync** is Firefox Sync over a Mozilla account — first-party, end-to-end
+  encrypted, carrying bookmarks, history, open tabs, logins, add-ons and
+  preferences between the desk and the laptop with no server of your own.
+  Sign in from the toolbar's account button; nothing about it is configured
+  here beyond leaving `identity.fxaccounts.enabled` alone.
+- **Theming** is the part that ruled the others out. A Chromium UI takes its
+  colours from a signed theme extension or from GTK, and neither reads a file
+  you generate. Vivaldi *can* take arbitrary colours, but only through its own
+  settings UI, into a preferences blob that isn't declarative and can't be
+  repointed at a symlink. Firefox reads `chrome/userChrome.css` out of the
+  profile directory at startup, so it plugs straight into the mechanism
+  already in place for everything else.
+
+### How it follows the theme
+
+`themes.nix` grows two more generated files per palette,
+`firefox-userChrome.css` and `firefox-userContent.css`, and
+`home/joshr/niri/firefox.nix` symlinks the profile's `chrome/userChrome.css`
+and `chrome/userContent.css` at the active theme — the same out-of-store
+symlink trick as `kdeglobals`. Tab strip, toolbars, address bar, menus,
+sidebar, findbar and the `about:` pages all end up on the palette's ten
+colour roles, with the accent on the selected tab and the focused address
+bar, exactly like niri's focus ring and waybar's active workspace.
+
+Two honest caveats:
+
+- Firefox reads those stylesheets **once, while it starts**. There's no
+  supported way to make a running Firefox re-read them, so a theme switch
+  lands at the next launch — same as Dolphin, unlike kitty and waybar which
+  the switcher can nudge.
+- `userChrome.css` works against Firefox's internal CSS variables, not a
+  documented config format. The names have been stable since the Proton
+  redesign, but they aren't API. If an update renames one, that surface falls
+  back to the built-in dark theme rather than breaking; the fix is to diff
+  against `browser.css` in the new version.
+
+All of that is niri-only, for the same reason the kitty `include` is: the
+Plasma hosts have no theme state for the symlinks to point at, so there
+Firefox wears its own dark theme and takes its accent from Plasma like any
+other GTK app.
+
+The niri hosts also get `xdg.mimeApps`, so `xdg-open` and every "open link"
+in the session resolve to Firefox. The Plasma hosts don't — they set
+`kdeglobals.General.BrowserApplication` instead, because letting home-manager
+own `~/.config/mimeapps.list` underneath a running Plasma means its "Default
+Applications" page silently can't save. The trade under niri is that "Set as
+default" inside Firefox, and any "always open with" choice, no longer stick:
+the file is a read-only symlink into the store, so those go in
+`home/joshr/niri/firefox.nix` instead.
+
+### What Nix owns and what Sync owns
+
+Nix owns the *shape* of the browser — which prefs are set, that custom
+stylesheets are on, that it handles `http(s)`. Sync owns the *contents* —
+bookmarks, history, tabs, logins, add-ons.
+
+That split is deliberate. Declaring add-ons here would need the NUR or the
+firefox-addons flake, and would then fight Sync every time the two disagreed:
+Nix would reinstall on the desk what you removed on the laptop. The prefs in
+`firefox.nix` are written to `user.js`, which Firefox re-applies on **every**
+start, so where the two overlap the declared value always wins. The practical
+rule: anything you want to change from inside the browser and have stick must
+not be listed in `firefox.nix`.
+
 ## Bootloader
 
 `local.boot.loader` picks one of three, in `modules/nixos/boot.nix`:
@@ -453,6 +539,241 @@ the prompt silently doesn't appear.
 Note that only fish carries the eza aliases (`ls`, `ll`, `la`, `lt`, `lg`) —
 those came from the dotfiles' `config.fish.tmpl` and haven't been mirrored
 into the other shells.
+
+## Development environments
+
+Both machines are set up so that **no language toolchain is installed
+globally**. Python, node, a Rust compiler, JDKs, `gcc`, database clients —
+none of it lives in the user profile. Each project declares what it needs in
+its own `flake.nix`, and direnv puts those tools on `PATH` when you `cd` in
+and takes them away again when you leave.
+
+That's not asceticism. Two projects wanting different Python minor versions
+is the normal case, and the moment toolchains are global, the second one is a
+problem to be worked around. Per-project shells make it a non-event, and the
+declaration travels with the repo, so the laptop and the desk agree without
+either being configured for that project at all.
+
+### One import, and it's off by default
+
+All of it lives in **`modules/nixos/development.nix`**, and the import line is
+**commented out in every desktop host**. Uncomment it on the machines you
+actually develop on:
+
+```nix
+# hosts/gamestation/configuration.nix
+    # ../../modules/nixos/development.nix     <- delete the #
+```
+
+`server` is the exception — it imports the module for real, since a headless
+box is where containers and a remote `nix develop` are the point.
+
+Note what that costs when it's off: **Docker goes with it.** The old
+`modules/nixos/virtualisation.nix` had nothing in it but Docker and
+docker-compose, so it was folded in here rather than left as a second thing to
+remember. There's no finer granularity on purpose — one switch, one mental
+model. `joshr`'s membership of the `docker` and `libvirtd` groups follows the
+daemons automatically (`modules/nixos/users.nix`), so a host with the module
+off doesn't fail activation naming groups that don't exist.
+
+What the module turns on:
+
+- **direnv** with **nix-direnv**, hooked into bash, zsh and fish. Plain direnv
+  re-evaluates `use flake` from scratch on every `cd`, which for a flake means
+  seconds each time; nix-direnv caches the built profile and only
+  re-evaluates when `flake.nix` or `flake.lock` change. It also plants a GC
+  root in `.direnv/`, so the weekly `nix-collect-garbage` in `base.nix` can't
+  delete a shell you're still using.
+  - This is the NixOS module, not home-manager's, so the whole story is one
+    import. The one gap is **nushell** — the NixOS module doesn't hook it.
+  - Per-user tuning (`hide_env_diff`, `warn_timeout`) is a
+    `~/.config/direnv/direnv.toml` thing that no system module can set.
+- **Docker** + docker-compose.
+- **libvirtd / QEMU / virt-manager**, with `OVMFFull` for UEFI guests, swtpm
+  for the TPM a Windows 11 guest insists on, and SPICE USB redirection so a
+  passed-through YubiKey or flash drive works.
+- **`dev-init`**, the one-command path below.
+- The nix settings the rest depends on, all of which need root: `keep-outputs`
+  and `keep-derivations`, without which garbage collection deletes the *build*
+  inputs of a dev shell (a shell isn't a package, so nothing points at its
+  output); `trusted-users = [ "root" "@wheel" ]`, without which `cachix use`
+  can't write a substituter; and `log-lines = 25`, because ten lines of a
+  failed builder's output usually isn't the part that says what went wrong.
+- Language-agnostic tools: `nil`, `nixfmt-rfc-style`, `nix-output-monitor`,
+  `nix-tree`, `cachix`, `just`, `jq`, `yq-go`, `ripgrep`, `fd`, `lazygit`,
+  `gnumake`. Nothing language-specific — a compiler or an interpreter goes in
+  the project's own devShell.
+
+### The one-command path
+
+In the project directory:
+
+```bash
+dev-init            # generic skeleton
+dev-init python     # or: node, rust, go
+```
+
+That copies a template's `flake.nix`, `.envrc` and `.gitignore` in and marks
+the `.envrc` trusted, so the shell is built and entered at the prompt you get
+back. Commit all three files — the whole point is that the next machine gets
+the same environment by cloning.
+
+`dev-init` refuses to run where a `flake.nix` already exists rather than
+overwrite one.
+
+### The manual path
+
+Two files. `flake.nix`:
+
+```nix
+{
+  inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+
+  outputs = { nixpkgs, ... }:
+    let
+      system = "x86_64-linux";
+      pkgs = nixpkgs.legacyPackages.${system};
+    in {
+      devShells.${system}.default = pkgs.mkShell {
+        packages = with pkgs; [ python312 postgresql ];
+
+        # Exported on entry, gone on exit.
+        env.DATABASE_URL = "postgres://localhost/dev";
+
+        shellHook = ''
+          echo "ready"
+        '';
+      };
+    };
+}
+```
+
+and `.envrc`:
+
+```
+use flake
+```
+
+Then `direnv allow`. direnv refuses to run an `.envrc` it hasn't been told to
+trust — that message on first entry, and after every edit, is the safety
+check working, not a failure.
+
+### Day to day
+
+| | |
+|---|---|
+| add a tool | put it in `packages`, save; direnv rebuilds on the next prompt |
+| find the attribute name | `nix search nixpkgs ripgrep`, or search.nixos.org |
+| pin the exact versions | commit `flake.lock` — it's what makes the shell reproducible |
+| update them | `nix flake update`, or `nix flake update nixpkgs` for one input |
+| force a rebuild | `direnv reload` |
+| run one command without entering | `nix develop -c pytest` |
+| a second shell (e.g. CI) | `devShells.${system}.ci = ...`, entered with `use flake .#ci` |
+
+Anything the project writes at runtime — a venv, `node_modules`, `GOPATH` —
+stays inside the project directory. The templates set that up and ignore the
+paths in `.gitignore`, because the Nix store is read-only and the alternative
+is a tool failing halfway through an install with a confusing error.
+
+### Secrets
+
+Don't put them in `flake.nix` — it goes in the store, world-readable. Use a
+gitignored `.env` and read it from `.envrc`, which direnv evaluates on your
+machine and never copies anywhere:
+
+```bash
+# .envrc
+use flake
+dotenv_if_exists .env
+```
+
+### A project that isn't yours
+
+Most repos don't ship a flake. Add one anyway — `dev-init` in a clone works
+fine, and `flake.nix`, `.envrc` and `.direnv/` can stay out of the repo's
+history via `.git/info/exclude` if you'd rather not commit them upstream.
+
+If a project has a `shell.nix` or `default.nix` already, skip the flake
+entirely and let direnv use it:
+
+```
+# .envrc
+use nix
+```
+
+And when the dependency really is a whole service rather than a binary —
+Postgres, Redis, a message queue — reach for Docker Compose instead; both
+hosts have it via `modules/nixos/virtualisation.nix`. A dev shell is for
+tools, not daemons.
+
+### VS Code
+
+The editor has to be told about direnv, or it sees the bare system `PATH` and
+reports every import in the project as unresolved. `mkhl.direnv` is in the
+extension list in `home/joshr/vscode.nix` for that reason — it hands the
+shell's environment to language servers, terminals and the debugger. If
+something still looks wrong, launching `code .` from inside a directory
+direnv has already loaded is the quick way to tell the two apart.
+
+`jnoortheen.nix-ide` is in the list too, pointed at the `nil` and `nixfmt`
+from `development.nix` rather than downloading its own — so on a host with
+that module still commented out, neither name resolves and both settings are
+inert.
+
+## Scheduled jobs
+
+`server` runs its recurring work as **actual cronjobs**. The section is in
+`hosts/server/configuration.nix`, and the option behind it is
+`modules/nixos/cron.nix`:
+
+```nix
+local.cron = {
+  enable = true;
+
+  jobs = [
+    {
+      name = "nix-gc";
+      description = "Trim the store beyond what base.nix's weekly GC keeps";
+      schedule = "30 3 * * 0";
+      command = "nix-collect-garbage --delete-older-than 30d";
+    }
+  ];
+};
+```
+
+Each entry becomes one line of the system crontab plus a comment, so
+`/etc/crontab` stays readable. `user` defaults to `root`. `schedule` is
+standard five-field crontab syntax, and the `@daily` / `@weekly` / `@reboot`
+shorthands work too. Schedules are in the system timezone (`time.timeZone`),
+not UTC.
+
+Three things worth knowing:
+
+- **Bare command names work here**, which is the opposite of the usual cron
+  advice. nixpkgs' cron module writes `SHELL=…/bash` and
+  `PATH=<system.path>/bin:<system.path>/sbin` above our jobs, so anything in
+  `environment.systemPackages` resolves by name. `local.cron.path` exists for
+  tools that *aren't* installed system-wide, and it extends that PATH rather
+  than replacing it — replacing it is the easy mistake, since a second `PATH=`
+  line in a crontab wins over the first.
+- **`%` is a crontab metacharacter**, meaning "newline" — everything after the
+  first one is fed to the job on stdin. `date +%F` has to be written
+  `date +\%F`.
+- **A job missed while the machine was off never runs.** Cron has no catch-up.
+
+### When not to use it
+
+Cron was chosen because crontab syntax is familiar and these jobs are the
+boring kind. It is genuinely the weaker tool: output goes to a mail spool that
+no MTA is reading, so a job that's been failing for a month is invisible;
+`systemctl list-timers` has no equivalent; and there's the missed-job problem
+above.
+
+So if a job *matters* — skipping it silently is a problem, or you'll want to
+know why it failed three days ago — write it as a systemd service plus a timer
+with `Persistent = true` directly in the host config. Nothing stops the two
+coexisting. For output you actually want to read from a cron job, redirect it
+yourself: `... 2>&1 | systemd-cat -t backup`.
 
 ## The root account
 
@@ -700,20 +1021,25 @@ from the systemd-boot menu at startup — nothing is destroyed by a bad switch.
 
 ## Hosts
 
-Two are defined. Pick one with the flake attribute:
+Five are defined. Pick one with the flake attribute:
 
 | Host | For | Differences |
 |---|---|---|
-| `gamestation` | the desk | NVIDIA module; second-monitor panel |
-| `laptop` | portable | no NVIDIA; power management; single-display panels |
+| `gamestation` | the desk, Plasma | NVIDIA; second-monitor panel; kernel params |
+| `laptop` | portable, Plasma | no NVIDIA; power management; single-display panels |
+| `gamestation-niri` | the desk, niri | as above, niri + SDDM instead of Plasma |
+| `laptop-niri` | portable, niri | as above; no OpenRGB applet at login |
+| `server` | headless | no desktop at all; systemd-boot; cron jobs |
 
 ```bash
 sudo nixos-rebuild switch --flake .#gamestation
 sudo nixos-rebuild switch --flake .#laptop
+sudo nixos-rebuild switch --flake .#server
 ```
 
-Both share everything else — the same modules, the same `home/joshr` profile,
-the same Plasma theming, the same package set.
+The two desk hosts and the two laptop hosts share everything else — the same
+modules, the same `home/joshr` profile, the same package set. `server` is the
+outlier and is described below.
 
 ### What actually differs
 
@@ -735,11 +1061,48 @@ offload, not that module as written.
 Plasma's power-profile switcher and the `Meta+B` shortcut from the dotfiles),
 upower, thermald and fstrim.
 
+**Kernel command line.** `hosts/gamestation/kernel-params.nix` is imported by
+both desk hosts — it's the same physical box, so the flags belong to the
+hardware rather than to either session. It's a separate file because
+`hardware-configuration.nix` is regenerated by `nixos-generate-config` and
+says so at the top.
+
+| | |
+|---|---|
+| `acpi_enforce_resources=lax` | lets i2c drivers touch ACPI-claimed regions, which is what OpenRGB needs to see SMBus RGB controllers — RAM and most motherboard headers. Without it OpenRGB finds the GPU and nothing else. It is a guard being switched off, not a feature switched on. |
+| `nvidia_drm.fbdev=1` | gives the NVIDIA DRM driver a framebuffer console. `nvidia.nix` already sets the `modeset=1` half; this is the other, and it's what removes the flicker/black VT between bootloader and greeter. |
+| `amd_iommu=on` + `iommu=pt` | AMD IOMMU on, in passthrough mode — identity-map the host's own devices so remapping is only paid for devices handed to a guest. Prerequisite for VFIO passthrough; does nothing on its own. |
+
+**RGB.** The OpenRGB tray applet autostarts on the desk and **not** on the
+laptop — `local.openrgb.autostart = false` in `home/joshr/laptop-niri.nix`.
+The laptop has nothing for it to drive, so all it bought was a tray icon, a Qt
+process and a failed profile load every session. The package is still
+installed and the daemon still enabled, so launching it by hand for a docked
+peripheral works.
+
+### The server
+
+`server` doesn't build on `home/joshr/home.nix`. That file is the *desktop*
+base — kitty, VS Code, ranger, spicetify, Firefox, Discord, OBS, a cursor
+theme, fonts pulled from the dotfiles repo — none of which a headless machine
+uses and all of which it would still build. So `home/joshr/server.nix` is
+shaped like `home/root/home.nix` instead: `home/common/shell.nix`, git, and
+nothing else. Add to it directly rather than reaching for the desktop base.
+
+It takes `base.nix`, `boot.nix`, `cron.nix` and `users.nix`, imports
+`development.nix` for real rather than commented out, and pins
+`local.boot.loader = "systemd-boot"` — there's no wallpaper to draw, and this
+is the machine most likely to reboot unattended.
+
+Get in over SSH. `base.nix` already enables sshd with password auth **off**,
+so put a key in place before the first boot or the only way in is a physical
+console. Tailscale is enabled there too and still needs `tailscale up` once.
+
 Each host still needs its own hardware scan —
 `hosts/laptop/hardware-configuration.nix` is the same placeholder as
 gamestation's and must be regenerated on the machine.
 
-### Adding a third host
+### Adding another host
 
 1. `mkdir -p hosts/<newhost>`, write a `configuration.nix` importing the
    modules that apply, and generate its `hardware-configuration.nix`.
@@ -760,6 +1123,10 @@ than from memory, but please run `nix flake check` before your first
 - exact widget/option names in `plasma.nix` if plasma-manager's schema has
   moved since this was written
 - the NVIDIA `open` kernel module flag for your specific GPU
+- the Firefox `userChrome.css` variable names in `theming.nix`, which are
+  Firefox internals rather than API — a surface that comes out stock-coloured
+  instead of themed means one of them was renamed, not that anything is
+  broken. See "The browser".
 
 ## Updating the dotfiles-derived assets
 

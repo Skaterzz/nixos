@@ -20,6 +20,8 @@
 #   dunst    `services.dunst.configFile`, restarted by the switcher
 #   kitty    `include` at the end of kitty.conf, reloaded on SIGUSR1
 #   KDE apps `~/.config/kdeglobals` symlink, re-read at app startup
+#   firefox  `chrome/userChrome.css` + `userContent.css` symlinks, read once
+#            at startup
 #
 # Note these are *complete* files, not colour fragments. An earlier version
 # emitted only `@define-color` blocks and pulled them in with a GTK CSS
@@ -392,14 +394,24 @@ let
         timeout = 0
   '';
 
+  # One channel of a "#rrggbb", as an integer 0–255. `start` is the byte
+  # offset into the digits: 0 red, 2 green, 4 blue.
+  channel =
+    hex: start: lib.fromHexString (builtins.substring start 2 (lib.removePrefix "#" hex));
+
   # "#rrggbb" -> "r,g,b". KDE colour keys are decimal triples, not hex.
-  rgb =
-    hex:
-    let
-      h = lib.removePrefix "#" hex;
-      byte = start: toString (lib.fromHexString (builtins.substring start 2 h));
-    in
-    "${byte 0},${byte 2},${byte 4}";
+  rgb = hex: "${toString (channel hex 0)},${toString (channel hex 2)},${toString (channel hex 4)}";
+
+  # BT.601 luma of a "#rrggbb", 0–255.
+  #
+  # Only used to answer one question: is this palette light or dark? Firefox
+  # draws scrollbars, checkboxes and dropdown arrows from CSS `color-scheme`
+  # rather than from any colour we can set, so getting that backwards leaves
+  # those widgets invisible against the themed chrome. Of the palettes here
+  # only mono-light and rose-pine-dawn come out light.
+  luma = hex: (299 * (channel hex 0) + 587 * (channel hex 2) + 114 * (channel hex 4)) / 1000;
+
+  colorScheme = t: if luma t.bg > 127 then "light" else "dark";
 
   # kdeglobals, so KDE apps — Dolphin in particular — follow the palette.
   #
@@ -581,6 +593,214 @@ let
       color15 ${a.brightWhite}
     '';
 
+  # Firefox's browser chrome.
+  #
+  # Firefox has no supported way to take arbitrary colours from outside the
+  # browser. A WebExtension theme could — that's the documented mechanism, and
+  # it covers every surface — but installing an unsigned one needs
+  # `xpinstall.signatures.required=false`, which release builds ignore. So
+  # this is userChrome.css, overriding the internal custom properties the UI
+  # is actually built out of.
+  #
+  # That makes it the one file here written against another program's
+  # internals rather than its config format. The names below have been stable
+  # since the Proton redesign, but they aren't API: if a Firefox release
+  # renames one, that surface quietly falls back to the built-in dark theme
+  # instead of breaking, and the fix is to diff against `browser.css` in the
+  # new version.
+  #
+  # Requires `toolkit.legacyUserProfileCustomizations.stylesheets`, set in
+  # home/joshr/firefox.nix. Firefox reads it once at startup, so a theme
+  # switch lands the next time the browser starts — same as Dolphin and
+  # kdeglobals.
+  renderFirefoxUserChrome =
+    name: t:
+    ''
+      /* Generated from home/joshr/niri/themes.nix — theme "${name}". */
+
+      :root {
+        /* Native widgets inside the chrome — scrollbars, checkboxes, the
+           dropdown arrows — are drawn from this and nothing else. */
+        color-scheme: ${colorScheme t};
+        scrollbar-color: ${t.accentDim} ${t.bg};
+
+        /* Window frame and tab strip. */
+        --lwt-accent-color: ${t.bg} !important;
+        --lwt-accent-color-inactive: ${t.bg} !important;
+        --lwt-text-color: ${t.fg} !important;
+        --tab-selected-bgcolor: ${t.bgAlt} !important;
+        --tab-selected-textcolor: ${t.fg} !important;
+        --tab-selected-outline-color: ${t.accent} !important;
+        --tab-hover-background-color: ${t.accent}1f !important;
+        --lwt-tab-line-color: ${t.accent} !important;
+
+        /* Toolbars. */
+        --toolbar-bgcolor: ${t.bgAlt} !important;
+        --toolbar-color: ${t.fg} !important;
+        --toolbarbutton-icon-fill: ${t.fg} !important;
+        --toolbarbutton-icon-fill-attention: ${t.accent} !important;
+        --toolbarbutton-hover-background: ${t.accent}26 !important;
+        --toolbarbutton-active-background: ${t.accent}40 !important;
+        --chrome-content-separator-color: ${t.border} !important;
+
+        /* Address and search bars. */
+        --toolbar-field-background-color: ${t.bg} !important;
+        --toolbar-field-color: ${t.fg} !important;
+        --toolbar-field-border-color: ${t.border} !important;
+        --toolbar-field-focus-background-color: ${t.bg} !important;
+        --toolbar-field-focus-color: ${t.fg} !important;
+        --toolbar-field-focus-border-color: ${t.accent} !important;
+        --toolbar-field-highlight: ${t.accent} !important;
+        --toolbar-field-highlight-color: ${t.bg} !important;
+
+        /* The identity / permissions block inside the address bar. */
+        --urlbar-box-bgcolor: ${t.bgAlt} !important;
+        --urlbar-box-focus-bgcolor: ${t.bgAlt} !important;
+        --urlbar-box-hover-bgcolor: ${t.accent}26 !important;
+        --urlbar-box-text-color: ${t.fg} !important;
+
+        /* Menus, doorhangers and the address bar dropdown. */
+        --arrowpanel-background: ${t.bg} !important;
+        --arrowpanel-color: ${t.fg} !important;
+        --arrowpanel-border-color: ${t.border} !important;
+        --arrowpanel-dimmed: ${t.accent}1f !important;
+        --panel-background: ${t.bg} !important;
+        --panel-color: ${t.fg} !important;
+        --panel-border-color: ${t.border} !important;
+        --panel-separator-color: ${t.border} !important;
+        --panel-item-hover-bgcolor: ${t.accent}26 !important;
+        --panel-item-active-bgcolor: ${t.accent}40 !important;
+
+        /* Buttons in chrome dialogs. */
+        --button-bgcolor: ${t.bgAlt} !important;
+        --button-color: ${t.fg} !important;
+        --button-hover-bgcolor: ${t.accent}26 !important;
+        --button-active-bgcolor: ${t.accent}40 !important;
+        --button-primary-bgcolor: ${t.accent} !important;
+        --button-primary-hover-bgcolor: ${t.accentDim} !important;
+        --button-primary-active-bgcolor: ${t.accentDim} !important;
+        --button-primary-color: ${t.bg} !important;
+
+        --focus-outline-color: ${t.accent} !important;
+        --link-color: ${t.accent} !important;
+        --link-color-hover: ${t.accent} !important;
+
+        /* Sidebar: bookmarks, history, synced tabs. */
+        --sidebar-background-color: ${t.bg} !important;
+        --sidebar-text-color: ${t.fg} !important;
+        --sidebar-border-color: ${t.border} !important;
+
+        /* Kept louder than the rest of the chrome, same as everywhere else. */
+        --warning-color: ${t.warn} !important;
+        --error-text-color: ${t.err} !important;
+      }
+
+      /* Some builds paint the toolbox rather than the frame, so both. */
+      #navigator-toolbox {
+        background-color: ${t.bg} !important;
+        border-bottom: 1px solid ${t.border} !important;
+      }
+
+      #nav-bar {
+        background-color: ${t.bgAlt} !important;
+        color: ${t.fg} !important;
+        box-shadow: none !important;
+      }
+
+      /* Selected tab: solid fill plus the accent line along its top edge —
+         the same "active thing wears the accent" rule as waybar's workspaces
+         and niri's focus ring. */
+      .tab-background[selected="true"] {
+        background-image: none !important;
+        background-color: ${t.bgAlt} !important;
+        outline-color: ${t.accent} !important;
+      }
+
+      .tabbrowser-tab:not([selected="true"]) .tab-label {
+        color: ${t.fgDim} !important;
+      }
+
+      #urlbar > #urlbar-background,
+      #searchbar {
+        background-color: ${t.bg} !important;
+        border-color: ${t.border} !important;
+      }
+
+      #urlbar[focused="true"] > #urlbar-background {
+        border-color: ${t.accent} !important;
+        outline-color: ${t.accent} !important;
+      }
+
+      .urlbarView-row:hover,
+      .urlbarView-row[selected] {
+        background-color: ${t.accent}26 !important;
+      }
+
+      menu[_moz-menuactive="true"],
+      menuitem[_moz-menuactive="true"] {
+        background-color: ${t.accent}26 !important;
+        color: ${t.fg} !important;
+      }
+
+      findbar {
+        background-color: ${t.bgAlt} !important;
+        color: ${t.fg} !important;
+        border-top-color: ${t.border} !important;
+      }
+
+      /* The little "loading…" / link target overlay at the bottom left. */
+      #statuspanel-label {
+        background-color: ${t.bgAlt} !important;
+        color: ${t.fg} !important;
+        border-color: ${t.border} !important;
+      }
+    '';
+
+  # about: pages — Preferences, Add-ons, the new tab, the error pages.
+  #
+  # Web pages are deliberately untouched. Recolouring arbitrary sites from a
+  # desktop palette breaks far more than it fixes, and Firefox already has
+  # Reader View for the cases where it helps.
+  renderFirefoxUserContent =
+    name: t:
+    ''
+      /* Generated from home/joshr/niri/themes.nix — theme "${name}". */
+
+      @-moz-document url-prefix("about:") {
+        :root {
+          color-scheme: ${colorScheme t} !important;
+          scrollbar-color: ${t.accentDim} ${t.bg};
+
+          --in-content-page-background: ${t.bg} !important;
+          --in-content-page-color: ${t.fg} !important;
+          --in-content-text-color: ${t.fg} !important;
+          --in-content-deemphasized-text: ${t.fgDim} !important;
+          --in-content-box-background: ${t.bgAlt} !important;
+          --in-content-box-background-odd: ${t.bg} !important;
+          --in-content-box-border-color: ${t.border} !important;
+          --in-content-border-color: ${t.border} !important;
+          --in-content-accent-color: ${t.accent} !important;
+          --in-content-link-color: ${t.accent} !important;
+          --in-content-link-color-hover: ${t.accent} !important;
+          --in-content-focus-outline-color: ${t.accent} !important;
+          --in-content-button-background: ${t.bgAlt} !important;
+          --in-content-button-background-hover: ${t.accent}26 !important;
+          --in-content-button-text-color: ${t.fg} !important;
+          --in-content-primary-button-background: ${t.accent} !important;
+          --in-content-primary-button-background-hover: ${t.accentDim} !important;
+          --in-content-primary-button-text-color: ${t.bg} !important;
+
+          --newtab-background-color: ${t.bg} !important;
+          --newtab-background-color-secondary: ${t.bgAlt} !important;
+          --newtab-text-primary-color: ${t.fg} !important;
+          --newtab-primary-action-background: ${t.accent} !important;
+
+          --link-color: ${t.accent} !important;
+          --link-color-hover: ${t.accent} !important;
+        }
+      }
+    '';
+
   # swaylock takes flags, not a config file, so its palette is a shell
   # fragment the lock script sources.
   renderSwaylockEnv = name: t: ''
@@ -651,6 +871,8 @@ let
       cp ${pkgs.writeText "swaylock.env" (renderSwaylockEnv name t)} "$out/swaylock.env"
       cp ${pkgs.writeText "kdeglobals" (renderKdeglobals name t)}     "$out/kdeglobals"
       cp ${pkgs.writeText "kitty.conf" (renderKitty name t)}          "$out/kitty.conf"
+      cp ${pkgs.writeText "userChrome.css" (renderFirefoxUserChrome name t)}   "$out/firefox-userChrome.css"
+      cp ${pkgs.writeText "userContent.css" (renderFirefoxUserContent name t)} "$out/firefox-userContent.css"
       echo -n "${name}" > "$out/name"
     '';
 

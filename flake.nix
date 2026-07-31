@@ -108,7 +108,71 @@
             hostModule = ./hosts/laptop-niri/configuration.nix;
             homeModule = ./home/joshr/laptop-niri.nix;
           };
+
+          # --- headless --------------------------------------------------
+          # No desktop at all. Scheduled work lives in its `local.cron`
+          # section; see modules/nixos/cron.nix.
+          server = mkHost {
+            hostModule = ./hosts/server/configuration.nix;
+            homeModule = ./home/joshr/server.nix;
+          };
         };
+
+      # Starting points for per-project development environments:
+      #
+      #   nix flake init -t github:joshrandall8478/fine-ill-try-nix#python
+      #
+      # or `dev-init python`, which does that and sets up direnv in one go.
+      # See "Development environments" in the README.
+      #
+      # They live here rather than in a separate repo so that the machines
+      # and the shells they build are updated by the same `nix flake update`.
+      templates = {
+        default = self.templates.generic;
+
+        generic = {
+          path = ./templates/generic;
+          description = "Empty devShell skeleton — add packages and go";
+          welcomeText = ''
+            Edit the `packages` list in flake.nix, then `direnv allow`.
+          '';
+        };
+
+        python = {
+          path = ./templates/python;
+          description = "Python 3.12 with uv, ruff and a project-local venv";
+          welcomeText = ''
+            Nix supplies the interpreter and tooling; the venv created by the
+            shellHook supplies the libraries. `direnv allow` to enter.
+          '';
+        };
+
+        node = {
+          path = ./templates/node;
+          description = "Node.js 22 with pnpm and the TypeScript language server";
+          welcomeText = ''
+            `direnv allow` to enter. npm's global prefix is redirected into
+            the project, so `npm i -g` works.
+          '';
+        };
+
+        rust = {
+          path = ./templates/rust;
+          description = "Rust toolchain from nixpkgs, with rust-analyzer and clippy";
+          welcomeText = ''
+            `direnv allow` to enter. Native libraries your crates link
+            against go in `buildInputs`.
+          '';
+        };
+
+        go = {
+          path = ./templates/go;
+          description = "Go with gopls, gotools and golangci-lint";
+          welcomeText = ''
+            `direnv allow` to enter. GOPATH is redirected into the project.
+          '';
+        };
+      };
 
       formatter.${system} = pkgs.nixfmt-rfc-style;
     };

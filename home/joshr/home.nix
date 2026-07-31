@@ -11,6 +11,7 @@
     ./ranger.nix
     ./vscode.nix
     ./spicetify.nix
+    ./firefox.nix
   ];
 
   home.username = "joshr";
@@ -29,8 +30,10 @@
     };
   };
 
+  # The browser is not here — it's ./firefox.nix, which has prefs and a
+  # profile to declare as well as a package. Development tooling isn't here
+  # either: it's modules/nixos/development.nix, one import per host.
   home.packages = with pkgs; [
-    vivaldi
     discord
     protonup-qt
     papirus-icon-theme

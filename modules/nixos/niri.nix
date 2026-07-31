@@ -11,19 +11,47 @@ let
 
   # The palette renderer lives with the home modules so both sides agree on
   # the colours. Only the SDDM part is needed here.
+  # The user's current wallpaper, copied somewhere the greeter can read it.
+  # See sddm-theme-sync below — the path is fixed so the theme config can name
+  # it from the store while the image behind it changes at runtime.
+  sddmWallpaper = "/var/lib/sddm-theme/wallpaper.png";
+
   sddmThemeConfig =
     t:
     {
+      # --- background ---------------------------------------------------
+      # Blurred and dimmed so the form stays readable over any wallpaper,
+      # rather than fighting a busy image.
+      Background = "file://${sddmWallpaper}";
+      CropBackground = "true";
+      BackgroundHorizontalAlignment = "center";
+      BackgroundVerticalAlignment = "center";
       FullBlur = "false";
       PartialBlur = "true";
-      BlurRadius = "60";
-      DimBackground = "0.25";
-      CropBackground = "true";
+      Blur = "2.0";
+      BlurMax = "48";
+      DimBackground = "0.45";
 
-      HeaderText = "Welcome";
+      # --- form ---------------------------------------------------------
+      # A rounded card floating over the blur, centred, instead of controls
+      # sitting bare on the image.
+      HaveFormBackground = "true";
+      FormPosition = "center";
+      RoundCorners = "24";
+      ScreenPadding = "0";
+
+      # Land on the password field for the last user; no username step.
+      ForceLastUser = "true";
+      PasswordFocus = "true";
+      UseRealName = "true";
+      HideCompletePassword = "true";
+      HideVirtualKeyboard = "true";
+      HideSystemButtons = "false";
+
+      # The clock is the header; a "Welcome" string on top of it is noise.
+      HeaderText = "";
       HourFormat = "HH:mm";
       DateFormat = "dddd, d MMMM";
-      FormPosition = "center";
 
       HeaderTextColor = t.accent;
       DateTextColor = t.fg;
@@ -53,8 +81,8 @@ let
       HoverUserIconColor = t.fg;
       HoverSystemButtonsIconsColor = t.fg;
 
-      Font = "FiraCode Nerd Font";
-      FontSize = "11";
+      Font = "Poppins";
+      FontSize = "12";
     };
 
   # One sddm-astronaut instance per palette. They're cheap — the derivation
@@ -81,25 +109,49 @@ let
 
   defaultSddmTheme = "niri-${themeSet.default}";
 
-  # Watches the user's theme selection and rewrites an SDDM drop-in so the
-  # login screen matches. SDDM only reads its config when the greeter starts,
-  # so this takes effect at the next logout/reboot rather than immediately.
-  themeStateFile = "/home/joshr/.local/state/niri-theme/current";
+  # Watches the user's theme *and* wallpaper choices and mirrors both to the
+  # login screen. SDDM only reads its config when the greeter starts, so both
+  # take effect at the next logout/reboot rather than immediately.
+  niriStateDir = "/home/joshr/.local/state/niri-theme";
+  themeStateFile = "${niriStateDir}/current";
+  wallpaperStateFile = "${niriStateDir}/wallpaper";
 
   syncSddmTheme = pkgs.writeShellScript "sddm-theme-sync" ''
     set -eu
-    name="$(cat ${themeStateFile} 2>/dev/null || true)"
-    [ -n "$name" ] || exit 0
 
-    # Only accept names we actually built a theme for.
+    # --- palette ------------------------------------------------------
+    name="$(cat ${themeStateFile} 2>/dev/null || true)"
     case "$name" in
     ${lib.concatStringsSep "\n" (map (n: "      ${n}) ;;") (lib.attrNames themes))}
-      *) exit 0 ;;
+      *) name="${themeSet.default}" ;;
     esac
 
     mkdir -p /etc/sddm.conf.d
     printf '[Theme]\nCurrent=niri-%s\n' "$name" \
       > /etc/sddm.conf.d/99-niri-active-theme.conf
+
+    # --- wallpaper ----------------------------------------------------
+    # The greeter runs as the sddm user and can't read joshr's home, so the
+    # image is copied somewhere world-readable. The theme config names a
+    # fixed path (see sddmWallpaper), and only the file behind it changes.
+    #
+    # Converted to PNG rather than copied: the state file may point at a
+    # .jpg, and naming a JPEG "wallpaper.png" leaves the format to QML's
+    # content sniffing. Converting removes the guess.
+    install -d -m 0755 /var/lib/sddm-theme
+
+    wp="$(cat ${wallpaperStateFile} 2>/dev/null || true)"
+    if [ -n "$wp" ] && [ -f "$wp" ]; then
+      tmp="${sddmWallpaper}.tmp"
+      if ${pkgs.imagemagick}/bin/magick "$wp" -strip "png:$tmp" 2>/dev/null; then
+        mv -f "$tmp" "${sddmWallpaper}"
+        chmod 0644 "${sddmWallpaper}"
+      else
+        # Leave the previous image in place rather than blanking the
+        # greeter over one unreadable file.
+        rm -f "$tmp"
+      fi
+    fi
   '';
 in
 {
@@ -119,14 +171,18 @@ in
   # between them without a rebuild.
   environment.systemPackages = lib.attrValues sddmThemes;
 
-  # --- keep the login screen in step with the desktop theme --------------
+  # --- keep the login screen in step with the desktop ---------------------
   #
-  # The greeter runs as the sddm user before anyone logs in, so it can't read
-  # joshr's state directly, and /etc is store-managed. This writes one
-  # unmanaged drop-in under /etc/sddm.conf.d/ (NixOS only removes files it
-  # declares, so it survives) naming the matching theme.
+  # Two things are mirrored: the palette (which of the per-theme SDDM packages
+  # to use) and the wallpaper (copied to a world-readable path the theme names
+  # from the store).
+  #
+  # The greeter runs as the sddm user before anyone logs in, so it can neither
+  # read joshr's home nor see the theme symlink, and /etc is store-managed.
+  # This writes one unmanaged drop-in under /etc/sddm.conf.d/ — NixOS only
+  # removes files it declares, so it survives activation.
   systemd.services.sddm-theme-sync = {
-    description = "Match the SDDM theme to the selected desktop theme";
+    description = "Mirror the desktop theme and wallpaper to the SDDM greeter";
     wantedBy = [ "multi-user.target" ];
     serviceConfig = {
       Type = "oneshot";
@@ -136,7 +192,10 @@ in
 
   systemd.paths.sddm-theme-sync = {
     wantedBy = [ "multi-user.target" ];
-    pathConfig.PathChanged = [ themeStateFile ];
+    pathConfig.PathChanged = [
+      themeStateFile
+      wallpaperStateFile
+    ];
   };
 
   # swaylock authenticates through PAM and ships no entry of its own, so

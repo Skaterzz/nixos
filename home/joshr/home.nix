@@ -42,12 +42,10 @@
     bitwarden-desktop
     nextcloud-client
     obs-studio
-    kdePackages.kdenlive
     audacity
     lutris
     localsend
     sshfs
-    openrgb
     playerctl
     cava
     cmatrix

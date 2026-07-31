@@ -52,6 +52,7 @@
     cava
     cmatrix
     prismlauncher
+    yt-dlp
   ];
 
   programs.btop = {

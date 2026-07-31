@@ -20,7 +20,7 @@
     #
     # This is where Docker now lives — the old virtualisation.nix was folded
     # into it — so leaving it off means no containers on this host either.
-    # ../../modules/nixos/development.nix
+    ../../modules/nixos/development.nix
   ];
 
   networking.hostName = "gamestation";

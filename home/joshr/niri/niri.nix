@@ -52,7 +52,8 @@ let
   # finalPackage rather than pkgs.firefox: that's the wrapper home-manager
   # actually installs, carrying whatever ../firefox.nix declares beyond plain
   # prefs. Naming the raw package here would launch a second, unwrapped build.
-  browser = "${config.programs.firefox.finalPackage}/bin/firefox";
+  #browser = "${config.programs.firefox.finalPackage}/bin/firefox";
+  browser = "${pkgs.vivaldi}/bin/vivaldi";
   fileManager = "${pkgs.kdePackages.dolphin}/bin/dolphin";
   # Bare `ranger` so it resolves from PATH to home-manager's wrapped build,
   # which carries the preview tools. The raw ${pkgs.ranger} has none of them.

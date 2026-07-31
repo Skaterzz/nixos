@@ -52,8 +52,6 @@
   boot.loader.systemd-boot.enable = true;
   boot.loader.efi.canTouchEfiVariables = true;
 
-  local.sddm.theme = "astronaut";
-
   # Do not bump this after the initial install; see the NixOS manual.
   system.stateVersion = "24.11";
 }

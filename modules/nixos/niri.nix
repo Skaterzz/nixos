@@ -20,26 +20,23 @@ let
     t:
     {
       # --- background ---------------------------------------------------
-      # The wallpaper is the point, so it's left crisp and barely dimmed.
-      # PartialBlur blurs only the strip behind the form and drops that
-      # panel to 0.3 opacity, so the picture still shows through there —
-      # FullBlur would fog the whole screen.
+      # Blurred and dimmed so the form stays readable over any wallpaper,
+      # rather than fighting a busy image.
       Background = "file://${sddmWallpaper}";
       CropBackground = "true";
       BackgroundHorizontalAlignment = "center";
       BackgroundVerticalAlignment = "center";
       FullBlur = "false";
       PartialBlur = "true";
-      Blur = "1.2";
-      BlurMax = "24";
-      DimBackground = "0.15";
+      Blur = "2.0";
+      BlurMax = "48";
+      DimBackground = "0.45";
 
       # --- form ---------------------------------------------------------
-      # Bottom right, to keep the middle of the wallpaper clear. "right" is
-      # config; "bottom" needs the QML patch in mkSddmTheme below, because
-      # the theme has no vertical position setting.
+      # A rounded card floating over the blur, centred, instead of controls
+      # sitting bare on the image.
       HaveFormBackground = "true";
-      FormPosition = "right";
+      FormPosition = "center";
       RoundCorners = "24";
       ScreenPadding = "0";
 
@@ -103,33 +100,8 @@ let
       (old: {
         pname = "sddm-astronaut-${name}";
         postInstall = (old.postInstall or "") + ''
-          themeDir="$out/share/sddm/themes/sddm-astronaut-theme"
-          chmod -R u+w "$themeDir"
-
-          # Move the form to the bottom of its column.
-          #
-          # Upstream's LoginForm is a ColumnLayout pinned to the full screen
-          # height, and the theme exposes only a horizontal FormPosition
-          # (left/center/right) — there is no vertical equivalent to set. So
-          # the clock and login sit vertically centred, over the middle of
-          # the wallpaper.
-          #
-          # Inserting an expanding spacer as the layout's first child gives
-          # the leftover vertical space to the top, which pushes everything
-          # after it to the bottom. That is the whole change.
-          #
-          # --replace-fail so this errors loudly if upstream renames the
-          # anchor line, rather than silently building an unpatched theme.
-          substituteInPlace "$themeDir/Components/LoginForm.qml" \
-            --replace-fail \
-              'property string a: config.FormPosition' \
-              'property string a: config.FormPosition
-
-              // Patched in by modules/nixos/niri.nix: pushes the form to the
-              // bottom of the screen. Upstream has no vertical position option.
-              Item { Layout.fillHeight: true }'
-
-          mv "$themeDir" "$out/share/sddm/themes/niri-${name}"
+          mv "$out/share/sddm/themes/sddm-astronaut-theme" \
+             "$out/share/sddm/themes/niri-${name}"
         '';
       });
 

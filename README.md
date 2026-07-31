@@ -87,7 +87,6 @@ home/joshr/niri/
   waybar.nix                  # bar layout + style
   notifications.nix           # dunst + wofi
   lock.nix                    # swayidle timers
-  openrgb.nix                 # tray applet autostart + icon
   scripts.nix                 # theme/wallpaper/screenshot/session helpers
 ```
 

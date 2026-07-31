@@ -124,52 +124,52 @@
     '';
   };
 
-  # OpenRGB. The daemon is a system service (modules/nixos/gaming.nix); these
-  # cover the session side — the tray applet niri starts, and its icon.
-  options.local.openrgb.autostart = lib.mkOption {
-    type = lib.types.bool;
-    default = true;
-    description = ''
-      Start the OpenRGB tray applet with the niri session and apply
-      `local.openrgb.profile`.
+  # # OpenRGB. The daemon is a system service (modules/nixos/gaming.nix); these
+  # # cover the session side — the tray applet niri starts, and its icon.
+  # options.local.openrgb.autostart = lib.mkOption {
+  #   type = lib.types.bool;
+  #   default = true;
+  #   description = ''
+  #     Start the OpenRGB tray applet with the niri session and apply
+  #     `local.openrgb.profile`.
 
-      The lighting is set by whatever wrote it last, and nothing restores it
-      across a reboot on its own — the devices keep the colours they were
-      left with until something tells them otherwise. This is what tells
-      them.
-    '';
-  };
+  #     The lighting is set by whatever wrote it last, and nothing restores it
+  #     across a reboot on its own — the devices keep the colours they were
+  #     left with until something tells them otherwise. This is what tells
+  #     them.
+  #   '';
+  # };
 
-  options.local.openrgb.profile = lib.mkOption {
-    type = lib.types.str;
-    default = "main";
-    description = ''
-      Name of the OpenRGB profile applied at login, without the `.orp`
-      extension.
+  # options.local.openrgb.profile = lib.mkOption {
+  #   type = lib.types.str;
+  #   default = "main";
+  #   description = ''
+  #     Name of the OpenRGB profile applied at login, without the `.orp`
+  #     extension.
 
-      Profiles are created from OpenRGB's own UI ("Save Profile") and live in
-      ~/.config/OpenRGB. They are runtime state, not something this repo
-      writes: naming one here that doesn't exist yet is harmless — OpenRGB
-      prints "Profile failed to load" and carries on with the GUI, so the
-      applet still starts.
-    '';
-  };
+  #     Profiles are created from OpenRGB's own UI ("Save Profile") and live in
+  #     ~/.config/OpenRGB. They are runtime state, not something this repo
+  #     writes: naming one here that doesn't exist yet is harmless — OpenRGB
+  #     prints "Profile failed to load" and carries on with the GUI, so the
+  #     applet still starts.
+  #   '';
+  # };
 
-  options.local.openrgb.monochromeIcon = lib.mkOption {
-    type = lib.types.bool;
-    default = true;
-    description = ''
-      Use a monochrome OpenRGB icon instead of the stock multicolour one.
+  # options.local.openrgb.monochromeIcon = lib.mkOption {
+  #   type = lib.types.bool;
+  #   default = true;
+  #   description = ''
+  #     Use a monochrome OpenRGB icon instead of the stock multicolour one.
 
-      This replaces the icon named by OpenRGB's desktop entry, which is what
-      the wofi launcher draws. It does *not* reach the system tray icon:
-      OpenRGB loads that from a pixmap compiled into the binary rather than
-      looking it up in the icon theme, so nothing outside the package can
-      change it. Upstream has an open request for a monochrome tray icon
-      (OpenRGB issue #2453); until that lands, the tray stays multicolour
-      short of rebuilding the package.
-    '';
-  };
+  #     This replaces the icon named by OpenRGB's desktop entry, which is what
+  #     the wofi launcher draws. It does *not* reach the system tray icon:
+  #     OpenRGB loads that from a pixmap compiled into the binary rather than
+  #     looking it up in the icon theme, so nothing outside the package can
+  #     change it. Upstream has an open request for a monochrome tray icon
+  #     (OpenRGB issue #2453); until that lands, the tray stays multicolour
+  #     short of rebuilding the package.
+  #   '';
+  # };
 
   options.local.plasma.secondaryMonitorPanel = lib.mkEnableOption ''
     the status bar on the second monitor (screen 1).

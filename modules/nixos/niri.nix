@@ -394,9 +394,9 @@ in
   # greeter would start an X server just to draw the login screen.
   services.displayManager.sddm = {
     enable = true;
-    wayland.enable = true;
+    wayland.enable = false;
     # See local.sddm.compositor. Defaults to weston here, not NixOS's kwin.
-    wayland.compositor = config.local.sddm.compositor;
+    #wayland.compositor = config.local.sddm.compositor;
     package = pkgs.kdePackages.sddm;
     theme = defaultSddmTheme;
     extraPackages = lib.attrValues sddmThemes;

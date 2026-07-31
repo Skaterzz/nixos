@@ -51,7 +51,7 @@
   programs.btop = {
    enable = true;
    settings = {
-     color_theme = "TokyoStorm";
+     color_theme = "tokyo-storm";
      theme_background = false;
      update_ms = 100;
     };

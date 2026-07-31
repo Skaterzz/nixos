@@ -350,8 +350,12 @@ let
             esac
             seen_labels="$seen_labels|$label|"
 
-            # Strip the leading slash from $rel to prevent double slashes (://)
+             # 1. Strip the root mount path (leaves a leading slash)
+            local rel="''${target#"$root"}"
+
+             # 2. Strip the leading slash (prevents the :// bug)
             local limine_rel="''${rel#/}"
+
 
             # if_fw_type hides the entry if the machine is ever booted in BIOS
             # mode, where chainloading an EFI binary cannot work.

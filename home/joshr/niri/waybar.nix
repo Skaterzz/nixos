@@ -4,7 +4,7 @@
 #
 #   left    workspaces + focused window title
 #   centre  clock and date
-#   right   tray, audio, network, battery, session menu
+#   right   tray, nowplaying, audio, network, battery, session menu
 #
 # Theming: waybar is started with `-s <active theme>/waybar.css` and the
 # switcher restarts it, so a theme change swaps the whole stylesheet. The
@@ -134,7 +134,7 @@ in
         # nothing at all — which is why the centre of the bar was empty.
         # Everything therefore goes through one strftime.
         format = "  {:%H:%M      %a, %b %d}";
-        format-alt = "  {:%H:%M:%S      %A, %d %B %Y}";
+        format-alt = "  {:%H:%M      %A, %d %B %Y}";
         tooltip-format = "<tt><small>{calendar}</small></tt>";
         calendar = {
           mode = "month";
@@ -160,10 +160,10 @@ in
         # duplicates the `network` module two slots over. Hide the icon and
         # keep the applet — ignore-list matches any of the item's bus name,
         # category, icon name, id or title as a substring.
-        ignore-list = [
-          "nm-applet"
-          "NetworkManager"
-        ];
+        #ignore-list = [
+        #  "nm-applet"
+        #  "NetworkManager"
+        #];
       };
 
       pulseaudio = {

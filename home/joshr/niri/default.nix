@@ -13,6 +13,7 @@
     ./waybar.nix
     ./notifications.nix
     ./lock.nix
+    ./openrgb.nix
   ];
 
   # Dolphin as the graphical file manager. It follows the active theme

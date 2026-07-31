@@ -54,6 +54,17 @@ let
   # Bare `ranger` so it resolves from PATH to home-manager's wrapped build,
   # which carries the preview tools. The raw ${pkgs.ranger} has none of them.
   fileManagerTui = "${terminal} -e ranger";
+
+  # OpenRGB's tray applet, applying the configured profile at login.
+  #
+  # `--startminimized` is doing two jobs. OpenRGB drops to CLI mode and exits
+  # as soon as it is given any option — `--profile` on its own would apply the
+  # lighting and quit, leaving no tray icon — and this both forces the GUI back
+  # on (it implies `--gui`) and keeps that GUI out of the way. Passing
+  # `--profile` alone, or omitting it, are both wrong for "apply the profile
+  # and sit in the tray".
+  openrgbStartup = lib.optionalString config.local.openrgb.autostart ''
+    spawn-at-startup "${pkgs.openrgb}/bin/openrgb" "--startminimized" "--profile" "${config.local.openrgb.profile}"'';
 in
 {
   xdg.configFile."niri/config.kdl".text = ''
@@ -175,6 +186,7 @@ ${workspaceBlocks}
     // waybar runs as a systemd user service (see waybar.nix) so the theme
     // switcher can restart it; starting it here as well would give two bars.
     spawn-at-startup "${bin niriScripts.wallpaperRestore}"
+    ${openrgbStartup}
 
     // nm-applet is deliberately not started. Its tray icon duplicates the
     // waybar `network` module, and that module's click already opens
@@ -225,7 +237,10 @@ ${workspaceBlocks}
         Mod+B      hotkey-overlay-title="Browser" { spawn-sh "${browser}"; }
 
         // --- session ---------------------------------------------------
-        Mod+Escape hotkey-overlay-title="Lock" { spawn "${bin niriScripts.lockSession}"; }
+        // Lock is Mod+L, matching the Windows/KDE reflex. That costs the
+        // vim-key `Mod+L` for focus-column-right — Mod+Right, Mod+scroll and
+        // Mod+End all still walk right, so only the h/j/k/l set loses its "l".
+        Mod+L hotkey-overlay-title="Lock" { spawn "${bin niriScripts.lockSession}"; }
         Mod+Shift+Escape hotkey-overlay-title="Session menu" { spawn "${bin niriScripts.sessionMenu}"; }
         Mod+Shift+E { quit; }
         Ctrl+Alt+Delete { quit; }
@@ -235,8 +250,8 @@ ${workspaceBlocks}
         // Cycle themes, or pick one / a wallpaper from a menu.
         Mod+Shift+T hotkey-overlay-title="Next theme" { spawn "${bin niriScripts.themeCycle}"; }
         Mod+Ctrl+T  hotkey-overlay-title="Choose theme" { spawn "${bin niriScripts.themeMenu}"; }
-        Mod+Shift+W hotkey-overlay-title="Choose wallpaper" { spawn "${bin niriScripts.wallpaperMenu}"; }
-        Mod+Ctrl+W  hotkey-overlay-title="Random wallpaper" { spawn "${bin niriScripts.wallpaperRandom}"; }
+        Mod+Shift+W hotkey-overlay-title="Random wallpaper" { spawn "${bin niriScripts.wallpaperRandom}"; }
+        Mod+Ctrl+W  hotkey-overlay-title="Choose wallpaper" { spawn "${bin niriScripts.wallpaperMenu}"; }
 
         // --- screenshots -----------------------------------------------
         // Region capture goes through satty for annotation; the plain
@@ -272,7 +287,7 @@ ${workspaceBlocks}
         Mod+H     { focus-column-left; }
         Mod+J     { focus-window-down; }
         Mod+K     { focus-window-up; }
-        Mod+L     { focus-column-right; }
+        // No Mod+L here — it locks the session (see the session binds above).
 
         Mod+Ctrl+Left  { move-column-left; }
         Mod+Ctrl+Down  { move-window-down; }

@@ -1,4 +1,4 @@
-# fine-ill-try-nix
+# nixos-config
 
 A NixOS flake for `joshr`'s gaming + development workstation: KDE Plasma 6 on
 Wayland, NVIDIA, Steam/ProtonUp-Qt/MangoHud, Docker + Docker Compose,

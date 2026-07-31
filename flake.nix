@@ -15,6 +15,11 @@
       inputs.home-manager.follows = "home-manager";
     };
 
+    spicetify-nix = {
+      url = "github:Gerg-L/spicetify-nix";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+
     # joshrandall8478's existing chezmoi dotfiles repo. Used purely as a source
     # of static assets (fonts, custom Plasma themes/look-and-feel packages,
     # cursor theme, custom icons, wallpapers) that are pulled straight into the
@@ -26,7 +31,15 @@
   };
 
   outputs =
-    { self, nixpkgs, home-manager, plasma-manager, dotfiles, ... }@inputs:
+    {
+      self,
+      nixpkgs,
+      home-manager,
+      plasma-manager,
+      spicetify-nix,
+      dotfiles,
+      ...
+    }@inputs:
     let
       system = "x86_64-linux";
       pkgs = import nixpkgs {
@@ -37,30 +50,35 @@
     {
       nixosConfigurations =
         let
-          mkHost = { hostModule, homeModule }: nixpkgs.lib.nixosSystem {
-            inherit system;
-            specialArgs = { inherit inputs; };
-            modules = [
-              hostModule
+          mkHost =
+            { hostModule, homeModule }:
+            nixpkgs.lib.nixosSystem {
+              inherit system;
+              specialArgs = { inherit inputs; };
+              modules = [
+                hostModule
 
-              home-manager.nixosModules.home-manager
-              {
-                home-manager.useGlobalPkgs = true;
-                home-manager.useUserPackages = true;
-                # home-manager refuses to overwrite a file it doesn't already
-                # manage. Now that it writes ~/.bashrc and ~/.zshrc, any
-                # pre-existing copy would abort activation; this moves them
-                # aside as e.g. ~/.bashrc.hm-backup instead.
-                home-manager.backupFileExtension = "hm-backup";
-                home-manager.extraSpecialArgs = { inherit inputs; };
-                home-manager.sharedModules = [ plasma-manager.homeModules.plasma-manager ];
-                home-manager.users.joshr = import homeModule;
-                # root gets the same fish + starship setup, minus everything
-                # graphical. Same on every host, so it isn't parameterised.
-                home-manager.users.root = import ./home/root/home.nix;
-              }
-            ];
-          };
+                home-manager.nixosModules.home-manager
+                {
+                  home-manager.useGlobalPkgs = true;
+                  home-manager.useUserPackages = true;
+                  # home-manager refuses to overwrite a file it doesn't already
+                  # manage. Now that it writes ~/.bashrc and ~/.zshrc, any
+                  # pre-existing copy would abort activation; this moves them
+                  # aside as e.g. ~/.bashrc.hm-backup instead.
+                  home-manager.backupFileExtension = "hm-backup";
+                  home-manager.extraSpecialArgs = { inherit inputs; };
+                  home-manager.sharedModules = [
+                    plasma-manager.homeModules.plasma-manager
+                    spicetify-nix.homeManagerModules.spicetify
+                  ];
+                  home-manager.users.joshr = import homeModule;
+                  # root gets the same fish + starship setup, minus everything
+                  # graphical. Same on every host, so it isn't parameterised.
+                  home-manager.users.root = import ./home/root/home.nix;
+                }
+              ];
+            };
         in
         {
           # --- Plasma sessions -------------------------------------------

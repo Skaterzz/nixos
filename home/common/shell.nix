@@ -1,4 +1,9 @@
-{ config, lib, pkgs, ... }:
+{
+  config,
+  lib,
+  pkgs,
+  ...
+}:
 
 # Shell environment shared by joshr and root, ported from the dotfiles'
 # dot_config/fish/config.fish.tmpl and dot_config/starship.toml.
@@ -23,9 +28,7 @@ let
       '';
 in
 {
-  home.packages =
-    [ pkgs.eza ]
-    ++ lib.optional config.local.shell.fastfetchGreeting pkgs.fastfetch;
+  home.packages = [ pkgs.eza ] ++ lib.optional config.local.shell.fastfetchGreeting pkgs.fastfetch;
 
   programs.fish = {
     enable = true;
@@ -33,33 +36,37 @@ in
     # Upstream config.fish.tmpl sources /usr/share/cachyos-fish-config behind an
     # existence check; that path never exists on NixOS, so it's omitted here.
     interactiveShellInit = ''
-      # Base16 Default Dark
-         set -g fish_color_normal d8d8d8
-         set -g fish_color_command 7cafc2
-         set -g fish_color_keyword ba8baf
-         set -g fish_color_quote a1b56c
-         set -g fish_color_redirection 86c1b9
-         set -g fish_color_end ba8baf
-         set -g fish_color_error ab4642
-         set -g fish_color_param d8d8d8
-         set -g fish_color_comment 585858
-         set -g fish_color_selection --background=383838
-         set -g fish_color_search_match --background=383838
-         set -g fish_color_operator 86c1b9
-         set -g fish_color_escape 86c1b9
-         set -g fish_color_autosuggestion 585858
-         set -g fish_color_cwd f7ca88
-         set -g fish_color_cwd_root ab4642
-         set -g fish_color_user a1b56c
-         set -g fish_color_host 7cafc2
-         set -g fish_color_valid_path --underline
+      # Exact fish_config "Base16 Eighties" preset.
+      set -g fish_color_normal --reset
+      set -g fish_color_autosuggestion 747369
+      set -g fish_color_cancel -r
+      set -g fish_color_command 99cc99
+      set -g fish_color_comment ffcc66
+      set -g fish_color_cwd green
+      set -g fish_color_cwd_root red
+      set -g fish_color_end cc99cc
+      set -g fish_color_error f2777a
+      set -g fish_color_escape 66cccc
+      set -g fish_color_history_current --bold
+      set -g fish_color_host --reset
+      set -g fish_color_host_remote yellow
+      set -e fish_color_keyword
+      set -g fish_color_operator 6699cc
+      set -e fish_color_option
+      set -g fish_color_param d3d0c8
+      set -g fish_color_quote ffcc66
+      set -g fish_color_redirection d3d0c8
+      set -g fish_color_search_match white --background=brblack --bold
+      set -g fish_color_selection white --background=brblack --bold
+      set -g fish_color_status red
+      set -g fish_color_user brgreen
+      set -g fish_color_valid_path --underline
 
-      # pager
-         set -g fish_pager_color_progress 585858
-         set -g fish_pager_color_prefix 86c1b9
-         set -g fish_pager_color_completion d8d8d8
-         set -g fish_pager_color_description 585858
-         set -g fish_pager_color_selected_background --background=383838
+      set -g fish_pager_color_completion --reset
+      set -g fish_pager_color_description B3A06D yellow
+      set -g fish_pager_color_prefix --bold --underline
+      set -g fish_pager_color_progress brwhite --background=cyan --bold
+      set -g fish_pager_color_selected_background --background=brblack
 
       # overwrite greeting
       # potentially disabling fastfetch

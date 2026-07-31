@@ -10,6 +10,7 @@
     ./kitty.nix
     ./ranger.nix
     ./vscode.nix
+    ./spicetify.nix
   ];
 
   home.username = "joshr";
@@ -30,7 +31,6 @@
 
   home.packages = with pkgs; [
     vivaldi
-    spotify
     discord
     protonup-qt
     papirus-icon-theme
@@ -51,13 +51,13 @@
   ];
 
   programs.btop = {
-   enable = true;
-   settings = {
-     color_theme = "tokyo-storm";
-     theme_background = false;
-     update_ms = 100;
+    enable = true;
+    settings = {
+      color_theme = "tokyo-storm";
+      theme_background = false;
+      update_ms = 100;
     };
-};
+  };
   programs.mangohud = {
     enable = true;
     enableSessionWide = false;
@@ -79,11 +79,14 @@
   xdg.dataFile."fonts".source = "${inputs.dotfiles}/dot_local/share/fonts";
   fonts.fontconfig.enable = true;
 
-  xdg.dataFile."plasma/desktoptheme".source = "${inputs.dotfiles}/dot_local/share/plasma/desktoptheme";
-  xdg.dataFile."plasma/look-and-feel".source = "${inputs.dotfiles}/dot_local/share/plasma/look-and-feel";
+  xdg.dataFile."plasma/desktoptheme".source =
+    "${inputs.dotfiles}/dot_local/share/plasma/desktoptheme";
+  xdg.dataFile."plasma/look-and-feel".source =
+    "${inputs.dotfiles}/dot_local/share/plasma/look-and-feel";
 
   xdg.dataFile."icons/j-accent.svg".source = "${inputs.dotfiles}/dot_local/share/icons/j-accent.svg";
-  xdg.dataFile."icons/j-contrast.svg".source = "${inputs.dotfiles}/dot_local/share/icons/j-contrast.svg";
+  xdg.dataFile."icons/j-contrast.svg".source =
+    "${inputs.dotfiles}/dot_local/share/icons/j-contrast.svg";
 
   xdg.dataFile."wallpapers".source = "${inputs.dotfiles}/dot_local/share/wallpapers";
 

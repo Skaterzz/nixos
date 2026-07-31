@@ -162,6 +162,35 @@ let
 
   themeDropIn = "/etc/sddm.conf.d/99-niri-active-theme.conf";
 
+  # A solid image in each palette's background colour, so sddmWallpaper always
+  # exists.
+  #
+  # This is the leading suspect for the black greeter. The theme config points
+  # Background at a fixed runtime path, and that file only appears once the
+  # wallpaper switcher has run — on a fresh boot, or before ever picking a
+  # wallpaper, it isn't there. sddm-astronaut then feeds a missing image into
+  # a blur shader (PartialBlur is on), and a QML scene graph that fails while
+  # building an effect chain renders nothing at all rather than falling back
+  # to BackgroundColor. That would look exactly like what happened: no error
+  # from SDDM, which had already reported the greeter started and connected,
+  # and identical behaviour on every display server, because none of them are
+  # involved.
+  #
+  # Unproven — the greeter's own QML warnings were never captured — but it is
+  # the only path here that referenced a file that might not exist, it costs
+  # a few KB per palette, and it makes the themed greeter safe to retry.
+  fallbackWallpapers = lib.mapAttrs (
+    name: t:
+    pkgs.runCommand "sddm-fallback-${name}.png" { } ''
+      ${pkgs.imagemagick}/bin/magick -size 1920x1080 "xc:${t.bg}" "png:$out"
+    ''
+  ) themes;
+
+  # `name) fallback="/nix/store/..." ;;` arms for the script's case.
+  wallpaperCaseArms = lib.concatStringsSep "\n" (
+    lib.mapAttrsToList (n: p: ''            ${n}) fallback="${p}" ;;'') fallbackWallpapers
+  );
+
   syncSddmTheme = pkgs.writeShellScript "sddm-theme-sync" ''
     set -eu
 
@@ -171,8 +200,11 @@ let
         ''
           name="$(cat ${themeStateFile} 2>/dev/null || true)"
           case "$name" in
-          ${lib.concatStringsSep "\n" (map (n: "            ${n}) ;;") (lib.attrNames themes))}
-            *) name="${themeSet.default}" ;;
+${wallpaperCaseArms}
+            *)
+              name="${themeSet.default}"
+              fallback="${fallbackWallpapers.${themeSet.default}}"
+              ;;
           esac
 
           mkdir -p /etc/sddm.conf.d
@@ -214,6 +246,15 @@ let
           rm -f "$tmp"
         fi
       fi
+
+      # Guarantee the file the theme names actually exists. See the
+      # fallbackWallpapers note: a missing background is not a cosmetic
+      # problem here, it feeds a blur shader and can take the whole greeter
+      # down with it. Only used when nothing above produced an image — a
+      # first boot, or before a wallpaper has ever been chosen.
+      if [ ! -f "${sddmWallpaper}" ]; then
+        install -m 0644 "$fallback" "${sddmWallpaper}"
+      fi
     ''}
 
     # --- clean up the abandoned display sync --------------------------
@@ -245,6 +286,24 @@ in
     wayland.enable = config.local.sddm.wayland;
     wayland.compositor = config.local.sddm.compositor;
     package = pkgs.kdePackages.sddm;
+
+    # Cursor for the greeter.
+    #
+    # SDDM ships no cursor of its own — it reads these and exports
+    # XCURSOR_THEME/XCURSOR_SIZE into the greeter, which then looks the name
+    # up in the *system* icon path. Without them the greeter inherits
+    # whatever the compositor defaults to, which on a bare login screen is
+    # frequently nothing at all, and you get an invisible pointer.
+    #
+    # The session's cursor is set by home.pointerCursor in home/joshr/home.nix
+    # and the greeter cannot see it: it runs as the `sddm` user before anyone
+    # has logged in. Same names on both sides so the pointer doesn't change
+    # shape at login; bibata-cursors is already in environment.systemPackages
+    # (modules/nixos/base.nix), which is what puts it on the system icon path.
+    settings.Theme = {
+      CursorTheme = "Bibata-Modern-Ice";
+      CursorSize = 24;
+    };
   }
   // lib.optionalAttrs useAstronaut {
     theme = defaultSddmTheme;

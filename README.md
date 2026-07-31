@@ -264,10 +264,31 @@ Things ruled out along the way, so they are not tried again:
 - **The greeter's compositor.** weston made no difference, and neither did
   X11.
 
-`local.sddm.theme = "astronaut"` brings back the themed greeter: one
+The stock greeter confirmed the diagnosis: it comes up fine on both displays,
+so the theme was indeed the thing at fault.
+
+**`local.sddm.theme = "astronaut"`** brings the themed greeter back — one
 `sddm-astronaut` build per palette, following the desktop's theme and
-wallpaper. It is worth retrying only once the stock greeter is known good, so
-there is a working baseline to compare against.
+wallpaper — with the leading suspect now fixed.
+
+That suspect is the background. The theme config points `Background` at a
+fixed runtime path, `/var/lib/sddm-theme/wallpaper.png`, and that file only
+appears once the wallpaper switcher has run. Before a wallpaper has ever been
+picked, it isn't there. sddm-astronaut then feeds a missing image into a blur
+shader — `PartialBlur` is on — and a QML scene graph that fails while building
+an effect chain renders *nothing*, rather than falling back to
+`BackgroundColor`. That matches every symptom: no error from SDDM, which had
+already logged the greeter as started and connected, and identical behaviour
+on every display server, because none of them were involved.
+
+The fix is that the sync service now guarantees the file exists, seeding a
+solid image in the palette's background colour when there's no wallpaper to
+convert. A few KB per palette.
+
+This is unproven — the greeter's own QML warnings were never captured — but it
+was the only path in the theme referencing a file that might not exist. If the
+themed greeter is still black, go back to `"stock"` and the next thing to
+strip is the per-palette directory rename.
 
 One thing that has to happen on the way to stock: the sync service deletes
 `/etc/sddm.conf.d/99-niri-active-theme.conf`. That drop-in names a
@@ -276,6 +297,20 @@ what it declares, and left behind it would point SDDM at a theme directory
 that is no longer in the store. The service is ordered before
 `display-manager.service` so this lands before the greeter reads it, rather
 than one boot late.
+
+**The greeter's cursor** comes from `settings.Theme.CursorTheme`. SDDM ships
+no cursor of its own — it exports `XCURSOR_THEME`/`XCURSOR_SIZE` into the
+greeter, which looks the name up on the *system* icon path. Without them the
+greeter inherits whatever the compositor defaults to, which on a bare login
+screen is often nothing, and the pointer is invisible.
+
+It's set to `Bibata-Modern-Ice` at size 24, matching `home.pointerCursor` in
+`home/joshr/home.nix` so the pointer doesn't change shape at login. The two
+have to be stated separately: the greeter runs as the `sddm` user before
+anyone has logged in and cannot see home-manager's config. `bibata-cursors` is
+in `environment.systemPackages` (`modules/nixos/base.nix`), which is what puts
+it on the system icon path — a cursor theme only in the user profile would not
+be found.
 
 If the login screen is ever black again, a TTY still works (`Ctrl+Alt+F2`), as
 does booting the previous generation.

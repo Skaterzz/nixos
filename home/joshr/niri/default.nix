@@ -13,7 +13,6 @@
     ./waybar.nix
     ./notifications.nix
     ./lock.nix
-    ./openrgb.nix
     #./firefox.nix
   ];
 

@@ -22,5 +22,4 @@
   # This only stops the *applet* autostarting. `openrgb` is still installed
   # (../home.nix) and the daemon is still enabled by modules/nixos/gaming.nix,
   # so launching it by hand on a docked keyboard or mouse still works.
-  local.openrgb.autostart = false;
 }

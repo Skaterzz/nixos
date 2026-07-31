@@ -67,8 +67,8 @@ let
   # on (it implies `--gui`) and keeps that GUI out of the way. Passing
   # `--profile` alone, or omitting it, are both wrong for "apply the profile
   # and sit in the tray".
-  openrgbStartup = lib.optionalString config.local.openrgb.autostart ''
-    spawn-at-startup "${pkgs.openrgb}/bin/openrgb" "--startminimized" "--profile" "${config.local.openrgb.profile}"'';
+  #openrgbStartup = lib.optionalString config.local.openrgb.autostart ''
+    #spawn-at-startup "${pkgs.openrgb}/bin/openrgb" "--startminimized" "--profile" "${config.local.openrgb.profile}"'';
 in
 {
   xdg.configFile."niri/config.kdl".text = ''

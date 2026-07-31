@@ -241,16 +241,17 @@ let
       # showing a stale picture.
       install -d -m 0755 "${espThemeDir}"
 
-      wp="$(cat "${wallpaperStateFile}" 2>/dev/null || true)"
-      if [ -n "$wp" ] && [ -f "$wp" ]; then
-        tmp="${espWallpaper}.tmp"
-        if magick "$wp" -strip -resize '1920x1080^' \
-             -gravity center -extent 1920x1080 "png:$tmp" 2>/dev/null; then
-          mv -f "$tmp" "${espWallpaper}"
-        else
-          rm -f "$tmp"
-        fi
-      fi
+      # Commented out temporarily
+      # wp="$(cat "${wallpaperStateFile}" 2>/dev/null || true)"
+      # if [ -n "$wp" ] && [ -f "$wp" ]; then
+      #   tmp="${espWallpaper}.tmp"
+      #   if magick "$wp" -strip -resize '1920x1080^' \
+      #        -gravity center -extent 1920x1080 "png:$tmp" 2>/dev/null; then
+      #     mv -f "$tmp" "${espWallpaper}"
+      #   else
+      #     rm -f "$tmp"
+      #   fi
+      # fi
 
       body="$(mktemp)"
       entries="$(mktemp)"
@@ -349,15 +350,16 @@ let
             esac
             seen_labels="$seen_labels|$label|"
 
-            rel="''${target#"$root"}"
+            # Strip the leading slash from $rel to prevent double slashes (://)
+            local limine_rel="${rel"#""/"}"
 
             # if_fw_type hides the entry if the machine is ever booted in BIOS
             # mode, where chainloading an EFI binary cannot work.
             printf '//%s\n' "$label"
-            printf '    comment: Chainloaded from %s%s\n' "$volume" "$rel"
+            printf '    comment: Chainloaded from %s/%s\n' "$volume" "$rel"
             printf '    protocol: efi\n'
             printf '    if_fw_type: UEFI\n'
-            printf '    path: %s%s\n' "$volume" "$rel"
+            printf '    path: %s/%s\n' "$volume" "$rel"
           done
         }
 
@@ -527,7 +529,7 @@ in
         wantedBy = [ "multi-user.target" ];
         pathConfig.PathChanged = [
           themeStateFile
-          wallpaperStateFile
+          #wallpaperStateFile
         ];
       };
     })

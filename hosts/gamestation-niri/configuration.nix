@@ -30,7 +30,8 @@
     ../../modules/nixos/gaming.nix
     ../../modules/nixos/users.nix
     ../../modules/nixos/office.nix
-    ../../modules/nixos/contentcreation.nix
+    ../../modules/nixos/content-creation.nix
+    ../../modules/nixos/desktop-apps.nix
 
     # Development tooling: direnv, Docker, libvirtd/QEMU/virt-manager, and
     # the nix settings per-project dev shells need. Uncomment to enable.

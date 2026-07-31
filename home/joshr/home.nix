@@ -12,13 +12,14 @@
     ./vscode.nix
     ./spicetify.nix
     ./firefox.nix
+    ./modules/desktop-apps.nix
   ];
 
   home.username = "joshr";
   home.homeDirectory = "/home/joshr";
 
   # Do not bump this after the initial install; see the Home Manager manual.
-  home.stateVersion = "24.11";
+  home.stateVersion = "26.05";
 
   programs.home-manager.enable = true;
 
@@ -32,25 +33,8 @@
 
 
   home.packages = with pkgs; [
-    discord
-    protonup-qt
-    papirus-icon-theme
-    signal-desktop
-    joplin-desktop
-    bitwarden-desktop
-    nextcloud-client
-    obs-studio
-    lutris
-    localsend
     sshfs
-    playerctl
-    cava
-    cmatrix
-    yt-dlp
-    vivaldi
-    haruna
-    kdePackages.gwenview
-    kdePackages.elisa
+
   ];
 
   programs.btop = {

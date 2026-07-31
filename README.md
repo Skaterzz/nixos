@@ -66,6 +66,9 @@ can't occur — and neither can the from-source rebuild the workaround costs.
 
 ```
 modules/nixos/niri.nix        # session, SDDM + theme, polkit, PAM, portals
+home/joshr/displays/
+  gamestation.nix             # DP-3 + DP-2 layout — edit here for monitors
+  laptop.nix                  # empty: niri auto-detects
 home/joshr/niri/
   default.nix                 # entrypoint: packages, GTK/Qt/cursor
   themes.nix                  # the palettes — edit colours here
@@ -140,11 +143,12 @@ restored at login.
 
 ### Displays
 
-Per-host, via `local.niri.outputs` in the host's home entrypoint. Empty means
-niri auto-detects, which is what the laptop does.
+One file per host under `home/joshr/displays/`, kept separate so a monitor
+change doesn't mean editing the session config. Empty means niri
+auto-detects, which is what the laptop does.
 
 ```nix
-# home/joshr/gamestation-niri.nix
+# home/joshr/displays/gamestation.nix
 local.niri.outputs = [
   { name = "DP-3"; mode = "2560x1440@180.000";
     position = { x = 0;    y = 0; }; focusAtStartup = true; }

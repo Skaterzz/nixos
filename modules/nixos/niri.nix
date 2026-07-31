@@ -397,4 +397,15 @@ in
 
   # Unlock the keyring at login (the niri module enables gnome-keyring).
   security.pam.services.sddm.enableGnomeKeyring = true;
+
+  services.logind.settings.Login = {
+    # On battery, preserve the current suspend behaviour.
+    HandleLidSwitch = "suspend";
+
+    # While plugged in, lock without suspending.
+    HandleLidSwitchExternalPower = "lock";
+
+    # A system with multiple displays may count as docked.
+    HandleLidSwitchDocked = "lock";
+  };
 }

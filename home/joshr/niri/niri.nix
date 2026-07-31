@@ -69,6 +69,7 @@ in
 
     input {
         keyboard {
+            numlock
             xkb {
                 layout "us"
             }

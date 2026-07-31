@@ -46,6 +46,7 @@
     lutris
     localsend
     sshfs
+    openrgb
   ];
 
   programs.btop = {

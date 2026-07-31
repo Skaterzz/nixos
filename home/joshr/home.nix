@@ -48,6 +48,14 @@
     sshfs
   ];
 
+  programs.btop = {
+   enable = true;
+   settings = {
+     color_theme = "TokyoStorm";
+     theme_background = false;
+     update_ms = 100;
+    };
+};
   programs.mangohud = {
     enable = true;
     enableSessionWide = false;

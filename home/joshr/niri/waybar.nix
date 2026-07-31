@@ -38,8 +38,8 @@ in
       ];
       modules-center = [ "clock" ];
       modules-right = [
-        "tray"
         "mpris"
+        "tray"
         "pulseaudio"
         "network"
         "battery"
@@ -80,7 +80,7 @@ in
           {position} / {length}
         '';
 
-        title-len = 40;
+        title-len = 25;
         artist-len = 25;
         album-len = 25;
         dynamic-len = 55;

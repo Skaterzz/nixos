@@ -12,7 +12,6 @@
     ./vscode.nix
     ./spicetify.nix
     ./firefox.nix
-    ./modules/desktop-apps.nix
   ];
 
   home.username = "joshr";

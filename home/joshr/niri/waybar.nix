@@ -124,8 +124,8 @@ in
         on-click-right = "playerctl next";
 
         # Scroll over the widget to change volume
-        on-scroll-up = "playerctl volume 0.05+";
-        on-scroll-down = "playerctl volume 0.05-";
+        on-scroll-up = "playerctl volume 0.01+";
+        on-scroll-down = "playerctl volume 0.01-";
       };
       clock = {
         # One replacement field only. waybar passes the clock module a single
@@ -134,7 +134,7 @@ in
         # nothing at all — which is why the centre of the bar was empty.
         # Everything therefore goes through one strftime.
         format = "  {:%H:%M      %a, %b %d}";
-        format-alt = "  {:%H:%M      %A, %d %B %Y}";
+        format-alt = "  {:%H:%M      %A, %B %d %Y}";
         tooltip-format = "<tt><small>{calendar}</small></tt>";
         calendar = {
           mode = "month";
@@ -170,7 +170,7 @@ in
         format = "{icon}  {volume}%";
         format-muted = "󰝟  muted";
         format-icons.default = [ "󰕿" "󰖀" "󰕾" ];
-        scroll-step = 5;
+        scroll-step = 1;
         on-click = "${pkgs.wireplumber}/bin/wpctl set-mute @DEFAULT_AUDIO_SINK@ toggle";
         on-click-right = "${pkgs.pavucontrol}/bin/pavucontrol";
         tooltip-format = "{desc}";

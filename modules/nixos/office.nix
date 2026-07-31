@@ -5,5 +5,5 @@
         libreoffice
         onlyoffice-desktopeditors
         kdePackages.okular
-    ]
+    ];
 }

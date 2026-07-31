@@ -5,26 +5,61 @@
 
 {
   imports =
-    [ (modulesPath + "/profiles/qemu-guest.nix")
+    [ (modulesPath + "/installer/scan/not-detected.nix")
     ];
 
-  boot.initrd.availableKernelModules = [ "ahci" "xhci_pci" "virtio_pci" "sr_mod" "virtio_blk" ];
+  boot.initrd.availableKernelModules = [ "nvme" "xhci_pci" "ahci" "usb_storage" "usbhid" "sd_mod" ];
   boot.initrd.kernelModules = [ ];
   boot.kernelModules = [ "kvm-amd" ];
   boot.extraModulePackages = [ ];
 
   fileSystems."/" =
-    { device = "/dev/disk/by-uuid/28b5ef16-c4a8-4135-b67c-298f7a96b932";
-      fsType = "ext4";
+    { device = "/dev/disk/by-uuid/e79d4b4f-cb7c-4138-a162-1403f0ccee71";
+      fsType = "btrfs";
+      options = [ "subvol=root" ];
+    };
+
+  fileSystems."/nix" =
+    { device = "/dev/disk/by-uuid/e79d4b4f-cb7c-4138-a162-1403f0ccee71";
+      fsType = "btrfs";
+      options = [ "subvol=nix" ];
+    };
+
+  fileSystems."/home" =
+    { device = "/dev/disk/by-uuid/e79d4b4f-cb7c-4138-a162-1403f0ccee71";
+      fsType = "btrfs";
+      options = [ "subvol=home" ];
     };
 
   fileSystems."/boot" =
-    { device = "/dev/disk/by-uuid/5CFC-4359";
+    { device = "/dev/disk/by-uuid/B840-692A";
       fsType = "vfat";
       options = [ "fmask=0022" "dmask=0022" ];
     };
 
-  swapDevices = [ ];
+  fileSystems."/media/Games2" =
+    { device = "/dev/disk/by-uuid/04772a2f-b64c-463d-97f6-4b7dc6155c14";
+      fsType = "ext4";
+      options = [
+	"nofail"
+	"rw"
+      ];
+    };
+
+  fileSystems."/media/Games" =
+    { device = "/dev/disk/by-uuid/56667f26-69b1-4de5-ad51-5a3c966630ea";
+      fsType = "ext4";
+      options = [
+	"nofail"
+	"rw"
+      ];
+
+    };
+
+  swapDevices =
+    [ { device = "/dev/disk/by-uuid/3f37620c-7806-42b9-bd91-dbd55f964a44"; }
+    ];
 
   nixpkgs.hostPlatform = lib.mkDefault "x86_64-linux";
+  hardware.cpu.amd.updateMicrocode = lib.mkDefault config.hardware.enableRedistributableFirmware;
 }

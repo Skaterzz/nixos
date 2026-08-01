@@ -113,10 +113,17 @@ home/joshr/niri/
 
 ### The bar
 
-Left is workspaces and the focused window title, centre is the clock and
-date, right is the tray, media controls, volume, network, battery, the idle
-inhibitor, then **lock** and **power** as a matched pair at the far end. Each
-group is its own rounded floating pill rather than one long bar.
+Left is the username, workspaces and the focused window title, centre is the
+clock and date, right is the tray, media controls, volume, network, battery,
+the idle inhibitor, then **lock** and **power** as a matched pair at the far
+end. Each group is its own rounded floating pill rather than one long bar.
+
+**The username** is the first slot, in the accent colour — the same treatment
+the clock gets, because both are labels rather than controls. It's static
+text with no `exec`: the name comes from `config.home.username` at build
+time, so there's no subprocess polling for a string that can't change while
+the bar is running, and a second user's generation renders their own name
+without editing anything.
 
 Lock and power are styled identically and differ only on hover — the power
 button goes red, because it's the one that can end the session. The lock

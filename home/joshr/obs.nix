@@ -50,7 +50,7 @@ in
   # OBS custom themes live under ~/.config/obs-studio/themes on Linux.
   # This is a variant, not a complete theme: all colours and widget styling
   # continue to come from com.obsproject.System.
-  xdg.configFile."obs-studio/themes/NiriSystem/NiriSystem.ovt".text = ''
+  xdg.configFile."obs-studio/themes/NiriIcons.ovt".text = ''
     @OBSThemeMeta {
         name: 'Niri System';
         id: '${obsThemeId}';

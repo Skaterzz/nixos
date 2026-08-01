@@ -24,5 +24,6 @@
 	termius
 	kdePackages.kcalc
 	thunderbird
+	kdePackages.kate
     ];
 }

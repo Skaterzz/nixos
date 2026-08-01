@@ -142,6 +142,8 @@ in
             left 0
             right 0
         }
+        // Sets the fallback background fill color to solid black
+        background-color "#303030"
     }
 
     // Named workspaces. waybar's niri/workspaces module shows these, and the

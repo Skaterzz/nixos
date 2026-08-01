@@ -56,6 +56,7 @@ home/joshr/
     niri.nix waybar.nix            #   compositor config and the bar
     scripts.nix notifications.nix  #   theme/wallpaper/lock/screenshot helpers
     clipboard.nix browser.nix      #   clipboard history, default-browser wiring
+    mime.nix                       #   non-browser file associations (images)
     emoji.nix                      #   the Mod+. emoji picker
     vscode.nix lock.nix            #   editor theming, idle handling
   plasma.nix                       # KDE Plasma settings/panels/shortcuts (plasma-manager)
@@ -791,7 +792,20 @@ reaches the other:
 
 The trade under niri is that "Set as default" inside a browser, and any
 "always open with" choice, no longer stick — the file is a read-only symlink
-into the store. Change it in `home/joshr/niri/browser.nix` instead.
+into the store. Change it in Nix instead: `home/joshr/niri/browser.nix` for the
+http(s) handlers, `home/joshr/niri/mime.nix` for everything else.
+
+That second file exists because of exactly this trade. Dolphin's "Open With… →
+Remember application association for this type of file" writes the same
+unwritable `mimeapps.list`, so images kept reverting to whatever handler
+happened to win — the checkbox looks like it worked and the association is gone
+by the next launch. `mime.nix` declares the image types onto Gwenview so they
+stay put. Note that **adding KDE System Settings back does not fix this**: its
+Default Applications page writes that same file and fails the same way.
+
+Contributing different MIME types from more than one module is fine — the
+option is an attrset and they merge. Two modules claiming the *same* type is
+the conflict, which is why the http(s) handlers live in one place only.
 
 ### Why Firefox is still here
 

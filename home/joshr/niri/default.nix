@@ -16,6 +16,7 @@
     ./clipboard.nix
     ./emoji.nix
     ./browser.nix
+    ./mime.nix
     ./vscode.nix
     #./firefox.nix
   ];

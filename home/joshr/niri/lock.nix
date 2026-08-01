@@ -52,7 +52,7 @@ in
       }
       # Then blank the outputs. niri handles DPMS via its own IPC.
       {
-        timeout = 360;
+        timeout = 600;
         command = "${pkgs.niri}/bin/niri msg action power-off-monitors";
       }
     ];

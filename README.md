@@ -257,6 +257,7 @@ restored at login.
 | `Mod+H/J/K` | focus (arrows also work; `Mod+L` is lock, so use `Mod+Right`) |
 | `Mod+1..5` | named workspaces |
 | `Mod+R` / `Mod+F` / `Mod+V` | preset widths, maximize, float |
+| `Mod+W` | tab the focused column — its windows stack, one shown at a time |
 | `Print` / `Mod+Shift+S` | region screenshot, annotated in satty |
 | `Shift+Print` / `Mod+Ctrl+S` | same region as last time, no selection step |
 | `Ctrl+Print` / `Alt+Print` | screen / window (niri's built-ins) |
@@ -267,7 +268,20 @@ restored at login.
 | `Mod+Shift+W` / `Mod+Ctrl+W` | random wallpaper, pick wallpaper |
 | `Mod`+scroll / `Mod+Shift`+scroll | walk windows / workspaces (wheel and touchpad) |
 
-`Mod+Shift+Slash` shows niri's own hotkey overlay.
+`Mod+W` is the one that isn't guessable from the key. A column normally
+divides its height between the windows stacked in it, so a column of four is
+four short windows. Tabbed, they share one full-height slot and only the
+focused one is drawn, with an indicator marking the rest — the column still
+takes one slot on the strip, and `Mod+K`/`Mod+J` walk the tabs. `Mod+W` again
+puts the stack back. Nothing moves in or out of the column either way; it's
+purely how the column is drawn.
+
+`Mod+Shift+Slash` shows niri's own **Important Hotkeys** overlay. That's a
+shorter list than the table above: niri hardcodes the entries it considers
+important, and anything else appears only if its bind carries a
+`hotkey-overlay-title`. `Mod+W` is given one for exactly that reason — the
+titled binds land after the hardcoded ones. Scroll binds can't appear there
+at all, so `Mod`+scroll stays a table-only entry.
 
 ### Clipboard history
 
@@ -776,8 +790,8 @@ dotfiles repo is the permanent one. Beside it, `WallhavenFlake/` holds
 [wallhaven.cc](https://wallhaven.cc)'s current top 20 — and only those
 twenty, so as the toplist moves on, the folder moves with it.
 
-Both desktops pick the new files up for free: niri's `Mod+W` picker globs the
-whole tree, and Plasma's slideshow is pointed at the same directory.
+Both desktops pick the new files up for free: niri's `Mod+Ctrl+W` picker globs
+the whole tree, and Plasma's slideshow is pointed at the same directory.
 
 ### Which twenty, and who decides
 
@@ -1168,6 +1182,37 @@ the prompt silently doesn't appear.
 Note that only fish carries the eza aliases (`ls`, `ll`, `la`, `lt`, `lg`) —
 those came from the dotfiles' `config.fish.tmpl` and haven't been mirrored
 into the other shells.
+
+### `nix-clean`
+
+Also fish-only, and also in `home/common/shell.nix`, so `joshr` and `root`
+both get it. It's the on-demand version of the weekly garbage collection in
+`modules/nixos/base.nix`, for when you want the space back now:
+
+```fish
+nix-clean          # generations older than 7d, matching the weekly timer
+nix-clean 30d      # any age nix-collect-garbage accepts
+nix-clean all      # every generation but the current one
+```
+
+It runs `nix-collect-garbage` **twice**, and that's the point of it. The tool
+only walks the profiles it can see, and which profiles those are follows
+`$HOME`. The `sudo` run gets the system profile — old kernels, initrds and
+system closures, which is where the space actually is — but root's `$HOME` is
+`/root`, so it never reaches `~/.local/state/nix/profiles`, where
+home-manager keeps joshr's generations. Sweep only the system half and those
+stay pinned as live GC roots, holding their whole closures down with them.
+The second run is skipped when you're already root, where it would just
+repeat the first.
+
+The current generation always survives, both here and under `all`. What you
+spend is rollback: picking a previous generation from the boot menu is the
+recovery path for a bad switch, which is why `all` has to be asked for by
+name. Deleted generations also stay *listed* in the menu until the bootloader
+config is regenerated, so the function ends by reminding you to
+`sudo nixos-rebuild boot --flake /etc/nixos#<host>` — and `<host>` there is
+the flake attribute, not the hostname. On this machine those differ:
+`gamestation` and `gamestation-niri` both run on a box called `dialga`.
 
 ## Development environments
 

@@ -62,8 +62,6 @@
     vim
     btop
     ranger
-    gh
-    glab
   ];
 
   programs.vim = {

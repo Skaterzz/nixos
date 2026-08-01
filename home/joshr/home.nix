@@ -7,6 +7,7 @@
   imports = [
     ../common/options.nix
     ../common/shell.nix
+    ../common/git.nix
     ./kitty.nix
     ./ranger.nix
     ./vscode.nix
@@ -21,21 +22,7 @@
   # Do not bump this after the initial install; see the Home Manager manual.
   home.stateVersion = "26.05";
 
-  programs.home-manager.enable = true;
-
-  programs.git = {
-    enable = true;
-    package = pkgs.gitFull;
-    settings.user = {
-      name = "Joshua Randall";
-      email = "josh@joshrandall.net"; # adjust if this isn't your git identity
-    };
-    extraConfig = {
-      credential = {
-         credentialStore = "secretservice";
-       };
-    };
-  };
+  programs.home-manager.enable = true; 
 
 
   home.packages = with pkgs; [

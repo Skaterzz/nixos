@@ -14,6 +14,7 @@
   imports = [
     ../common/options.nix
     ../common/shell.nix
+    ../common/git.nix
   ];
 
   home.username = "root";

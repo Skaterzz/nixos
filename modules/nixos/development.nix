@@ -1,18 +1,22 @@
 { lib, pkgs, ... }:
 
 # Everything needed to develop on a machine, in one importable lump: direnv,
-# containers, VMs, and the nix settings that make per-project shells behave.
+# containers, and the nix settings that make per-project shells behave.
 #
 # **This module is commented out in every host by default.** Uncomment its
 # import in `hosts/<host>/configuration.nix` on the machines you actually
-# develop on. That's deliberate: Docker and libvirtd are each a daemon, a
-# bridge interface and a chunk of closure, and a machine that isn't being
-# developed on shouldn't carry them just because its sibling does.
+# develop on. That's deliberate: Docker is a daemon, a bridge interface and a
+# chunk of closure, and a machine that isn't being developed on shouldn't
+# carry it just because its sibling does.
 #
 # Note that turning it off also removes Docker, which used to be
 # unconditional in the old `virtualisation.nix` (now folded in here). If a
 # host needs containers but not the rest, import this and it's all one
 # switch — there's no finer granularity on purpose.
+#
+# QEMU/KVM and virt-manager used to live here too. They're now their own
+# import, modules/nixos/virtualization.nix, so a development host doesn't
+# have to carry libvirtd and a GUI to get containers.
 #
 # See "Development environments" in the README for the per-project workflow
 # this exists to support.
@@ -125,42 +129,11 @@ in
   # automatically — see modules/nixos/users.nix.
   virtualisation.docker.enable = true;
 
-  # --- virtual machines -------------------------------------------------
-  virtualisation.libvirtd = {
-    enable = true;
-
-    qemu = {
-      package = pkgs.qemu_kvm;
-
-      # Keep the QEMU processes unprivileged. The default is already false;
-      # stated because the failure mode of the other setting is a guest
-      # escape being a root escape.
-      runAsRoot = false;
-
-      # Software TPM. The other half of what Windows 11 refuses to install
-      # without, and harmless for guests that don't ask.
-      swtpm.enable = true;
-    };
-  };
-
-  # virt-manager as the GUI. The NixOS module does more than install it — it
-  # also enables the dconf settings the app stores its connection list in,
-  # which is why it's a `programs.*` option rather than a package.
-  programs.virt-manager.enable = true;
-
-  # USB redirection from the host into a guest, which is what makes a
-  # passed-through keyboard, YubiKey or flash drive work in virt-manager.
-  virtualisation.spiceUSBRedirection.enable = true;
-
   environment.systemPackages =
     [ devInit ]
     ++ (with pkgs; [
       # --- containers -------------------------------------------------
       docker-compose
-
-      # --- VMs --------------------------------------------------------
-      virtiofsd # share a host directory into a guest without NFS
-      spice-gtk # the client side of the SPICE console
 
       # --- nix itself -------------------------------------------------
       nil # language server, for the VS Code Nix extension

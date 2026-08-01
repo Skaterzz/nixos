@@ -24,8 +24,9 @@ hosts/server/                     # headless: no desktop, cron jobs
 modules/nixos/
   base.nix                        # nix settings, locale/timezone, fish, base fonts
   plasmalogin.nix                     # SDDM (Wayland) + Plasma 6, portals, audio, Flatpak
-  development.nix                 # direnv, Docker, libvirtd/QEMU/virt-manager, nix
-                                  #   settings — commented out per host, see below
+  development.nix                 # direnv, Docker, nix settings — commented out
+                                  #   per host, see below
+  virtualization.nix              # libvirtd/QEMU/virt-manager — imported per host
   cron.nix                        # local.cron.jobs -> the system crontab
   emoji.nix                       # Microsoft Fluent Emoji as the system emoji font
   plasma-xdg-data-dirs.nix        # workaround for nixpkgs#126590 (see below)
@@ -674,6 +675,23 @@ sleep.
 niri's `layout { background-color }` does not help here: that is the backdrop
 behind windows, and swaylock's own surface covers it.
 
+**swaylock is patched** (`home/joshr/niri/swaylock-date-fit.patch`) so the date
+can't overhang the ring. Upstream sizes that line at a hardcoded
+`arc_radius / 6`, so it grows in exact proportion to the circle — a long date
+like "Wednesday, September 24" hangs over by the same fraction at *every*
+radius, and widening `--indicator-radius` buys nothing. No flag reaches it
+either: `--font-size` sets the clock above it, and the date's divisor isn't
+exposed. Without the patch the only fixes available in configuration are to
+shorten the date (`%b` for `%B`) or narrow the font.
+
+The patch measures the text and scales it down only when it wouldn't fit,
+bounded by the ring's inner chord at the text's own baseline rather than the
+diameter, since the date sits below the centre where the circle has already
+started to narrow. Short dates keep their normal size. It costs a source build
+of swaylock-effects, which is a small C project and quick. If a nixpkgs bump
+moves those lines the patch will fail to apply — the fallback is a shorter
+`--datestr`.
+
 **`Mod+Escape` blanks the monitors on demand**, from the lock screen as well
 as from the desktop — for when you're walking away now and don't want to wait
 out the idle timer. Any input wakes them; on the lock screen that leaves
@@ -1020,6 +1038,31 @@ model. `joshr`'s membership of the `docker` and `libvirtd` groups follows the
 daemons automatically (`modules/nixos/users.nix`), so a host with the module
 off doesn't fail activation naming groups that don't exist.
 
+**VMs are a separate import.** QEMU/KVM and virt-manager used to be in here
+too, and are now `modules/nixos/virtualization.nix`, added per host the same
+way:
+
+```nix
+# hosts/gamestation-niri/configuration.nix
+    ../../modules/nixos/virtualization.nix
+```
+
+Both are "virtualisation" in the NixOS option tree, which is how they ended up
+in one file, but they aren't one decision: libvirtd is a daemon, a bridge
+interface, swtpm and a GUI app, and wanting containers on a box is a poor
+reason to be handed all of that. The group membership works the same way —
+`users.nix` keys off `config.virtualisation.libvirtd.enable`, so importing one
+module and not the other is fine.
+
+What that one turns on: **libvirtd** with `qemu_kvm` and `runAsRoot = false`
+(the failure mode of the other setting is a guest escape being a root escape);
+**swtpm**, the software TPM a Windows 11 guest insists on; **virt-manager** as
+the GUI, via `programs.virt-manager` rather than the bare package because the
+module also enables the dconf settings it keeps its connection list in; **SPICE
+USB redirection**, so a passed-through YubiKey or flash drive reaches the
+guest; and `virtiofsd` + `spice-gtk` for host directory sharing and the console
+client.
+
 What the module turns on:
 
 - **direnv** with **nix-direnv**, hooked into bash, zsh and fish. Plain direnv
@@ -1033,9 +1076,6 @@ What the module turns on:
   - Per-user tuning (`hide_env_diff`, `warn_timeout`) is a
     `~/.config/direnv/direnv.toml` thing that no system module can set.
 - **Docker** + docker-compose.
-- **libvirtd / QEMU / virt-manager**, with `OVMFFull` for UEFI guests, swtpm
-  for the TPM a Windows 11 guest insists on, and SPICE USB redirection so a
-  passed-through YubiKey or flash drive works.
 - **`dev-init`**, the one-command path below.
 - The nix settings the rest depends on, all of which need root: `keep-outputs`
   and `keep-derivations`, without which garbage collection deletes the *build*

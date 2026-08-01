@@ -15,6 +15,28 @@ let
 
   wallpaperDir = "${config.home.homeDirectory}/.local/share/wallpapers";
 
+  # swaylock, patched so the lock screen's date can't overhang the ring.
+  #
+  # Upstream sizes that line at a hardcoded `arc_radius / 6` (render.c), so it
+  # grows in exact proportion to the circle and a long date overhangs by the
+  # same fraction at every radius. No flag reaches it — `--font-size` sets the
+  # clock above it and nothing else is exposed — so a wider `--indicator-radius`
+  # cannot buy the room, and the only options in configuration are to shorten
+  # the date or narrow the font. The patch measures the text and scales it down
+  # only when it would not fit, which keeps the full `%A, %B %d` and leaves
+  # short dates at their normal size.
+  #
+  # It bounds against the ring's inner chord at the text's own baseline rather
+  # than the diameter, because the date sits below the centre where the circle
+  # has already begun to narrow.
+  #
+  # Costs a source build of swaylock-effects, which is a small C project and
+  # quick. If a nixpkgs bump ever moves those lines the patch will fail to
+  # apply, and the fallback is a shorter `--datestr` (`%b` for `%B` is enough).
+  swaylock = pkgs.swaylock-effects.overrideAttrs (old: {
+    patches = (old.patches or [ ]) ++ [ ./swaylock-date-fit.patch ];
+  });
+
   # name -> store path, as a shell case statement.
   themeCases = lib.concatStringsSep "\n" (
     lib.mapAttrsToList (n: d: ''      ${n}) target="${d}" ;;'') themeDirs
@@ -292,9 +314,17 @@ let
   #
   # niri's `layout { background-color }` has no bearing on this. That is the
   # backdrop behind windows; swaylock's own surface covers it.
+  #
+  # The date stays the full `%A, %B %d`. It used to overhang the ring on the
+  # long months, and what fixes that is the patch on `swaylock` above rather
+  # than anything here — a wider ring cannot, because swaylock sizes the date
+  # off the radius and it grows with the circle. See the comment there.
+  #
+  # Thickness moves 8 → 9 with the radius (110 → 130) only to hold the ring's
+  # weight steady; at 8 a 130 ring reads visibly thinner than the 110 one did.
   lockSession = pkgs.writeShellApplication {
     name = "lock-session";
-    runtimeInputs = with pkgs; [ swaylock-effects ];
+    runtimeInputs = [ swaylock ];
     text = ''
       # shellcheck disable=SC1091
       if [ -r "${activeDir}/swaylock.env" ]; then . "${activeDir}/swaylock.env"; fi
@@ -312,8 +342,8 @@ let
         --color "$LOCK_BG" \
         --clock \
         --indicator \
-        --indicator-radius 110 \
-        --indicator-thickness 8 \
+        --indicator-radius 130 \
+        --indicator-thickness 9 \
         --effect-blur 8x5 \
         --effect-vignette 0.4:0.4 \
         --datestr "%A, %B %d" \
@@ -650,5 +680,10 @@ in
       brightness
       cavaBar
       ;
+
+    # Not a script: the patched swaylock that lock-session wraps. Exported so
+    # lock.nix installs the same build rather than the stock one, which would
+    # otherwise put an unpatched `swaylock` on PATH beside it.
+    inherit swaylock;
   };
 }

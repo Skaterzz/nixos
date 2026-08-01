@@ -43,14 +43,17 @@
     ../../modules/nixos/office.nix
     ../../modules/nixos/content-creation.nix
     ../../modules/nixos/desktop-apps.nix
+
+    # Development tooling: direnv, Docker, and the nix settings per-project
+    # dev shells need.
+    #
+    # This is where Docker lives — the old virtualisation.nix was folded into
+    # it — so dropping this import means no containers on this host either.
     ../../modules/nixos/development.nix
 
-    # Development tooling: direnv, Docker, libvirtd/QEMU/virt-manager, and
-    # the nix settings per-project dev shells need. Uncomment to enable.
-    #
-    # This is where Docker now lives — the old virtualisation.nix was folded
-    # into it — so leaving it off means no containers on this host either.
-    # ../../modules/nixos/development.nix
+    # QEMU/KVM guests and the virt-manager GUI. Split out of development.nix,
+    # so containers and VMs are separate switches.
+    ../../modules/nixos/virtualization.nix
 
     # NOT imported: ../../modules/nixos/plasma-xdg-data-dirs.nix
     #

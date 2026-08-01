@@ -1,0 +1,37 @@
+--- a/render.c
++++ b/render.c
+@@ -346,7 +346,33 @@
+ 
+ 			/* Bottom */
+ 
+-			cairo_set_font_size(cairo, arc_radius / 6.0f);
++			/* Fit the date inside the ring.
++			 *
++			 * The size below is a fixed fraction of the radius, so a
++			 * long date overhangs the circle by the same proportion at
++			 * every radius -- growing the indicator cannot fix it, and
++			 * --font-size only reaches the line above. Measure, and
++			 * scale down only when it would not fit.
++			 *
++			 * The bound is the ring's inner chord at the baseline
++			 * rather than its diameter, since the date sits below the
++			 * centre where the circle is already narrowing.
++			 */
++			{
++				double fit_size = arc_radius / 6.0f;
++				double fit_r = arc_radius - arc_thickness / 2.0;
++				double fit_y = arc_radius / 3.5f;
++				double fit_w = fit_r > fit_y ? 2.0 * sqrt(
++					fit_r * fit_r - fit_y * fit_y) : 0.0;
++
++				cairo_set_font_size(cairo, fit_size);
++				cairo_text_extents(cairo, text_l2, &extents_l2);
++
++				if (fit_w > 0.0 && extents_l2.width > fit_w) {
++					cairo_set_font_size(cairo,
++						fit_size * fit_w / extents_l2.width);
++				}
++			}
+ 			cairo_text_extents(cairo, text_l2, &extents_l2);
+ 			cairo_font_extents(cairo, &fe_l2);
+ 			x_l2 = (buffer_width / 2) -

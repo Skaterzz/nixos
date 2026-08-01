@@ -48,9 +48,6 @@
     xwayland-satellite
   ];
 
-  programs.nm-applet.enable = false;
-  programs.blueman-applet.enable = false;
-
   # Cursor theme is set in ../home.nix so the Plasma and niri sessions share
   # one definition; niri.nix just names it in `cursor { xcursor-theme … }`.
 

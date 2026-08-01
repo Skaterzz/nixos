@@ -42,6 +42,12 @@
     brightnessctl
     playerctl
 
+    # Drives the bar's visualiser (see cavaBar in scripts.nix). Here as well
+    # so plain `cava` in a terminal works — that's the full-size version of
+    # the same thing, and it's the quickest way to tell whether it's cava or
+    # the widget at fault if the bar stays empty.
+    cava
+
     # Tray applet for NetworkManager, spawned at startup.
     # networkmanagerapplet
 
@@ -105,6 +111,38 @@
     enable = true;
     platformTheme.name = "kde";
     style.name = "breeze";
+
+    # Spell the packages out, purely to drop KDE System Settings.
+    #
+    # That app was showing up in the launcher on a session that has no Plasma
+    # to configure, and it came from here rather than from anything this repo
+    # asks for by name: home-manager's qt module maps
+    # `platformTheme.name = "kde"` to a fixed list, and in
+    # modules/misc/qt/default.nix that list is
+    #
+    #     kde = [ kdePackages.kio kdePackages.plasma-integration
+    #             kdePackages.systemsettings ];
+    #
+    # Setting `package` here overrides the mapping outright rather than adding
+    # to it — the module takes the *first non-empty* of [package-list,
+    # name-derived-list], so naming two packages means the third is never
+    # installed.
+    #
+    # Both of the ones kept are load-bearing and named above: kio is the KDE
+    # file dialog, plasma-integration is the platform plugin that reads
+    # kdeglobals. systemsettings is neither — it's the settings *shell*, and
+    # the KCMs it would host ship with plasma-desktop, which isn't installed
+    # here, so on this session it opens onto almost nothing.
+    #
+    # `name` stays "kde" and still sets QT_QPA_PLATFORMTHEME=kde; the plugin
+    # search path is built from the profile directory, not from this list, so
+    # dropping a package can't strip it. The Plasma hosts are untouched —
+    # they get System Settings from Plasma itself, and this file is only
+    # imported by the niri profiles.
+    platformTheme.package = with pkgs.kdePackages; [
+      kio
+      plasma-integration
+    ];
   };
 
   xdg.userDirs = {

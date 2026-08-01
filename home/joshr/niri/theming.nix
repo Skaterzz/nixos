@@ -224,6 +224,22 @@ let
       background-color: @err;
     }
 
+    /* Audio visualiser, immediately left of the track name.
+       Deliberately quiet: the dimmed accent rather than the accent, no pill
+       of its own and no hover state. It is texture beside the mpris module,
+       not a control — and it disappears completely when nothing is playing,
+       so it never holds a slot open in the bar.
+       Monospace is not cosmetic here: with a proportional font the glyphs
+       would be different widths and the whole widget would jitter sideways
+       as the music moved. */
+    #custom-cava {
+      font-family: "FiraCode Nerd Font", monospace;
+      font-size: 15px;
+      color: @accent-dim;
+      padding: 0 8px;
+      margin: 4px 0;
+    }
+
     /* Lock and power are a matched pair at the end of the bar: same size,
        same padding, so they read as one group of session controls. They
        differ only on hover — the destructive one goes red. */

@@ -3,11 +3,11 @@
     "dotfiles": {
       "flake": false,
       "locked": {
-        "lastModified": 1785598897,
-        "narHash": "sha256-DimZwn0A0q0P86TYUydbT9eAoANZ2oVuMljIBm2ctw4=",
+        "lastModified": 1785607803,
+        "narHash": "sha256-r34OV7JnVEAjLV1uDRDb95kw2KZVqenaXwq0XdK7dZw=",
         "owner": "joshrandall8478",
         "repo": "dotfiles",
-        "rev": "5c4072989610bbb92850a44bbb7a31dc1b1ee056",
+        "rev": "2f76828b67e44d567b58ab208d1f3a491a37684c",
         "type": "github"
       },
       "original": {
@@ -124,13 +124,13 @@
     "wallhaven-toplist": {
       "flake": false,
       "locked": {
-        "narHash": "sha256-qE7K0UczboEJkRiS1eybzjFXf7xDYjyzm23JRGeoKC4=",
+        "narHash": "sha256-QtTRB24m1ahou1UlQAoiE4g0MQr1Ijs9WC6IdgJVVOk=",
         "type": "file",
-        "url": "https://wallhaven.cc/api/v1/search?atleast=1920x1080&categories=111&order=desc&purity=100&sorting=toplist&topRange=1M"
+        "url": "https://wallhaven.cc/api/v1/search?atleast=1920x1080&categories=111&order=desc&purity=100&ratios=16x9%2C16x10&sorting=toplist&topRange=1M"
       },
       "original": {
         "type": "file",
-        "url": "https://wallhaven.cc/api/v1/search?atleast=1920x1080&categories=111&order=desc&purity=100&sorting=toplist&topRange=1M"
+        "url": "https://wallhaven.cc/api/v1/search?atleast=1920x1080&categories=111&order=desc&purity=100&ratios=16x9%2C16x10&sorting=toplist&topRange=1M"
       }
     }
   },

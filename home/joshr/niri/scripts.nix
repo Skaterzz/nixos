@@ -922,7 +922,7 @@ lockNowPlaying = pkgs.writeShellApplication {
 
         dots_size = 0.15
         dots_spacing = 0.42
-        dots_center = false
+        dots_center = true
         dots_rounding = -1
         dots_text_format = •
 

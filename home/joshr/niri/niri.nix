@@ -222,6 +222,13 @@ ${workspaceBlocks}
         open-floating true
     }
 
+    //kcalc float
+    window-rule {
+        match app-id="kcalc"
+        open-floating true
+	default-floating-size width=400 height=550
+    }	
+
     // Rounded corners everywhere, matching waybar and wofi.
     window-rule {
         geometry-corner-radius 8
@@ -335,7 +342,7 @@ ${workspaceBlocks}
         XF86AudioNext allow-when-locked=true { spawn "${bin pkgs.playerctl}" "next"; }
 
 	// Launch calcultor
-	XF86Calculator { spawn-sh "${pkgs.kdePackages.kcalc}/bin/kcalc" };
+	XF86Calculator { spawn-sh "${pkgs.kdePackages.kcalc}/bin/kcalc"; }
 
         // `brightness` rather than brightnessctl directly: it steps *every*
         // backlight device, where brightnessctl on its own takes the first

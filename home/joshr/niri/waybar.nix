@@ -195,14 +195,14 @@ in
       };
 
       bluetooth = {
-        format = "󰂯 {status}";
-        #format-connected = "󰂯 Connected";
-        format-connected-battery = "󰂯 {status} {device_battery_percentage}%";
-        tooltip-format = "{controller_alias}\t{controller_status}\n\n{num_connections} connected";
-        tooltip-format-connected = "{controller_alias}\t{controller_status}\n\n{num_connections} connected\n\n{device_enumerate}";
-        tooltip-format-enumerate-connected = "{device_alias}\t{device_address}";
-        tooltip-format-enumerate-connected-battery = "{device_alias}\t{device_address}\t{device_battery_percentage}%";
-        on-click = "blueman-manager";
+        format = "󰂯";
+        format-connected = "󰂯 Connected";
+        format-connected-battery = "󰂯 Connected {device_battery_percentage}%";
+        # tooltip-format = "{controller_alias}\t{controller_status}\n\n{num_connections} connected";
+        # tooltip-format-connected = "{controller_alias}\t{controller_status}\n\n{num_connections} connected\n\n{device_enumerate}";
+        # tooltip-format-enumerate-connected = "{device_alias}\t{device_address}";
+        # tooltip-format-enumerate-connected-battery = "{device_alias}\t{device_address}\t{device_battery_percentage}%";
+        on-click = "${bin pkgs.blueman.blueman-manager}";
       };
 
       battery = {

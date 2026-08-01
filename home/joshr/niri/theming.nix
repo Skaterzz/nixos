@@ -117,6 +117,15 @@ let
       padding: 0 6px;
     }
 
+    /* Username, first slot on the left. Wears the accent for the same reason
+       the clock does — it is a label, not a control, so it reads as chrome
+       rather than as something to click. */
+    #custom-user {
+      padding: 0 12px;
+      color: @accent;
+      font-weight: 700;
+    }
+
     #workspaces {
       padding: 0 2px;
     }

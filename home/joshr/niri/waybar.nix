@@ -33,6 +33,7 @@ in
       margin-right = 10;
 
       modules-left = [
+        "custom/user"
         "niri/workspaces"
         "niri/window"
       ];
@@ -49,6 +50,23 @@ in
         "custom/lock"
         "custom/session"
       ];
+
+      # Who the session belongs to, first thing on the bar.
+      #
+      # Static text, no `exec`: home-manager already knows the name, so it is
+      # baked in at build time rather than shelling out to `whoami` on an
+      # interval to print a string that cannot change while the bar is
+      # running. custom/lock and custom/session at the bottom of this file
+      # are the same shape — a custom module with no exec just draws its
+      # format string.
+      #
+      # Reading it from `config.home.username` rather than writing "joshr"
+      # is what makes it survive a second user: their generation renders
+      # their own name with nothing to edit.
+      "custom/user" = {
+        format = "󰀄  ${config.home.username}";
+        tooltip = false;
+      };
 
       "niri/workspaces" = {
         format = "{value}";

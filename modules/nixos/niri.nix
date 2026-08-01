@@ -164,7 +164,7 @@ let
   # Watches the user's theme *and* wallpaper choices and mirrors both to the
   # login screen. SDDM only reads its config when the greeter starts, so both
   # take effect at the next logout/reboot rather than immediately.
-  niriStateDir = "/home/joshr/.local/state/niri-theme";
+  niriStateDir = "/home/${config.local.desktop.primaryUser}/.local/state/niri-theme";
   themeStateFile = "${niriStateDir}/current";
   wallpaperStateFile = "${niriStateDir}/wallpaper";
 

@@ -5,6 +5,35 @@
 # The home-manager equivalents live in home/common/options.nix; these are the
 # ones a NixOS module needs to read, which can't come from there.
 {
+  # Whose session the machine-wide surfaces follow.
+  #
+  # Three things outside any session are dressed from one user's choices: the
+  # SDDM greeter and the limine boot menu both read the theme and wallpaper
+  # out of that user's `~/.local/state/niri-theme` (modules/nixos/niri.nix,
+  # modules/nixos/boot.nix), and plasmalogin copies Plasma's settings out of
+  # their `~/.config` (modules/nixos/plasmalogin.nix).
+  #
+  # Each of those is a singleton — one login screen, one boot menu — so this
+  # can't be generalised to "every user" without the last one to log in
+  # deciding what the machine looks like at boot. Naming one owner is the
+  # honest version. It was `/home/joshr/...` written into three modules
+  # before this option existed; the default keeps that behaviour exactly.
+  options.local.desktop.primaryUser = lib.mkOption {
+    type = lib.types.str;
+    default = "joshr";
+    example = "alice";
+    description = ''
+      Account whose theme and wallpaper the login screen and boot menu
+      follow.
+
+      The user has to exist and have a home directory at /home/<name> —
+      nothing here creates one. Their session writes the state these modules
+      read, so a name that never logs into niri leaves the greeter and the
+      boot menu on the default palette rather than breaking: the sync
+      services find no state file and leave what is already there.
+    '';
+  };
+
   options.local.boot.loader = lib.mkOption {
     type = lib.types.enum [
       "limine"

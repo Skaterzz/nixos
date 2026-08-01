@@ -122,7 +122,7 @@ in
       "security.workspace.trust.untrustedFiles" = "open";
       "workbench.editor.empty.hint" = "hidden";
       "github.copilot.nextEditSuggestions.enabled" = true;
-      "markdown-preview-enhanced.chromePath" = "/home/joshr/.local/bin/chromium";
+      "markdown-preview-enhanced.chromePath" = "${config.home.homeDirectory}/.local/bin/chromium";
       "powermode.enabled" = true;
       "files.autoSave" = "afterDelay";
       "workbench.secondarySideBar.defaultVisibility" = "hidden";

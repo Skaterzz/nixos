@@ -1,4 +1,4 @@
-{ ... }:
+{ config, ... }:
 
 # joshr's home profile on the server.
 #
@@ -17,7 +17,7 @@
   ];
 
   home.username = "joshr";
-  home.homeDirectory = "/home/joshr";
+  home.homeDirectory = "/home/${config.home.username}";
 
   # Do not bump this after the initial install; see the Home Manager manual.
   home.stateVersion = "24.11";

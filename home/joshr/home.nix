@@ -95,7 +95,13 @@
   # path as well is a conflicting definition — and the module expects a
   # package laid out as ${package}/share/icons/<name>, which the raw
   # dot_icons/ directory isn't.
+  #
+  # `enable` is spelled out rather than left to be inferred. home-manager used
+  # to switch cursor generation on merely because something under
+  # `home.pointerCursor` was defined; that is deprecated and warns, since it
+  # gives no way to set the theme and leave the generation off.
   home.pointerCursor = {
+    enable = true;
     package = pkgs.bibata-cursors;
     name = "Bibata-Modern-Ice";
     size = 24;

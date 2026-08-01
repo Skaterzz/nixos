@@ -1473,7 +1473,7 @@ What the module turns on:
   output); `trusted-users = [ "root" "@wheel" ]`, without which `cachix use`
   can't write a substituter; and `log-lines = 25`, because ten lines of a
   failed builder's output usually isn't the part that says what went wrong.
-- Language-agnostic tools: `nil`, `nixfmt-rfc-style`, `nix-output-monitor`,
+- Language-agnostic tools: `nil`, `nixfmt`, `nix-output-monitor`,
   `nix-tree`, `cachix`, `just`, `jq`, `yq-go`, `ripgrep`, `fd`, `lazygit`,
   `gnumake`. Nothing language-specific — a compiler or an interpreter goes in
   the project's own devShell.

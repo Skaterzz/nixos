@@ -5,12 +5,16 @@
     enable = true;
     package = pkgs.gitFull;
 
-    settings.user = {
-      name = "Joshua Randall";
-      email = "josh@joshrandall.net";
-    };
+    # One `settings` block, which is what `extraConfig` was renamed to. The
+    # two were always the same attrset written into the same file, so this is
+    # the identity and the credential helpers together rather than a section
+    # each.
+    settings = {
+      user = {
+        name = "Joshua Randall";
+        email = "josh@joshrandall.net";
+      };
 
-    extraConfig = {
       # GitLab credential helper
       "credential \"https://gitlab.com\"" = {
         helper = "!${pkgs.glab}/bin/glab auth git-credential";

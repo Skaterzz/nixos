@@ -137,7 +137,7 @@ in
 
       # --- nix itself -------------------------------------------------
       nil # language server, for the VS Code Nix extension
-      nixfmt-rfc-style # the formatter this flake's `nix fmt` uses
+      nixfmt # the formatter this flake's `nix fmt` uses (was nixfmt-rfc-style)
       nix-output-monitor # `nom build` — readable build progress
       nix-tree # what pulled that dependency in
       cachix # binary caches, for projects that publish one

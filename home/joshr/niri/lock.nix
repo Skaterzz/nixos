@@ -19,18 +19,17 @@ in
     # (Singular `systemdTarget` is a renamed alias and warns.)
     systemdTargets = [ "graphical-session.target" ];
 
-    events = [
+    # An attrset keyed by event name. The old list of `{ event; command; }`
+    # pairs still works — home-manager coerces it — but warns, and the set is
+    # the honest shape anyway: swayidle takes one command per event, so two
+    # entries for the same event were never meaningful.
+    events = {
       # Lock before the machine suspends, so it never resumes unlocked.
-      {
-        event = "before-sleep";
-        command = lock;
-      }
+      before-sleep = lock;
+
       # Handles `loginctl lock-session` from elsewhere.
-      {
-        event = "lock";
-        command = lock;
-      }
-    ];
+      lock = lock;
+    };
 
     timeouts = [
       # Dim first as a warning, restore on activity.

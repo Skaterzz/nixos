@@ -677,21 +677,29 @@ niri's `layout { background-color }` does not help here: that is the backdrop
 behind windows, and swaylock's own surface covers it.
 
 **swaylock is patched** (`home/joshr/niri/swaylock-date-fit.patch`) so the date
-can't overhang the ring. Upstream sizes that line at a hardcoded
-`arc_radius / 6`, so it grows in exact proportion to the circle — a long date
-like "Wednesday, September 24" hangs over by the same fraction at *every*
-radius, and widening `--indicator-radius` buys nothing. No flag reaches it
-either: `--font-size` sets the clock above it, and the date's divisor isn't
-exposed. Without the patch the only fixes available in configuration are to
-shorten the date (`%b` for `%B`) or narrow the font.
+stacks onto two lines — weekday over month and day — and can't overhang the
+ring.
 
-The patch measures the text and scales it down only when it wouldn't fit,
-bounded by the ring's inner chord at the text's own baseline rather than the
-diameter, since the date sits below the centre where the circle has already
-started to narrow. Short dates keep their normal size. It costs a source build
-of swaylock-effects, which is a small C project and quick. If a nixpkgs bump
-moves those lines the patch will fail to apply — the fallback is a shorter
-`--datestr`.
+Upstream draws the date as one row sized at a hardcoded `arc_radius / 6`, so it
+grows in exact proportion to the circle: a long date like "Wednesday, September
+24" hangs over by the same fraction at *every* radius, and widening
+`--indicator-radius` buys nothing. No flag reaches it either — `--font-size`
+sets the clock above it, and the date's divisor isn't exposed. Without the patch
+the only fixes available in configuration are to shorten the date or narrow the
+font, and the installed fonts are FiraCode and Poppins with nothing condensed.
+
+The patch splits `--datestr` on a newline (strftime `%n`, hence
+`--datestr "%A%n%B %d"`) and stacks the halves. Two short lines fit at full size
+where one long one didn't: at radius 130 "Wednesday" and "September 24" measure
+117px and 156px against chords of 246px and 231px, where the single row was
+299px against 240px. It also scales a line down if it still wouldn't fit,
+bounded by the ring's inner chord at that line's own baseline rather than the
+diameter — with stacking that never triggers here, it's the backstop that makes
+an overhang impossible for any format or locale.
+
+It costs a source build of swaylock-effects, which is a small C project and
+quick. If a nixpkgs bump moves those lines the patch will fail to apply — the
+fallback is a one-line `--datestr` short enough to fit.
 
 **`Mod+Escape` blanks the monitors on demand**, from the lock screen as well
 as from the desktop — for when you're walking away now and don't want to wait

@@ -1,4 +1,4 @@
-{ config, lib, pkgs, ... }:
+{ config, inputs, lib, pkgs, ... }:
 
 # System side of the niri desktop: the session itself, the display manager,
 # and the bits home-manager can't write (PAM, polkit, system services).
@@ -289,8 +289,13 @@ in
   # in `config = { … }`.
   imports = [ ./options.nix ];
 
+  #nixpkgs.overlays = [
+  #   inputs.xwayland-satellite-scale-fixes.overlays.default
+  #];
   programs.niri.enable = true;
-
+  
+  
+  
   # Display manager.
   #
   # `theme` is left unset under local.sddm.theme = "stock", which gives

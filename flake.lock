@@ -81,7 +81,29 @@
         "home-manager": "home-manager",
         "nixpkgs": "nixpkgs",
         "plasma-manager": "plasma-manager",
-        "spicetify-nix": "spicetify-nix"
+        "spicetify-nix": "spicetify-nix",
+        "xwayland-satellite-scale-fixes": "xwayland-satellite-scale-fixes"
+      }
+    },
+    "rust-overlay": {
+      "inputs": {
+        "nixpkgs": [
+          "xwayland-satellite-scale-fixes",
+          "nixpkgs"
+        ]
+      },
+      "locked": {
+        "lastModified": 1769222645,
+        "narHash": "sha256-gu6oZ86zLudBZMq8LL1qdtYt/S69GV5keQVXdvBrVSU=",
+        "owner": "oxalica",
+        "repo": "rust-overlay",
+        "rev": "22da29e7f3d8cff75009cbbcf992c7cb66920cfd",
+        "type": "github"
+      },
+      "original": {
+        "owner": "oxalica",
+        "repo": "rust-overlay",
+        "type": "github"
       }
     },
     "spicetify-nix": {
@@ -117,6 +139,28 @@
       "original": {
         "owner": "nix-systems",
         "repo": "default",
+        "type": "github"
+      }
+    },
+    "xwayland-satellite-scale-fixes": {
+      "inputs": {
+        "nixpkgs": [
+          "nixpkgs"
+        ],
+        "rust-overlay": "rust-overlay"
+      },
+      "locked": {
+        "lastModified": 1782561505,
+        "narHash": "sha256-9O8rlJ2dkHwms5WYsiGP+rZ9D7B9W8SvzbuuAmEf/j4=",
+        "owner": "larsch",
+        "repo": "xwayland-satellite",
+        "rev": "82102752a9cfad4861443c0890b2fe66a3e47fd3",
+        "type": "github"
+      },
+      "original": {
+        "owner": "larsch",
+        "ref": "scale-fixes",
+        "repo": "xwayland-satellite",
         "type": "github"
       }
     }

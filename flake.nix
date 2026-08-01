@@ -25,6 +25,11 @@
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
+    #xwayland-satellite-scale-fixes = {
+    #  url = "github:larsch/xwayland-satellite/scale-fixes";
+    #  inputs.nixpkgs.follows = "nixpkgs";
+    #};
+
     # joshrandall8478's existing chezmoi dotfiles repo. Used purely as a source
     # of static assets (fonts, custom Plasma themes/look-and-feel packages,
     # cursor theme, custom icons, wallpapers) that are pulled straight into the

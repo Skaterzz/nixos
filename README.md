@@ -253,6 +253,7 @@ restored at login.
 | `Mod+1..5` | named workspaces |
 | `Mod+R` / `Mod+F` / `Mod+V` | preset widths, maximize, float |
 | `Print` / `Mod+Shift+S` | region screenshot, annotated in satty |
+| `Shift+Print` / `Mod+Ctrl+S` | same region as last time, no selection step |
 | `Ctrl+Print` / `Alt+Print` | screen / window (niri's built-ins) |
 | `Mod+L` / `Mod+Shift+Escape` | lock, session menu |
 | `Mod+Escape` | blank the monitors — works on the lock screen too |
@@ -652,6 +653,24 @@ editor (arrows, boxes, blur, text) and it copies to the clipboard on save.
 Plain screen and window capture use niri's built-in `screenshot-screen` and
 `screenshot-window` actions instead — the compositor already knows the exact
 geometry, so there's nothing for a script to compute wrong.
+
+**`Shift+Print` (or `Mod+Ctrl+S`) re-shoots the last region** with no selection
+step. Every region capture writes its geometry to
+`~/.local/state/niri-screenshot/region`, and that mode reads it straight back.
+It's for shooting the same frame repeatedly — a panel, a window, a chart being
+tweaked — where redrawing the box by hand is both the tedious part and the
+reason successive shots don't line up.
+
+It falls back to a normal selection if there's no remembered region yet, or if
+the region no longer captures — a monitor unplugged or the layout rearranged
+under it. The geometry is only remembered once `grim` has accepted it, so a
+region that can't be captured never becomes the one it comes back to.
+
+Note that this is a separate keybind rather than "reopen slurp with last time's
+box ready to adjust", because slurp can't pre-fill a selection. Its `-r` reads
+boxes on stdin and *restricts* selection to them, so handing it the saved region
+would let you click that box to accept it but never drag its edges — a worse
+version of the same thing, with an extra click.
 
 ### Lock screen
 

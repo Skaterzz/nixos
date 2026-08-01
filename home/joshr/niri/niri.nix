@@ -228,6 +228,13 @@ ${workspaceBlocks}
         open-floating true
     	default-column-width { fixed 400; }
     	default-window-height { fixed 550; }	
+    }
+
+    // Steam notification
+    window-rule {
+         match app-id="steam" title=r#"^notificationtoasts_\d+_desktop$"#
+         default-floating-position x=10 y=10 relative-to="bottom-right"
+         open-focused false
     }	
 
     // Rounded corners everywhere, matching waybar and wofi.

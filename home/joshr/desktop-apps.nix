@@ -97,6 +97,11 @@ in
     kdePackages.kservice
   ];
 
+  xdg.configFile."Nextcloud/nextcloud.cfg".text = ''
+  [General]
+  showExperimentalOptions=true
+  '';
+
   # Make both shells and systemd/D-Bus activated user services agree about the
   # menu name KDE should load.
   home.sessionVariables.XDG_MENU_PREFIX = "plasma-";

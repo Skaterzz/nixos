@@ -168,10 +168,10 @@ in
         # duplicates the `network` module two slots over. Hide the icon and
         # keep the applet — ignore-list matches any of the item's bus name,
         # category, icon name, id or title as a substring.
-        #ignore-list = [
-        #  "nm-applet"
-        #  "NetworkManager"
-        #];
+        ignore-list = [
+         "nm-applet"
+         "blueman-applet"
+        ];
       };
 
       pulseaudio = {

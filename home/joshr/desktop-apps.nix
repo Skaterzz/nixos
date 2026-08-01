@@ -97,11 +97,24 @@ in
     kdePackages.kservice
   ];
 
-  xdg.configFile."Nextcloud/nextcloud.cfg".text = ''
-  [General]
-  showExperimentalOptions=true
-  '';
+ home.activation.modifyNextcloudConfig = lib.hm.dag.entryAfter ["writeBoundary"] ''
+  CONFIG_DIR="$HOME/.config/Nextcloud"
+  CONFIG_FILE="''${CONFIG_DIR}/nextcloud.cfg"
 
+  if [ -f "''${CONFIG_FILE}" ]; then
+    # Escape the Nix interpolation by using two single quotes before the bash variable
+    if ! grep -q "showExperimentalOptions" "''${CONFIG_FILE}"; then
+      if grep -q "\[General\]" "''${CONFIG_FILE}"; then
+        sed -i '/\[General\]/a showExperimentalOptions=true' "''${CONFIG_FILE}"
+      else
+        echo -e "\n[General]\nshowExperimentalOptions=true" >> "''${CONFIG_FILE}"
+      fi
+    fi
+  else
+    mkdir -p "''${CONFIG_DIR}"
+    echo -e "[General]\nshowExperimentalOptions=true" > "''${CONFIG_FILE}"
+  fi
+'';
   # Make both shells and systemd/D-Bus activated user services agree about the
   # menu name KDE should load.
   home.sessionVariables.XDG_MENU_PREFIX = "plasma-";

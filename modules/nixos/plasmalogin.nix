@@ -1,7 +1,9 @@
 { config, lib, pkgs, inputs, ... }:
 
 let
-  user        = "joshr";
+  # Same account the SDDM and limine theme syncs follow — see
+  # `local.desktop.primaryUser` in options.nix.
+  user        = config.local.desktop.primaryUser;
   greeter     = "plasmalogin";
   greeterHome = "/var/lib/plasmalogin";   # PLM greeter user's home (STATE_DIR)
   wallpaper = "${inputs.dotfiles}/dot_local/share/wallpapers/Anime/Yor.jpg";
@@ -30,6 +32,11 @@ let
   '';
 in
 {
+  # For `local.desktop.primaryUser` above. Every host importing this file
+  # also imports boot.nix, which pulls options.nix in too — NixOS dedupes
+  # imports, and stating it here keeps the module readable on its own.
+  imports = [ ./options.nix ];
+
   # Optional on Wayland, but harmless — and it still feeds the greeter's
   # default keyboard layout via services.xserver.xkb.*.
   services.xserver.enable = true;

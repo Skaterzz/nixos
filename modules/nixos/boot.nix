@@ -95,8 +95,10 @@ let
   esp = config.boot.loader.efi.efiSysMountPoint;
 
   # Written by home/joshr/niri/scripts.nix as the user picks a theme and a
-  # wallpaper. Same two files the SDDM sync in niri.nix watches.
-  niriStateDir = "/home/joshr/.local/state/niri-theme";
+  # wallpaper. Same two files the SDDM sync in niri.nix watches, and the same
+  # owner — `local.desktop.primaryUser`, which is joshr unless a host says
+  # otherwise.
+  niriStateDir = "/home/${config.local.desktop.primaryUser}/.local/state/niri-theme";
   themeStateFile = "${niriStateDir}/current";
   wallpaperStateFile = "${niriStateDir}/wallpaper";
 

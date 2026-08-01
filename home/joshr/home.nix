@@ -1,4 +1,4 @@
-{ pkgs, inputs, ... }:
+{ config, pkgs, inputs, ... }:
 
 {
   # Everything here is desktop-agnostic. The desktop itself — ./plasma.nix or
@@ -17,8 +17,12 @@
     ./wallhaven.nix
   ];
 
+  # The one place this profile names its user. Everything else that needs a
+  # path builds it from `config.home.homeDirectory`, so changing the name
+  # here is the whole change — there is no second copy of "joshr" spelled
+  # into a path anywhere under home/.
   home.username = "joshr";
-  home.homeDirectory = "/home/joshr";
+  home.homeDirectory = "/home/${config.home.username}";
 
   # Do not bump this after the initial install; see the Home Manager manual.
   home.stateVersion = "26.05";

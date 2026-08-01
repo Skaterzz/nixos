@@ -245,6 +245,20 @@ Wallpapers use `awww` (the renamed `swww`) over `~/.local/share/wallpapers`:
 `Mod+Shift+W` is random, `Mod+Ctrl+W` picks one. The choice is remembered and
 restored at login.
 
+**Whose theme the machine follows** is `local.desktop.primaryUser`, which
+defaults to `joshr`. Three things live outside any session and have to be
+dressed from *someone's* choices: the SDDM greeter and the limine boot menu
+both read the theme and wallpaper out of that user's
+`~/.local/state/niri-theme`, and plasmalogin copies Plasma's settings out of
+their `~/.config`.
+
+Each of those is a singleton — one login screen, one boot menu — so this
+can't be generalised to "whoever is logged in" without the last person to
+pick a theme deciding what the machine looks like at boot. Naming one owner
+is the honest version. Pointing it at an account that never opens a niri
+session isn't an error either: the sync services find no state file and leave
+the greeter and boot menu on the default palette.
+
 ### Keys
 
 | Key | Action |

@@ -10,6 +10,13 @@
 # If you change something in System Settings later and want it captured here,
 # run `nix run github:nix-community/plasma-manager` (the `rc2nix` tool) and
 # diff its output against this file.
+let
+  # Same directory home/joshr/niri/scripts.nix calls wallpaperDir, and the
+  # one home.nix links the dotfiles' wallpapers into. Built from
+  # config.home.homeDirectory rather than written out as /home/joshr, so this
+  # file says nothing about *which* user it is configuring.
+  wallpaperDir = "${config.home.homeDirectory}/.local/share/wallpapers";
+in
 {
   programs.plasma = {
     enable = true;
@@ -103,7 +110,7 @@
       };
 
       plasmarc.Wallpapers.usersWallpapers = lib.concatStringsSep "," (
-        map (name: "/home/joshr/.local/share/wallpapers/${name}") [
+        map (name: "${wallpaperDir}/${name}") [
           "Retro Computing.jpg"
           "Gentoo Chan Full.png"
           "Gentoo Chan Full Light.png"
@@ -117,9 +124,9 @@
       );
 
       kscreenlockerrc."Greeter/Wallpaper/org.kde.image/General" = {
-        Image = "file:///home/joshr/.local/share/wallpapers/Anime/shinobu.png";
-        PreviewImage = "file:///home/joshr/.local/share/wallpapers/Anime/shinobu.png";
-        SlidePaths = "/home/joshr/.local/share/wallpapers/,/usr/share/wallpapers/";
+        Image = "file://${wallpaperDir}/Anime/shinobu.png";
+        PreviewImage = "file://${wallpaperDir}/Anime/shinobu.png";
+        SlidePaths = "${wallpaperDir}/,/usr/share/wallpapers/";
       };
 
       klaunchrc = {
@@ -186,7 +193,7 @@
         widgets = [
           {
             kickoff = {
-              icon = "/home/joshr/.local/share/icons/j-contrast.svg";
+              icon = "${config.home.homeDirectory}/.local/share/icons/j-contrast.svg";
               sidebarPosition = "right"; # paneSwap=true
               applicationsDisplayMode = "grid"; # applicationsDisplay=0
               showButtonsFor = "powerAndSession"; # primaryActions=3

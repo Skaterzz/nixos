@@ -235,6 +235,14 @@ ${workspaceBlocks}
          match app-id="steam" title=r#"^notificationtoasts_\d+_desktop$"#
          default-floating-position x=10 y=10 relative-to="bottom-right"
          open-focused false
+    }
+
+    // File transfer window
+    window-rule {
+         match app-id="org.kde.dolphin" title="File Transfer"
+         open-floating true
+         default-floating-position x=16 y=16 relative-to="bottom-right"
+         open-focused false
     }	
 
     // Rounded corners everywhere, matching waybar and wofi.

@@ -274,6 +274,32 @@ ${workspaceBlocks}
         // vim-key `Mod+L` for focus-column-right — Mod+Right, Mod+scroll and
         // Mod+End all still walk right, so only the h/j/k/l set loses its "l".
         Mod+L hotkey-overlay-title="Lock" { spawn "${bin niriScripts.lockSession}"; }
+
+        // Blank the monitors now, from the lock screen or from the desktop.
+        // Any input wakes them; on the lock screen that leaves swaylock
+        // exactly where it was, so this is a screen-off, not an unlock.
+        //
+        // Works while locked with no `allow-when-locked` on it, and that is
+        // deliberate rather than an oversight. niri keeps a whitelist of
+        // actions that survive the lock — quit, change-vt, suspend,
+        // power-off-monitors, power-on-monitors, switch-layout — and lets
+        // those through regardless (`allowed_when_locked` in src/input/mod.rs).
+        // Setting the property here would in fact be a config *error*: niri
+        // only accepts `allow-when-locked` on spawn binds. It's the same
+        // whitelist that lets swayidle's 360s blank fire through the lock in
+        // lock.nix.
+        //
+        // Mod+Escape rather than bare Escape because niri intercepts a bound
+        // key unconditionally — `should_intercept_key` matches binds before
+        // it ever looks at the lock state, and only *then* is the action
+        // dropped if the session is locked and the action isn't whitelisted.
+        // So a bare `Escape` bind would swallow Escape in every application,
+        // all the time: no dismissing a dialog, no leaving vim's insert mode,
+        // no closing a wofi prompt. There is no "only while locked" bind
+        // flag to scope it with — the full set is repeat, cooldown-ms,
+        // allow-when-locked, allow-inhibiting and hotkey-overlay-title.
+        Mod+Escape hotkey-overlay-title="Blank monitors" { power-off-monitors; }
+
         Mod+Shift+Escape hotkey-overlay-title="Session menu" { spawn "${bin niriScripts.sessionMenu}"; }
         Mod+Shift+E { quit; }
         Ctrl+Alt+Delete { quit; }

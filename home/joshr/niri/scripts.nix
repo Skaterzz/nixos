@@ -228,7 +228,6 @@ let
       printf %s "$img" > "${stateDir}/wallpaper"
     '';
   };
-
 wallpaperMenu = pkgs.writeShellApplication {
   name = "wallpaper-menu";
 
@@ -238,6 +237,7 @@ wallpaperMenu = pkgs.writeShellApplication {
     coreutils
     imagemagick
     libnotify
+    util-linux
     wallpaperSet
   ];
 
@@ -268,46 +268,22 @@ wallpaperMenu = pkgs.writeShellApplication {
       exit 1
     }
 
-    # Count thumbnails that actually need generating before doing the work.
-    missing_count=0
+    # Generate every missing preview. The function scans the wallpaper
+    # directory itself so it remains safe when run in the background after
+    # this menu invocation exits.
+    build_missing_previews() {
+      while IFS= read -r img; do
+        stamp="$(stat -c '%Y:%s' "$img")"
+        key="$(
+          printf '%s\0%s' "$img" "$stamp" |
+            sha256sum |
+            cut -d ' ' -f1
+        )"
 
-    while IFS= read -r img; do
-      stamp="$(stat -c '%Y:%s' "$img")"
-      key="$(
-        printf '%s\0%s' "$img" "$stamp" |
-          sha256sum |
-          cut -d ' ' -f1
-      )"
-      thumb="$cache/$key.jpg"
+        thumb="$cache/$key.jpg"
+        [ -f "$thumb" ] && continue
 
-      if [ ! -f "$thumb" ]; then
-        missing_count=$((missing_count + 1))
-      fi
-    done < "$images"
-
-    if [ "$missing_count" -ge 10 ]; then
-      notify-send \
-        -a wallpaper-menu \
-        -i preferences-desktop-wallpaper \
-        -t 6000 \
-        "Wallpaper picker" \
-        "Building $missing_count wallpaper previews. This may take a moment." \
-        || true
-    fi
-
-    # Build missing previews and generate the entries consumed by Wofi.
-    while IFS= read -r img; do
-      rel="''${img#"$dir"/}"
-      stamp="$(stat -c '%Y:%s' "$img")"
-      key="$(
-        printf '%s\0%s' "$img" "$stamp" |
-          sha256sum |
-          cut -d ' ' -f1
-      )"
-      thumb="$cache/$key.jpg"
-
-      if [ ! -f "$thumb" ]; then
-        tmp="$cache/.$key.tmp.jpg"
+        tmp="$cache/.$key.$$.tmp.jpg"
 
         if magick "$img" -auto-orient \
             -thumbnail '320x180^' \
@@ -320,35 +296,117 @@ wallpaperMenu = pkgs.writeShellApplication {
         else
           rm -f "$tmp"
         fi
-      fi
+      done < <(
+        find -L "$dir" -type f \
+          \( -iname '*.png' \
+          -o -iname '*.jpg' \
+          -o -iname '*.jpeg' \
+          -o -iname '*.webp' \) \
+          -print 2>/dev/null |
+          sort
+      )
+    }
 
-      preview="$img"
-      [ -f "$thumb" ] && preview="$thumb"
+    # Determine how much work is waiting before deciding which picker layout
+    # to show.
+    missing_count=0
 
-      printf 'img:%s:text:%s\n' \
-        "$preview" \
-        "$rel" >> "$entries"
+    while IFS= read -r img; do
+      stamp="$(stat -c '%Y:%s' "$img")"
+      key="$(
+        printf '%s\0%s' "$img" "$stamp" |
+          sha256sum |
+          cut -d ' ' -f1
+      )"
+
+      [ -f "$cache/$key.jpg" ] ||
+        missing_count=$((missing_count + 1))
     done < "$images"
 
-    choice="$(
-      wofi --dmenu \
-        --prompt "Wallpaper" \
-        --insensitive \
-        --allow-images \
-        --parse-search \
-        --no-custom-entry \
-        --cache-file /dev/null \
-        --width 80% \
-        --lines 3 \
-        --columns 4 \
-        --define=image_size=180 \
-        < "$entries"
-    )"
+    if [ "$missing_count" -ge 10 ]; then
+      # Only one invocation may build at a time. The notification happens
+      # after acquiring the lock, so opening the picker twice does not produce
+      # duplicate builders or duplicate notifications.
+      (
+        flock -n 9 || exit 0
 
-    choice="''${choice#*:text:}"
+        notify-send \
+          -a wallpaper-menu \
+          -i preferences-desktop-wallpaper \
+          -t 6000 \
+          "Wallpaper picker" \
+          "The wallpaper widget is building its cache. This may take a moment." \
+          || true
+
+        build_missing_previews
+      ) 9> "$cache/.build.lock" &
+
+      # While the cache is cold, open immediately as a plain searchable list.
+      # Selection still resolves to the same wallpaper path.
+      while IFS= read -r img; do
+        rel="''${img#"$dir"/}"
+        printf '%s\n' "$rel" >> "$entries"
+      done < "$images"
+
+      choice="$(
+        wofi --dmenu \
+          --prompt "Wallpaper · previews building" \
+          --insensitive \
+          --no-custom-entry \
+          --cache-file /dev/null \
+          --width 55% \
+          --lines 12 \
+          --columns 1 \
+          < "$entries" ||
+          true
+      )"
+    else
+      # A small amount of missing work is quick enough to finish before
+      # opening the normal thumbnail grid.
+      build_missing_previews
+
+      while IFS= read -r img; do
+        rel="''${img#"$dir"/}"
+        stamp="$(stat -c '%Y:%s' "$img")"
+        key="$(
+          printf '%s\0%s' "$img" "$stamp" |
+            sha256sum |
+            cut -d ' ' -f1
+        )"
+
+        thumb="$cache/$key.jpg"
+        preview="$img"
+        [ -f "$thumb" ] && preview="$thumb"
+
+        printf 'img:%s:text:%s\n' \
+          "$preview" \
+          "$rel" >> "$entries"
+      done < "$images"
+
+      choice="$(
+        wofi --dmenu \
+          --prompt "Wallpaper" \
+          --insensitive \
+          --allow-images \
+          --parse-search \
+          --no-custom-entry \
+          --cache-file /dev/null \
+          --width 80% \
+          --lines 3 \
+          --columns 4 \
+          --define=image_size=180 \
+          < "$entries" ||
+          true
+      )"
+
+      # Image-grid mode may return the complete Wofi image escape.
+      choice="''${choice#*:text:}"
+    fi
+
     [ -n "$choice" ] && wallpaper-set "$dir/$choice"
   '';
-}; 
+};
+ 
   wallpaperRandom = pkgs.writeShellApplication {
     name = "wallpaper-random";
     runtimeInputs = with pkgs; [

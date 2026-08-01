@@ -27,6 +27,8 @@ modules/nixos/
   development.nix                 # direnv, Docker, nix settings — commented out
                                   #   per host, see below
   virtualization.nix              # libvirtd/QEMU/virt-manager — imported per host
+  default-apps.nix                # /etc/xdg/mimeapps.list — file associations,
+                                  #   overridable from a settings panel
   cron.nix                        # local.cron.jobs -> the system crontab
   emoji.nix                       # Microsoft Fluent Emoji as the system emoji font
   plasma-xdg-data-dirs.nix        # workaround for nixpkgs#126590 (see below)
@@ -46,7 +48,8 @@ home/joshr/
   laptop.nix                       # host entrypoint: single-display panels
   server.nix                       # host entrypoint: shell only, no desktop base
   home.nix                         # packages (Spotify, Discord, ProtonUp-Qt, ...)
-  browser.nix                      # the default browser: Vivaldi, $BROWSER, desktop id
+  browser.nix                      # the default browser: Vivaldi, $BROWSER
+                                   #   (handlers: modules/nixos/default-apps.nix)
   firefox.nix                      # Firefox: profile, prefs, sync (installed, not default)
   kitty.nix                        # kitty terminal + zenwritten_dark theme
   vscode.nix                       # VS Code settings + extension list
@@ -55,8 +58,7 @@ home/joshr/
     themes.nix theming.nix         #   the palettes, and every generated config
     niri.nix waybar.nix            #   compositor config and the bar
     scripts.nix notifications.nix  #   theme/wallpaper/lock/screenshot helpers
-    clipboard.nix browser.nix      #   clipboard history, default-browser wiring
-    mime.nix                       #   non-browser file associations (images)
+    clipboard.nix                  #   clipboard history
     emoji.nix                      #   the Mod+. emoji picker
     vscode.nix lock.nix            #   editor theming, idle handling
   plasma.nix                       # KDE Plasma settings/panels/shortcuts (plasma-manager)
@@ -807,32 +809,51 @@ not `vivaldi.desktop`. Naming the wrong one fails silently — `mimeapps.list`
 keeps whatever string you give it and `xdg-open` just finds nothing. Both
 spellings are listed wherever the format takes a fallback list.
 
-Where the default is actually set differs by session, and neither mechanism
-reaches the other:
+Both sessions get it the same way now: **`modules/nixos/default-apps.nix`**,
+which writes `/etc/xdg/mimeapps.list`. `kdeglobals.General.BrowserApplication`
+in `home/joshr/plasma.nix` is still set and still agrees.
 
-- **niri** — `xdg.mimeApps`, in `home/joshr/niri/browser.nix`.
-- **Plasma** — `kdeglobals.General.BrowserApplication`, in
-  `home/joshr/plasma.nix`. The Plasma hosts deliberately don't get
-  `xdg.mimeApps`: letting home-manager own `~/.config/mimeapps.list`
-  underneath a running Plasma means its "Default Applications" page silently
-  can't save.
+### File associations, and why they're in /etc
 
-The trade under niri is that "Set as default" inside a browser, and any
-"always open with" choice, no longer stick — the file is a read-only symlink
-into the store. Change it in Nix instead: `home/joshr/niri/browser.nix` for the
-http(s) handlers, `home/joshr/niri/mime.nix` for everything else.
+This used to be home-manager's `xdg.mimeApps`, which owns
+`~/.config/mimeapps.list` and writes it as a read-only symlink into the store.
+That is the same file every interactive "make this the default" writes to —
+Dolphin's "Open With… → Remember application association for this type of
+file", KDE's File Associations panel, Plasma's Default Applications page, "set
+as default" inside a browser. With home-manager holding it, **all of them
+appear to work and none of them persist.** Images kept reverting; the checkbox
+looked like it worked and the association was gone by the next launch.
 
-That second file exists because of exactly this trade. Dolphin's "Open With… →
-Remember application association for this type of file" writes the same
-unwritable `mimeapps.list`, so images kept reverting to whatever handler
-happened to win — the checkbox looks like it worked and the association is gone
-by the next launch. `mime.nix` declares the image types onto Gwenview so they
-stay put. Note that **adding KDE System Settings back does not fix this**: its
-Default Applications page writes that same file and fails the same way.
+It was also why the Plasma hosts were deliberately kept away from
+`xdg.mimeApps` — under a running Plasma it breaks the settings page outright.
 
-Contributing different MIME types from more than one module is fine — the
-option is an attrset and they merge. Two modules claiming the *same* type is
-the conflict, which is why the http(s) handlers live in one place only.
+So the declarations moved down a level. The XDG mime-apps spec reads, in order
+of decreasing precedence:
+
+```
+$XDG_CONFIG_HOME/$desktop-mimeapps.list
+$XDG_CONFIG_HOME/mimeapps.list      <- the user's; nothing manages it now
+$XDG_CONFIG_DIRS/$desktop-mimeapps.list
+$XDG_CONFIG_DIRS/mimeapps.list      <- modules/nixos/default-apps.nix
+```
+
+`$XDG_CONFIG_DIRS` is `/etc/xdg`, so the declared defaults apply on a fresh
+install and on every rebuild, while anything picked in a GUI lands in the
+user's own file and outranks them. Declarative defaults *and* a settings panel
+that works, rather than one at the cost of the other. It also removed the
+reason the two sessions were configured differently.
+
+`[Default Applications]` is honoured there specifically because `/etc/xdg` is a
+*config* directory — the spec only reads that group from `$XDG_CONFIG_HOME` and
+`$XDG_CONFIG_DIRS`, which is why this isn't in a data dir.
+
+Note that **System Settings alone would not have fixed any of this.** It ships
+no KCMs; it's the shell they load into. The File Associations panel
+(`kcm_filetypes`, plus the standalone `keditfiletype` that Dolphin's properties
+dialog opens) is in `kde-cli-tools`, which the niri profile now installs.
+Default Applications (`kcm_componentchooser`) is in `plasma-desktop`, which is
+deliberately not pulled in — it's a large chunk of Plasma, and that panel only
+covers the browser/email/terminal/file-manager four rather than file types.
 
 ### Why Firefox is still here
 

@@ -130,7 +130,7 @@ let
         int32:0 int32:0 >/dev/null 2>&1 || true
 
       notify-send -a theme -i preferences-desktop-theme \
-        "Theme" "Switched to $name — restart VS Code and Firefox to update them" || true
+        "Theme" "Switched to $name — Some apps may need to be restarted for $name to apply." || true
     '';
   };
 

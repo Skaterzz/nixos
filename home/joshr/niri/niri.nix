@@ -34,7 +34,7 @@ let
 
   outputBlocks = lib.concatMapStringsSep "\n" renderOutput config.local.niri.outputs;
 
-  workspaceNames = [ "1" "2" "3" ];
+  workspaceNames = [ "1" "2" "3" "4" "5" ];
 
   workspaceBlocks = lib.concatMapStringsSep "\n" (
     n:
@@ -342,14 +342,14 @@ ${workspaceBlocks}
         Mod+1 { focus-workspace "1"; }
         Mod+2 { focus-workspace "2"; }
         Mod+3 { focus-workspace "3"; }
-        //Mod+4 { focus-workspace "4"; }
-        //Mod+5 { focus-workspace "5"; }
+        Mod+4 { focus-workspace "4"; }
+        Mod+5 { focus-workspace "5"; }
 
         Mod+Shift+1 { move-column-to-workspace "1"; }
         Mod+Shift+2 { move-column-to-workspace "2"; }
         Mod+Shift+3 { move-column-to-workspace "3"; }
-        //Mod+Shift+4 { move-column-to-workspace "4"; }
-        //Mod+Shift+5 { move-column-to-workspace "5"; }
+        Mod+Shift+4 { move-column-to-workspace "4"; }
+        Mod+Shift+5 { move-column-to-workspace "5"; }
 
         // --- scrolling --------------------------------------------------
         // Mod + scroll moves along the row of windows. niri lays windows out

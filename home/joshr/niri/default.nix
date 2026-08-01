@@ -47,7 +47,18 @@
     # X11 apps under niri.
     xwayland-satellite
   ];
-  
+
+  services.blueman-applet.enable = false;
+
+  xdg.configFile."autostart/blueman.desktop" = {
+    force = true;
+    text = ''
+      [Desktop Entry]
+      Type=Application
+      Name=Blueman Applet
+      Hidden=true
+    '';
+  }; 
 
   # Cursor theme is set in ../home.nix so the Plasma and niri sessions share
   # one definition; niri.nix just names it in `cursor { xcursor-theme … }`.

@@ -21,6 +21,9 @@
 #            `wofi-emoji.css` — the same thing with bigger rows — which the
 #            emoji picker asks for with `--style`
 #   dunst    `services.dunst.configFile`, restarted by the switcher
+#   swayosd  `services.swayosd.stylePath`, which becomes `--style <path>` on
+#            the server; restarted by the switcher, since it reads the
+#            stylesheet once at startup
 #   kitty    `include` at the end of kitty.conf, reloaded on SIGUSR1
 #   KDE apps `~/.config/kdeglobals` symlink, re-read at app startup
 #   firefox  `chrome/userChrome.css` + `userContent.css` symlinks, read once
@@ -472,6 +475,67 @@ let
         timeout = 0
   '';
 
+  # swayosd — the volume/brightness pop-up. See ./osd.nix.
+  #
+  # An override sheet, not a whole stylesheet: swayosd loads the one it ships
+  # at GTK's APPLICATION priority and this one at USER priority, which is
+  # higher, so only the parts that should look different are restated. The
+  # layout — margins, the capsule ends on the bar, the dimming of a disabled
+  # widget — stays upstream's.
+  #
+  # GTK4 node names, since swayosd 0.3 is a GTK4 application: `window#osd` is
+  # the surface, `#container` the box inside it, and a progress bar is
+  # `progressbar > trough > progress` — the track and then the fill.
+  #
+  # Colours follow the same rule as everything else here: the accent is what
+  # the active thing wears, so it goes on the icon and the filled part of the
+  # bar, with the track a dim wash of the secondary text colour. The frame is
+  # waybar's pill exactly — same 1px, same dimmed accent at 0.55 — because the
+  # two are on screen together and a near-miss reads worse than a match.
+  #
+  # 16px rather than upstream's 999px: a capsule is the stock look, but every
+  # other surface in this session is a rounded rectangle (waybar 12, wofi 14,
+  # windows 8), and the OSD is not the thing to make an exception for.
+  renderSwayosdCss = name: t: ''
+    /* Generated from home/joshr/niri/themes.nix — theme "${name}". */
+
+    window#osd {
+      background-color: ${rgba t.bg "0.92"};
+      border: 1px solid ${rgba t.accentDim "0.55"};
+      border-radius: 16px;
+    }
+
+    window#osd #container {
+      margin: 16px 20px;
+    }
+
+    window#osd label {
+      font-family: "FiraCode Nerd Font", "Noto Sans", sans-serif;
+      font-size: 14px;
+      font-weight: 500;
+      color: ${t.fg};
+    }
+
+    window#osd image {
+      color: ${t.accent};
+    }
+
+    window#osd progressbar {
+      min-height: 8px;
+    }
+
+    /* The unfilled track. `trough` and `progress` inherit their height and
+       corner radius from the bar above, so setting min-height there is enough
+       for both. */
+    window#osd trough {
+      background-color: ${rgba t.fgDim "0.35"};
+    }
+
+    window#osd progress {
+      background-color: ${t.accent};
+    }
+  '';
+
   # One channel of a "#rrggbb", as an integer 0–255. `start` is the byte
   # offset into the digits: 0 red, 2 green, 4 blue.
   channel =
@@ -479,6 +543,19 @@ let
 
   # "#rrggbb" -> "r,g,b". KDE colour keys are decimal triples, not hex.
   rgb = hex: "${toString (channel hex 0)},${toString (channel hex 2)},${toString (channel hex 4)}";
+
+  # "#rrggbb" -> "rgba(r, g, b, a)", for GTK stylesheets that need a colour
+  # with transparency in it.
+  #
+  # waybar's and wofi's sheets reach for GTK's own `alpha(@name, a)` instead,
+  # which they can because they define every `@name` themselves with
+  # `@define-color`. swayosd's stylesheet is written against `@theme_bg_color`
+  # and friends — GTK theme colours, which exist only if the loaded GTK theme
+  # defines them — so its overrides spell the channels out rather than inherit
+  # that dependency.
+  rgba =
+    hex: a:
+    "rgba(${toString (channel hex 0)}, ${toString (channel hex 2)}, ${toString (channel hex 4)}, ${a})";
 
   # BT.601 luma of a "#rrggbb", 0–255.
   #
@@ -1326,6 +1403,7 @@ let
       cp ${pkgs.writeText "wofi.css" (renderWofiCss name t)}         "$out/wofi.css"
       cp ${pkgs.writeText "wofi-emoji.css" (renderWofiEmojiCss name t)} "$out/wofi-emoji.css"
       cp ${pkgs.writeText "dunstrc" (renderDunstrc name t)}          "$out/dunstrc"
+      cp ${pkgs.writeText "swayosd.css" (renderSwayosdCss name t)}   "$out/swayosd.css"
       cp ${pkgs.writeText "swaylock.env" (renderSwaylockEnv name t)} "$out/swaylock.env"
       cp ${pkgs.writeText "kdeglobals" (renderKdeglobals name t)}     "$out/kdeglobals"
       cp ${pkgs.writeText "kitty.conf" (renderKitty name t)}          "$out/kitty.conf"

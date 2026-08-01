@@ -355,10 +355,19 @@ ${workspaceBlocks}
         Mod+Ctrl+S         hotkey-overlay-title="Screenshot last region" { spawn "${bin niriScripts.screenshot}" "last"; }
 
         // --- media / hardware keys -------------------------------------
-        XF86AudioRaiseVolume allow-when-locked=true { spawn-sh "${pkgs.wireplumber}/bin/wpctl set-volume @DEFAULT_AUDIO_SINK@ 0.05+ -l 1.0"; }
-        XF86AudioLowerVolume allow-when-locked=true { spawn-sh "${pkgs.wireplumber}/bin/wpctl set-volume @DEFAULT_AUDIO_SINK@ 0.05-"; }
-        XF86AudioMute        allow-when-locked=true { spawn-sh "${pkgs.wireplumber}/bin/wpctl set-mute @DEFAULT_AUDIO_SINK@ toggle"; }
-        XF86AudioMicMute     allow-when-locked=true { spawn-sh "${pkgs.wireplumber}/bin/wpctl set-mute @DEFAULT_AUDIO_SOURCE@ toggle"; }
+        // `volume` rather than wpctl directly, for the on-screen display: it
+        // makes the same wpctl call these binds used to carry inline, then
+        // reads the level back and hands it to swayosd. See scripts.nix and
+        // osd.nix.
+        //
+        // The OSD is not visible on the lock screen — a session lock draws
+        // above every layer-shell surface, which is the whole point of it —
+        // but `allow-when-locked` still matters, because the volume itself
+        // has to keep moving there.
+        XF86AudioRaiseVolume allow-when-locked=true { spawn "${bin niriScripts.volume}" "up"; }
+        XF86AudioLowerVolume allow-when-locked=true { spawn "${bin niriScripts.volume}" "down"; }
+        XF86AudioMute        allow-when-locked=true { spawn "${bin niriScripts.volume}" "mute"; }
+        XF86AudioMicMute     allow-when-locked=true { spawn "${bin niriScripts.volume}" "mic-mute"; }
 
         XF86AudioPlay allow-when-locked=true { spawn "${bin pkgs.playerctl}" "play-pause"; }
         XF86AudioStop allow-when-locked=true { spawn "${bin pkgs.playerctl}" "stop"; }
@@ -372,7 +381,8 @@ ${workspaceBlocks}
         // backlight device, where brightnessctl on its own takes the first
         // one it finds. That's the same thing on the laptop's single internal
         // panel, but the desk has one device per monitor (see
-        // modules/nixos/ddcci.nix) and only one of them would move.
+        // modules/nixos/ddcci.nix) and only one of them would move. It also
+        // draws the OSD afterwards, the same as `volume` above.
         XF86MonBrightnessUp   allow-when-locked=true { spawn "${bin niriScripts.brightness}" "up"; }
         XF86MonBrightnessDown allow-when-locked=true { spawn "${bin niriScripts.brightness}" "down"; }
 

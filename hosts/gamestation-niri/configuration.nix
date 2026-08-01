@@ -40,8 +40,6 @@
 
     ../../modules/nixos/gaming.nix
     ../../modules/nixos/users.nix
-    ../../modules/nixos/office.nix
-    ../../modules/nixos/content-creation.nix
     ../../modules/nixos/default-apps.nix
 
     # Development tooling: direnv, Docker, and the nix settings per-project

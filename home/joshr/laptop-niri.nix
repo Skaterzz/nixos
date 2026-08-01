@@ -12,6 +12,8 @@
     ./home.nix
     ./niri
     ./displays/laptop.nix
+    ./desktop-apps.nix
+    ./office.nix
   ];
 
   # No OpenRGB tray applet at login here. The option defaults to true for the

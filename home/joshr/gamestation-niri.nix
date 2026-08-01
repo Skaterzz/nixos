@@ -15,5 +15,7 @@
     ./desktop-apps.nix
     ./niri
     ./displays/gamestation.nix
+    ./office.nix
+    ./content-creation.nix
   ];
 }

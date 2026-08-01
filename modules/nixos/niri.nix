@@ -381,6 +381,7 @@ in
   # you get locked out of your own session. An empty attrset is enough; it
   # just needs the /etc/pam.d file to exist.
   security.pam.services.swaylock = { };
+  security.pam.services.hyprlock = { };
 
   # A polkit agent must run in the session for GUI privilege prompts. niri
   # doesn't ship one, so start the KDE agent as a user service tied to the

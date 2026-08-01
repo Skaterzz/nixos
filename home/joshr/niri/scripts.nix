@@ -463,7 +463,14 @@ let
   # weight steady; at 8 a 130 ring reads visibly thinner than the 110 one did.
  lockSession = pkgs.writeShellApplication {
   name = "lock-session";
-  runtimeInputs = [ swaylock ];
+
+  runtimeInputs = [
+    pkgs.hyprlock
+    pkgs.coreutils
+    pkgs.gawk
+    pkgs.glibc.bin
+    swaylock
+  ];
 
   text = ''
     # shellcheck disable=SC1091
@@ -479,14 +486,170 @@ let
     : "''${LOCK_ERR:=ff5555}"
     : "''${LOCK_WARN:=f5d76e}"
 
-    # wallpaper-set stores the current wallpaper here. Keep the image
-    # arguments empty when it is missing or stale, which leaves --color as
-    # the reliable final fallback.
-    wallpaper=""
-    if [ -r "${stateDir}/wallpaper" ]; then
-      IFS= read -r wallpaper < "${stateDir}/wallpaper" || true
+    runtime_dir="''${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
+    config="$runtime_dir/hyprlock-niri.conf"
+
+    mkdir -p "$runtime_dir"
+    umask 077
+
+    # Resolve the account through NSS, read its full-name/GECOS field, and
+    # take the first whitespace-delimited word. This works for local users
+    # and NSS-backed users instead of reading /etc/passwd directly.
+    user="''${USER:-$(id -un)}"
+
+    first_name="$(
+      getent passwd "$user" 2>/dev/null |
+        awk -F: '
+          {
+            split($5, gecos, ",")
+            gsub(/^[[:space:]]+|[[:space:]]+$/, "", gecos[1])
+            split(gecos[1], words, /[[:space:]]+/)
+            print words[1]
+            exit
+          }
+        ' || true
+    )"
+
+    # Remove characters that could break the generated Hyprlang line.
+    first_name="$(printf %s "$first_name" | tr -d '\r\n{}"#')"
+    [ -n "$first_name" ] || first_name="$user"
+
+    # Hyprlock gets a fixed, punctuation-free path. The selected wallpaper
+    # itself may contain spaces or characters meaningful to Hyprlang.
+    wallpaper="$(cat "${stateDir}/wallpaper" 2>/dev/null || true)"
+    path_line=""
+
+    rm -f "$runtime_dir"/hyprlock-wallpaper.*
+
+    if [ -n "$wallpaper" ] && [ -f "$wallpaper" ]; then
+      extension="$(
+        printf %s "''${wallpaper##*.}" |
+          tr '[:upper:]' '[:lower:]'
+      )"
+
+      case "$extension" in
+        png | jpg | jpeg | webp)
+          wallpaper_link="$runtime_dir/hyprlock-wallpaper.$extension"
+          ln -sfn -- "$wallpaper" "$wallpaper_link"
+          path_line="    path = $wallpaper_link"
+          ;;
+      esac
     fi
 
+    cat > "$config" <<EOF
+    general {
+        hide_cursor = true
+        ignore_empty_input = true
+        immediate_render = true
+        text_trim = true
+        fail_timeout = 1800
+    }
+
+    auth {
+        pam:enabled = true
+        pam:module = hyprlock
+    }
+
+    animations {
+        enabled = true
+
+        bezier = graceful, 0.22, 1, 0.36, 1
+
+        animation = fadeIn, 1, 2.4, graceful
+        animation = fadeOut, 1, 2.0, graceful
+        animation = inputFieldDots, 1, 2.8, graceful
+        animation = inputFieldColors, 1, 2.2, graceful
+        animation = inputFieldFade, 1, 2.2, graceful
+    }
+
+    background {
+        monitor =
+    $path_line
+        color = rgb($LOCK_BG)
+
+        blur_passes = 3
+        blur_size = 8
+
+        noise = 0.012
+        contrast = 1.0
+        brightness = 0.72
+        vibrancy = 0.16
+        vibrancy_darkness = 0.12
+    }
+
+    # Quiet clock above the greeting.
+    label {
+        monitor =
+        text = \$TIME12
+        color = rgba(''${LOCK_FG}dd)
+        font_size = 72
+        font_family = Poppins
+
+        position = 0, 125
+        halign = center
+        valign = center
+    }
+
+    # The account's configured full name supplies this first name.
+    label {
+        monitor =
+        text = Welcome, $first_name
+        color = rgb($LOCK_FG)
+        font_size = 40
+        font_family = Poppins
+
+        position = 0, 35
+        halign = center
+        valign = center
+    }
+
+    # One low, horizontal password field. Dots begin at the left and animate
+    # individually so typing travels across the line rather than accumulating
+    # as a static cluster in its center.
+    input-field {
+        monitor =
+
+        size = 620, 58
+        outline_thickness = 2
+        rounding = 18
+
+        dots_size = 0.15
+        dots_spacing = 0.42
+        dots_center = false
+        dots_rounding = -1
+        dots_text_format = •
+
+        outer_color = rgba(''${LOCK_ACCENT_DIM}dd)
+        inner_color = rgba(''${LOCK_BG}d6)
+        font_color = rgb($LOCK_FG)
+        font_family = FiraCode Nerd Font
+
+        fade_on_empty = false
+        hide_input = false
+        placeholder_text = Password
+
+        check_color = rgb($LOCK_ACCENT)
+        check_text = Unlocking…
+
+        fail_color = rgb($LOCK_ERR)
+        fail_text = <i>\$FAIL</i>
+
+        capslock_color = rgb($LOCK_WARN)
+
+        position = 0, 72
+        halign = center
+        valign = bottom
+    }
+    EOF
+
+    # Hyprlock blocks until the session is unlocked. A nonzero exit here
+    # means it failed to initialize, not merely that a password was wrong.
+    if hyprlock --config "$config" --grace 2; then
+      exit 0
+    fi
+
+    # Last-resort locker. Even a Hyprlock regression must not leave the
+    # session exposed.
     image_args=()
     if [ -n "$wallpaper" ] && [ -f "$wallpaper" ]; then
       image_args=(
@@ -518,9 +681,6 @@ let
       --inside-ver-color "$LOCK_BG"cc \
       --inside-wrong-color "$LOCK_BG"cc \
       --line-color 00000000 \
-      --line-clear-color 00000000 \
-      --line-ver-color 00000000 \
-      --line-wrong-color 00000000 \
       --separator-color 00000000 \
       --text-color "$LOCK_FG" \
       --text-clear-color "$LOCK_FG" \

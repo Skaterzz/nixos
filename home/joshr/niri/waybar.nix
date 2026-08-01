@@ -192,6 +192,7 @@ in
         tooltip-format-wifi = "{essid}  ({signalStrength}%)\n{ipaddr}";
         tooltip-format-ethernet = "{ifname}\n{ipaddr}";
         on-click = "${pkgs.networkmanagerapplet}/bin/nm-connection-editor";
+	on-click-right = "${pkgs.networkmanager}/bin/nmtui-connect"
       };
 
       bluetooth = {

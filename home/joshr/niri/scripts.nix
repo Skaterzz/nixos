@@ -859,12 +859,12 @@ lockNowPlaying = pkgs.writeShellApplication {
     $path_line
         color = rgb($LOCK_BG)
 
-        blur_passes = 3
-        blur_size = 8
+        blur_passes = 1
+        blur_size = 3
 
-        noise = 0.012
+        noise = 0.05
         contrast = 1.0
-        brightness = 0.72
+        brightness = 0.64
         vibrancy = 0.16
         vibrancy_darkness = 0.12
     }
@@ -901,7 +901,7 @@ lockNowPlaying = pkgs.writeShellApplication {
         monitor =
         text = cmd[update:1500] ${lib.getExe lockNowPlaying}
 
-        color = rgba(''${LOCK_FG_DIM}e6)
+        color = rgba(''${LOCK_FG}cc)
         font_size = 18
         font_family = FiraCode Nerd Font
         text_align = center

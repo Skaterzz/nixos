@@ -3,13 +3,12 @@
 # The niri half of Firefox: point its chrome stylesheets at the active theme.
 #
 # It does *not* claim the http(s) handler any more — Vivaldi is the default
-# again, and the http(s) types are owned by ./browser.nix. Two modules
-# claiming the *same* MIME type is a conflict rather than a merge, so if this
-# file is ever re-enabled in ./default.nix, those types stay there and not
-# here.
-#
-# Different types do merge, which is how ./mime.nix adds the image handlers
-# without touching this. The rule is per type, not per option.
+# again, and the handlers moved out of home-manager entirely: they're a system
+# baseline in modules/nixos/default-apps.nix now, so that a settings panel can
+# still override them. If this file is ever re-enabled in ./default.nix, it
+# should not reintroduce `xdg.mimeApps`; that option owns
+# ~/.config/mimeapps.list and is what stopped every "make this the default"
+# from saving.
 #
 # This is separate from ../firefox.nix — which sets up the browser itself and
 # is shared with the Plasma hosts — for the same reason the kitty `include`

@@ -91,8 +91,8 @@ in
         "media.ffmpeg.vaapi.enabled" = true;
 
         # --- first-run and new tab noise -------------------------------
-        # The rebuild decides the default browser — xdg.mimeApps under niri,
-        # kdeglobals under Plasma — so the nag is only ever wrong.
+        # The rebuild sets the default browser — /etc/xdg/mimeapps.list, from
+        # modules/nixos/default-apps.nix — so the nag is only ever wrong.
         "browser.shell.checkDefaultBrowser" = false;
         "browser.aboutConfig.showWarning" = false;
 

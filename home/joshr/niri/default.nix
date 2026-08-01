@@ -15,8 +15,10 @@
     ./lock.nix
     ./clipboard.nix
     ./emoji.nix
-    ./browser.nix
-    ./mime.nix
+    # No ./browser.nix or ./mime.nix any more. Both set `xdg.mimeApps`, which
+    # owns ~/.config/mimeapps.list and made every settings panel unable to
+    # save; the associations are now a system baseline in
+    # modules/nixos/default-apps.nix that the user's file overrides.
     ./vscode.nix
     #./firefox.nix
   ];
@@ -27,6 +29,13 @@
     kdePackages.dolphin
     kdePackages.kio-fuse # mount remote filesystems in place
     kdePackages.kio-extras # sftp://, mtp://, trash:// and friends
+
+    # The File Associations panel (kcm_filetypes) and the standalone
+    # keditfiletype that Dolphin's file-properties dialog opens. This is what
+    # actually sets "open this type with that app" — System Settings, enabled
+    # in the qt block below, is only the shell it loads into and ships no KCMs
+    # of its own.
+    kdePackages.kde-cli-tools
     kdePackages.qtsvg # icon rendering
     kdePackages.breeze-icons # fallback icons Dolphin expects to exist
 
@@ -113,11 +122,32 @@
     platformTheme.name = "kde";
     style.name = "breeze";
 
-    # Spell the packages out, purely to drop KDE System Settings.
+    # Spelled out rather than left to the name mapping.
     #
-    # That app was showing up in the launcher on a session that has no Plasma
-    # to configure, and it came from here rather than from anything this repo
-    # asks for by name: home-manager's qt module maps
+    # System Settings is back in the list. It was dropped for showing up in
+    # the launcher on a session with no Plasma to configure, which was true —
+    # but it turned out to be wanted for the File Associations panel, so the
+    # reason it was removed no longer outweighs having it.
+    #
+    # It does not carry that panel itself. `systemsettings` ships no KCMs at
+    # all; it is the shell they load into, and on its own it opens onto almost
+    # nothing. The panels are in other packages —
+    #
+    #     kcm_filetypes / keditfiletype   kde-cli-tools    (File Associations)
+    #     kcm_componentchooser            plasma-desktop   (Default Applications)
+    #
+    # — so kde-cli-tools is installed alongside it in home.packages above.
+    # That is the one that matters here: File Associations is the per-MIME-type
+    # panel, which is what "open photos with Gwenview" actually needs.
+    # plasma-desktop is deliberately not pulled in for the other one; it is a
+    # large chunk of Plasma, and Default Applications only covers the
+    # browser/email/terminal/file-manager four rather than file types.
+    #
+    # None of those panels could save anything until recently, whatever was
+    # installed: they write ~/.config/mimeapps.list, which `xdg.mimeApps` used
+    # to own as a read-only store symlink. See modules/nixos/default-apps.nix.
+    #
+    # The mapping this replaces: home-manager's qt module maps
     # `platformTheme.name = "kde"` to a fixed list, and in
     # modules/misc/qt/default.nix that list is
     #
@@ -126,23 +156,23 @@
     #
     # Setting `package` here overrides the mapping outright rather than adding
     # to it — the module takes the *first non-empty* of [package-list,
-    # name-derived-list], so naming two packages means the third is never
-    # installed.
+    # name-derived-list]. Listing all three is therefore the same set the name
+    # would have given; it stays spelled out so that dropping one again is a
+    # one-line change with the reasoning above it.
     #
-    # Both of the ones kept are load-bearing and named above: kio is the KDE
-    # file dialog, plasma-integration is the platform plugin that reads
-    # kdeglobals. systemsettings is neither — it's the settings *shell*, and
-    # the KCMs it would host ship with plasma-desktop, which isn't installed
-    # here, so on this session it opens onto almost nothing.
+    # The other two are load-bearing: kio is the KDE file dialog, and
+    # plasma-integration is the platform plugin that reads kdeglobals, which
+    # is the entire reason the theme is named "kde" rather than "gtk".
     #
     # `name` stays "kde" and still sets QT_QPA_PLATFORMTHEME=kde; the plugin
     # search path is built from the profile directory, not from this list, so
-    # dropping a package can't strip it. The Plasma hosts are untouched —
-    # they get System Settings from Plasma itself, and this file is only
-    # imported by the niri profiles.
+    # the contents can't strip it. The Plasma hosts are untouched — they get
+    # System Settings from Plasma itself, and this file is only imported by
+    # the niri profiles.
     platformTheme.package = with pkgs.kdePackages; [
       kio
       plasma-integration
+      systemsettings
     ];
   };
 

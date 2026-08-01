@@ -15,17 +15,19 @@
 # xdg-open simply finds nothing — which is why both spellings are listed
 # wherever the format allows a fallback list.
 #
-# Where the default is actually set differs by session, and neither mechanism
-# reaches the other:
+# Where the default is actually set
+# ---------------------------------
+# `modules/nixos/default-apps.nix`, for both sessions now. It writes the
+# handlers to /etc/xdg/mimeapps.list, which the XDG spec reads *below*
+# ~/.config/mimeapps.list — so the default applies everywhere while a choice
+# made in a settings panel still wins.
 #
-#   niri    `xdg.mimeApps`, in ./niri/browser.nix
-#   Plasma  `kdeglobals.General.BrowserApplication`, in ./plasma.nix
-#
-# See "The browser" in the README for why Plasma doesn't get the mimeApps
-# treatment.
-let
-  desktopFile = "vivaldi-stable.desktop";
-in
+# It used to be `xdg.mimeApps` in ./niri/browser.nix, and the Plasma hosts
+# were deliberately kept away from it because home-manager owning
+# ~/.config/mimeapps.list stops Plasma's Default Applications page saving.
+# Moving down a level removed that objection, so the split is gone and both
+# sessions are configured the same way. `kdeglobals.General.BrowserApplication`
+# in ./plasma.nix is still set and still agrees.
 {
   # Installed here rather than in modules/nixos/desktop-apps.nix, which only
   # the gamestation-niri host imports — the default browser has to exist on
@@ -33,13 +35,10 @@ in
   # every one of them shares.
   home.packages = [ pkgs.vivaldi ];
 
-  _module.args.browserDesktopFiles = [
-    desktopFile
-    # Kept as a fallback in case a future nixpkgs revision renames the file
-    # to match the binary. mimeapps.list treats a `;`-separated value as a
-    # preference list and skips entries it can't resolve.
-    "vivaldi.desktop"
-  ];
+  # The `browserDesktopFiles` module arg that used to live here is gone with
+  # ./niri/browser.nix, its only consumer. Both spellings are now named in
+  # modules/nixos/default-apps.nix, which is a NixOS module and can't read a
+  # home-manager arg — the note above about the entry ID applies there.
 
   # For CLI tools that shell out to a browser (gh, glab, xdg-open fallbacks).
   #

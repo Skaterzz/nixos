@@ -1,6 +1,12 @@
 { config, lib, pkgs, ... }:
 
 {
+    # Baseline file associations in /etc/xdg, deliberately left overridable
+    # from a settings panel. See the module for why they aren't home-manager's
+    # `xdg.mimeApps` any more. Here rather than per-host because all four
+    # desktop hosts import this file and the server doesn't.
+    imports = [ ./default-apps.nix ];
+
     hardware.bluetooth = {
     enable = true;
     powerOnBoot = true;

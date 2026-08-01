@@ -28,8 +28,8 @@
 
     settings = {
       custom = {
-        start = "${pkgs.libnotify}/bin/notify-send '🎮 GameMode started'";
-        end = "${pkgs.libnotify}/bin/notify-send '🎮 GameMode ended'";
+        start = "${pkgs.libnotify}/bin/notify-send -i input-gamepad 'GameMode started'";
+        end = "${pkgs.libnotify}/bin/notify-send -i input-gamepad 'GameMode ended'";
       };
     };
   };

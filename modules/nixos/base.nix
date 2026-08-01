@@ -11,10 +11,23 @@
   # This has to be set as a module option so it applies to the system pkgs
   # (and, via home-manager.useGlobalPkgs, to joshr's profile too).
   nixpkgs.config.allowUnfree = true;
-  nix.gc = {
-    automatic = true;
-    dates = "weekly";
-    options = "--delete-older-than 14d";
+  nix = {
+    # 1. Automatically run garbage collection on a schedule
+    gc = {
+      automatic = true;
+      dates = "weekly";
+      options = "--delete-older-than 14d"; # Fallback safety net
+    };
+
+    # 2. Tell Nix to limit profile history natively during evaluations
+    settings = {
+      # Keeps exactly 10 generations available within the evaluation lookup
+      # This acts as a rolling hard limit for generation tracking references
+      keep-generations = 10;
+      
+      # Automatically optimizes and hard-links duplicate store files to save space
+      auto-optimise-store = true;
+    };
   };
 
   # Building the NixOS manual is one of the slower steps of a rebuild and it

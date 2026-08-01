@@ -85,28 +85,5 @@ in
     x-scheme-handler/https=${browser}
     x-scheme-handler/about=${browser}
     x-scheme-handler/unknown=${browser}
-
-    # image/jpeg=${images}
-    # image/png=${images}
-    # image/gif=${images}
-    # image/webp=${images}
-    # image/tiff=${images}
-    # image/bmp=${images}
-    # image/avif=${images}
-    # image/heif=${images}
-
-    # video/mp4=${videos}
-    # video/mpeg=${videos}
-    # video/quicktime=${videos}
-    # video/x-msvideo=${videos}
-    # video/x-matroska=${videos}
-    # video/webm=${videos}
-
-    # audio/mpeg=${music}
-    # audio/wav=${music}
-    # audio/flac=${music}
-    # audio/ogg=${music}
-    # audio/x-vorbis+ogg=${music}
-    # audio/aac=${music}
   '';
 }

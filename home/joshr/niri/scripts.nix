@@ -461,6 +461,88 @@ let
   #
   # Thickness moves 8 → 9 with the radius (110 → 130) only to hold the ring's
   # weight steady; at 8 a 130 ring reads visibly thinner than the 110 one did.
+  # A short-lived MPRIS query for the lock screen.
+  #
+  # Prefer a playing player. When nothing is actively playing, retain the
+  # first paused track so the lock screen still reflects the current media
+  # session. No player means no output, which makes Hyprlock hide the label.
+  lockNowPlaying = pkgs.writeShellApplication {
+    name = "lock-now-playing";
+
+    runtimeInputs = with pkgs; [
+      playerctl
+      coreutils
+      gnused
+    ];
+
+    text = ''
+      player=""
+      paused_player=""
+
+      while IFS= read -r candidate; do
+        [ -n "$candidate" ] || continue
+
+        status="$(playerctl --player="$candidate" status 2>/dev/null || true)"
+
+        case "$status" in
+          Playing)
+            player="$candidate"
+            break
+            ;;
+          Paused)
+            [ -n "$paused_player" ] || paused_player="$candidate"
+            ;;
+        esac
+      done < <(playerctl --list-all 2>/dev/null || true)
+
+      [ -n "$player" ] || player="$paused_player"
+      [ -n "$player" ] || exit 0
+
+      status="$(playerctl --player="$player" status 2>/dev/null || true)"
+
+      metadata="$(
+        playerctl \
+          --player="$player" \
+          metadata \
+          --format '{{artist}}|||{{title}}' \
+          2>/dev/null || true
+      )"
+
+      artist="''${metadata%%|||*}"
+      title="''${metadata#*|||}"
+
+      # The delimiter remains when metadata was unavailable.
+      [ "$metadata" != "$title" ] || exit 0
+      [ -n "$title" ] || exit 0
+
+      case "$status" in
+        Playing) icon="󰎆" ;;
+        Paused)  icon="" ;;
+        *)       exit 0 ;;
+      esac
+
+      if [ -n "$artist" ]; then
+        display="$artist · $title"
+      else
+        display="$title"
+      fi
+
+      # Labels support Pango markup, so escape metadata rather than allowing
+      # a song title containing &, < or > to become accidental markup.
+      display="$(
+        printf '%s' "$display" |
+          tr '\r\n' '  ' |
+          sed \
+            -e 's/[[:space:]][[:space:]]*/ /g' \
+            -e 's/&/\&amp;/g' \
+            -e 's/</\&lt;/g' \
+            -e 's/>/\&gt;/g' |
+          cut -c 1-100
+      )"
+
+      printf '%s  %s\n' "$icon" "$display"
+    '';
+  };
  lockSession = pkgs.writeShellApplication {
   name = "lock-session";
 
@@ -603,6 +685,21 @@ let
         valign = center
     }
 
+    # The active MPRIS track. This remains blank when there is no recognized
+    # media session, so the lock screen does not grow an empty placeholder.
+    label {
+        monitor =
+        text = cmd[update:1500] ${lib.getExe lockNowPlaying}
+
+        color = rgba(''${LOCK_FG_DIM}e6)
+        font_size = 18
+        font_family = FiraCode Nerd Font
+        text_align = center
+
+        position = 0, 158
+        halign = center
+        valign = bottom
+    }
     # One low, horizontal password field. Dots begin at the left and animate
     # individually so typing travels across the line rather than accumulating
     # as a static cluster in its center.

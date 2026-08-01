@@ -42,4 +42,10 @@
     networking.firewall.allowedUDPPorts = [
       53317 # Localsend
     ];
+
+    # HEIC/HEIF support (fuck apple)
+    environment.systemPackages = [
+      pkgs.libheif.bin  # provides heif-thumbnailer
+      pkgs.libheif.out  # provides heif.thumbnailer
+    ];
 }

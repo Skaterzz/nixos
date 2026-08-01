@@ -657,6 +657,23 @@ geometry, so there's nothing for a script to compute wrong.
 the active theme. `swayidle` dims at 4 minutes, locks at 5, blanks at 6, and
 locks before suspend.
 
+The lock script passes `--color` as well as `--screenshots`, and that is
+load-bearing rather than decorative. `--color` is the flat colour swaylock
+paints underneath the screenshot, so it is what you see when there is no
+screenshot to draw over it — and its default is **white**. Locking with a
+monitor already blanked is exactly that case: `--screenshots` grabs each
+output through wlr-screencopy, and a capture of a powered-off output fails.
+The packaged fork then clears the screenshot flag on its shared state instead
+of on the surface that failed, so one blanked monitor drops the screenshot
+background on *every* display and the whole lock screen comes up white.
+Pointing `--color` at the theme background makes that fallback a themed solid
+colour. It is easy to hit because blanking and locking are independent —
+`Mod+Escape` blanks on demand, and swayidle blanks at 360s and locks before
+sleep.
+
+niri's `layout { background-color }` does not help here: that is the backdrop
+behind windows, and swaylock's own surface covers it.
+
 **`Mod+Escape` blanks the monitors on demand**, from the lock screen as well
 as from the desktop — for when you're walking away now and don't want to wait
 out the idle timer. Any input wakes them; on the lock screen that leaves

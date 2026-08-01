@@ -271,6 +271,27 @@ let
 
   # Lock the session. Colours come from the active theme's swaylock.env, so
   # the lock screen follows whatever theme is current.
+  #
+  # `--color` is the flat colour swaylock paints *underneath* the screenshot
+  # background, and it is what you actually see whenever there is no
+  # screenshot to draw over it. Its default is white, so leaving it off is
+  # what made the lock screen come up blank white with a monitor powered off.
+  #
+  # `--screenshots` captures each output through wlr-screencopy at lock time,
+  # and a capture of an output that is currently blanked fails. In the
+  # packaged fork (jirutka's swaylock-effects 1.7.0.0) that failure handler
+  # clears `args.screenshots` on the shared state rather than on the one
+  # surface that failed, so a single blanked monitor takes the screenshot
+  # background away from *every* display — hence full white everywhere, not
+  # just on the display that was off. Pointing --color at the theme
+  # background turns that fallback into a themed solid colour.
+  #
+  # It's reachable in normal use because the blank and the lock are
+  # independent: Mod+Escape blanks on demand, and swayidle blanks at 360s and
+  # locks before sleep, so "outputs off" and "now lock" overlap easily.
+  #
+  # niri's `layout { background-color }` has no bearing on this. That is the
+  # backdrop behind windows; swaylock's own surface covers it.
   lockSession = pkgs.writeShellApplication {
     name = "lock-session";
     runtimeInputs = with pkgs; [ swaylock-effects ];
@@ -288,6 +309,7 @@ let
 
       exec swaylock \
         --screenshots \
+        --color "$LOCK_BG" \
         --clock \
         --indicator \
         --indicator-radius 110 \

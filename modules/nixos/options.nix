@@ -148,6 +148,60 @@
     '';
   };
 
+  options.local.backlight.ddcci.enable = lib.mkOption {
+    type = lib.types.bool;
+    default = false;
+    description = ''
+      Control external monitors' brightness over DDC/CI, by loading the
+      out-of-tree ddcci-backlight driver. See modules/nixos/ddcci.nix.
+
+      This is what makes brightnessctl — and anything else that drives
+      `/sys/class/backlight` — work on a machine with no internal panel. Each
+      monitor that answers DDC/CI gets a `ddcci*` backlight device, and the
+      existing keybinds and idle dim then apply to it with no changes.
+
+      Off by default because it is an out-of-tree kernel module, and because
+      on a laptop it would add a second set of backlight devices whenever an
+      external monitor is plugged in — which is only useful if you actually
+      want the external displays following the brightness keys too.
+
+      A monitor that ignores DDC/CI, or has it switched off in its OSD, simply
+      doesn't get a device. Nothing else breaks.
+    '';
+  };
+
+  options.local.backlight.ddcci.busNameMatch = lib.mkOption {
+    type = lib.types.listOf lib.types.str;
+    default = [
+      "NVIDIA i2c adapter*"
+      "AMDGPU DM*"
+      "Radeon i2c*"
+      "i915 gmbus*"
+    ];
+    description = ''
+      I2C adapter names to look for monitors on, as udev `ATTR{name}` globs.
+      Only meaningful when `local.backlight.ddcci.enable` is on.
+
+      Adapters are matched by name rather than probing every bus on the
+      machine on purpose. A desktop's i2c buses are mostly *not* displays —
+      they are SMBus segments carrying RAM SPD, fan controllers and RGB
+      hardware — and this box already runs with `acpi_enforce_resources=lax`
+      (hosts/gamestation/kernel-params.nix) so that OpenRGB can reach some of
+      them. Sending display queries to those is not a thing worth doing on a
+      timer at every boot.
+
+      Note that these are the *display* adapters of each driver, not every bus
+      the GPU exposes — an AMD card's "AMDGPU SMU" bus is RGB and telemetry,
+      not a monitor, and is deliberately not in the list.
+
+      If a monitor isn't picked up, get the real adapter names off the machine
+      and add the one it is on:
+
+          cat /sys/bus/i2c/devices/i2c-*/name
+          ddcutil detect
+    '';
+  };
+
   options.local.sddm.theme = lib.mkOption {
     type = lib.types.enum [
       "stock"

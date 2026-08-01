@@ -89,6 +89,7 @@ can't occur — and neither can the from-source rebuild the workaround costs.
 
 ```
 modules/nixos/niri.nix        # session, SDDM + theme, polkit, PAM, portals
+modules/nixos/ddcci.nix       # DDC/CI brightness for external monitors
 home/joshr/displays/
   gamestation.nix             # DP-3 + DP-2 layout — edit here for monitors
   laptop.nix                  # empty: niri auto-detects
@@ -224,6 +225,7 @@ restored at login.
 | `Print` / `Mod+Shift+S` | region screenshot, annotated in satty |
 | `Ctrl+Print` / `Alt+Print` | screen / window (niri's built-ins) |
 | `Mod+L` / `Mod+Shift+Escape` | lock, session menu |
+| `Mod+Escape` | blank the monitors — works on the lock screen too |
 | `Mod+Shift+I` | stay awake (toggle the sleep inhibitor) |
 | `Mod+Shift+T` / `Mod+Ctrl+T` | random theme, pick theme |
 | `Mod+Shift+W` / `Mod+Ctrl+W` | random wallpaper, pick wallpaper |
@@ -469,6 +471,64 @@ file. niri creates a workspace on whichever output is focused at the time, so
 without it the numbered workspaces scatter across displays depending on where
 you were when you first used each one. The desk pins them to `DP-3`.
 
+### Brightness
+
+The brightness keys worked on the laptop and did nothing on the desk for a
+while, with the same package installed and the same binding on both. The
+difference is hardware, not config.
+
+`/sys/class/backlight` only ever contains **internal** panels — a display
+whose backlight PWM the GPU driver owns. A monitor on DisplayPort or HDMI
+never appears there, because its backlight is inside the monitor. So on a
+desktop that directory is empty, and everything pointed at it silently does
+nothing: the keys, and the pre-lock dim in `lock.nix` as well.
+
+An external monitor is reached over **DDC/CI** instead, a small command set it
+answers on the i2c bus alongside the video link. `modules/nixos/ddcci.nix`
+loads `ddcci-backlight`, which speaks that in the kernel and registers each
+monitor as an ordinary backlight device — so the existing keys and timers work
+unchanged rather than needing a second code path.
+
+```nix
+# hosts/gamestation-niri/configuration.nix
+local.backlight.ddcci.enable = true;
+```
+
+It needs a **reboot**, not just a switch — it's a kernel module. Then:
+
+```bash
+ls /sys/class/backlight/    # expect a ddcci* per monitor
+ddcutil detect              # what DDC/CI itself can see
+```
+
+If a monitor is missing, check DDC/CI is enabled in its OSD — some vendors
+ship it off, and call it "MCCS". If it's still missing, compare the adapter
+names against `local.backlight.ddcci.busNameMatch`:
+
+```bash
+cat /sys/bus/i2c/devices/i2c-*/name
+```
+
+Buses are matched by name rather than probed blindly on purpose: most i2c
+buses on a desktop are SMBus segments carrying RAM and RGB hardware, not
+displays, and this machine already runs `acpi_enforce_resources=lax` so
+OpenRGB can reach some of them.
+
+Two things worth knowing:
+
+- **DDC/CI is slow** — a write is a round trip on the order of 100ms per
+  display, where a laptop panel is instant. The `brightness` helper
+  (`scripts.nix`) drops overlapping presses rather than queueing them, so a
+  held key doesn't keep climbing after you let go.
+- **The keys drive every display**, which is why they call that helper and
+  not `brightnessctl` directly. `brightnessctl` with no `--device` adjusts
+  the *first* device it finds — invisible with one internal panel, wrong
+  with one device per monitor.
+
+Not enabled on the Plasma variant of the desk. It would work, but it would
+also hand powerdevil's idle timer real dimming on displays it currently can't
+touch.
+
 ### The login screen
 
 **SDDM uses its own built-in greeter**, not a theme of ours. That is
@@ -566,8 +626,25 @@ geometry, so there's nothing for a script to compute wrong.
 ### Lock screen
 
 `swaylock-effects` with a blurred screenshot background, ring colours from
-the active theme. `swayidle` dims at 4 minutes, locks at 5, blanks at 10, and
+the active theme. `swayidle` dims at 4 minutes, locks at 5, blanks at 6, and
 locks before suspend.
+
+**`Mod+Escape` blanks the monitors on demand**, from the lock screen as well
+as from the desktop — for when you're walking away now and don't want to wait
+out the idle timer. Any input wakes them; on the lock screen that leaves
+swaylock exactly where it was, so it's a screen-off, not an unlock.
+
+It works through the lock without an `allow-when-locked` on it because niri
+keeps a whitelist of actions that survive the lock screen —
+`power-off-monitors` is on it, which is the same reason the 6-minute blank
+above fires while locked. Setting that property here would actually be a
+config *error*: niri only accepts it on `spawn` binds.
+
+It's `Mod+Escape` and not bare `Escape` because niri intercepts a bound key
+unconditionally — it matches binds before it looks at the lock state, and
+only then drops the action if the session is locked. A bare `Escape` bind
+would therefore swallow Escape in every application all the time, and there
+is no "only while locked" flag to scope it with.
 
 The system module adds `security.pam.services.swaylock` — without that PAM
 entry swaylock accepts your password and then rejects it, which locks you out

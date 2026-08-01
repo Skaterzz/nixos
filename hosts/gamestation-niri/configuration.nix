@@ -32,6 +32,12 @@
     ../../modules/nixos/emoji.nix
 
     ../../modules/nixos/nvidia.nix
+
+    # Brightness keys for the two DisplayPort monitors. Nothing on this
+    # machine has an internal panel, so /sys/class/backlight is empty and
+    # brightnessctl has nothing to write — see modules/nixos/ddcci.nix.
+    ../../modules/nixos/ddcci.nix
+
     ../../modules/nixos/gaming.nix
     ../../modules/nixos/users.nix
     ../../modules/nixos/office.nix
@@ -55,6 +61,12 @@
   ];
 
   networking.hostName = "dialga";
+
+  # DDC/CI brightness for the external monitors. Both displays get a
+  # /sys/class/backlight/ddcci* device, which is what the XF86MonBrightness
+  # keys and the swayidle dim have always been driving — they just had
+  # nothing to drive here until now.
+  local.backlight.ddcci.enable = true;
 
   # Themed login screen: one sddm-astronaut build per palette, following the
   # desktop's theme and wallpaper.

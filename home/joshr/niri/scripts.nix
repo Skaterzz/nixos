@@ -435,6 +435,86 @@ let
       esac
     '';
   };
+
+  # Brightness, across every backlight device rather than only the first.
+  #
+  # `brightnessctl set` with no --device picks the first device it finds and
+  # adjusts that one alone. On the laptop there is exactly one — the internal
+  # panel — so that was invisible. The desk reaches its monitors through
+  # ddcci-backlight (modules/nixos/ddcci.nix), which registers one device per
+  # display, and "the first one" there means a single monitor changes and the
+  # other doesn't. Hence the loop.
+  #
+  # Also the reason the keybinds call this rather than brightnessctl directly:
+  # a host with one display and a host with two want the same key to mean the
+  # same thing.
+  brightness = pkgs.writeShellApplication {
+    name = "brightness";
+    runtimeInputs = with pkgs; [ brightnessctl util-linux coreutils ];
+    text = ''
+      step=5
+
+      # Serialise, and drop overlapping runs rather than queue them.
+      #
+      # A DDC/CI write is a round trip over the monitor's own i2c bus, on the
+      # order of 100ms per display — the kernel backlight of a laptop panel is
+      # effectively instant by comparison. Holding the key down generates
+      # presses far faster than the monitors can answer, and without this the
+      # backlog keeps applying for seconds after the key is released. -n makes
+      # a run that arrives mid-write exit instead of waiting its turn.
+      exec 9>"''${XDG_RUNTIME_DIR:-/tmp}/brightness.lock"
+      flock -n 9 || exit 0
+
+      # Machine-readable list is `name,class,current,percent%,max` per device.
+      #
+      # The process substitution keeps a non-zero brightnessctl — which is
+      # what an empty backlight class produces, the ordinary state of a
+      # desktop without ddcci loaded — from tripping `set -e` here, so the
+      # empty case gets a clear message instead of a bare failure.
+      mapfile -t devices < <(
+        brightnessctl --class=backlight --machine-readable --list 2>/dev/null | cut -d, -f1
+      )
+
+      if [ ''${#devices[@]} -eq 0 ]; then
+        echo "brightness: no backlight devices — see modules/nixos/ddcci.nix" >&2
+        exit 1
+      fi
+
+      # One monitor refusing a DDC/CI write shouldn't stop the others moving.
+      apply() {
+        local dev="$1"
+        shift
+        brightnessctl --class=backlight --device="$dev" --quiet "$@" || true
+      }
+
+      each() {
+        local dev
+        for dev in "''${devices[@]}"; do
+          apply "$dev" "$@"
+        done
+      }
+
+      case "''${1:-}" in
+        up)   each set "+''${step}%" ;;
+        down) each set "''${step}%-" ;;
+        set)
+          [ -n "''${2:-}" ] || { echo "usage: brightness set <percent>" >&2; exit 2; }
+          each set "$2%"
+          ;;
+        # Save the current level and drop to <percent>. This is the swayidle
+        # dim warning; `restore` is its resumeCommand.
+        dim)
+          [ -n "''${2:-}" ] || { echo "usage: brightness dim <percent>" >&2; exit 2; }
+          each --save set "$2%"
+          ;;
+        restore) each --restore ;;
+        *)
+          echo "usage: brightness [up|down|set <pct>|dim <pct>|restore]" >&2
+          exit 2
+          ;;
+      esac
+    '';
+  };
 in
 {
   home.packages = [
@@ -451,6 +531,7 @@ in
     switchUser
     sessionMenu
     idleInhibit
+    brightness
   ];
 
   _module.args.niriScripts = {
@@ -467,6 +548,7 @@ in
       switchUser
       sessionMenu
       idleInhibit
+      brightness
       ;
   };
 }

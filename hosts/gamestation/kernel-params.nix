@@ -23,7 +23,13 @@
     # it's what every RGB-control setup runs with, but it is a guard being
     # switched off, not a feature being switched on.
     "acpi_enforce_resources=lax"
-    "i2c-dev"
+
+    # NOT here: "i2c-dev". It was, and it never did anything — i2c-dev is a
+    # *module* name, and the kernel ignores an unrecognised word on its
+    # command line. The module is loaded properly by
+    # `services.hardware.openrgb.enable` (modules/nixos/gaming.nix) and by
+    # `hardware.i2c.enable` (modules/nixos/ddcci.nix), both of which set
+    # boot.kernelModules, which is why nothing ever noticed.
 
     # Give the NVIDIA DRM driver a framebuffer console.
     #

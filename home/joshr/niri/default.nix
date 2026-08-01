@@ -34,6 +34,7 @@
   home.packages = with pkgs; [
     kdePackages.dolphin
     kdePackages.dolphin-plugins
+    kdePackages.kconfig
     kdePackages.kio-fuse # mount remote filesystems in place
     kdePackages.kio-extras # sftp://, mtp://, trash:// and friends
 
@@ -218,5 +219,18 @@
   programs.kitty.extraConfig = lib.mkAfter ''
 
     include ${niriTheming.activeDir}/kitty.conf
+  '';
+
+  # Enable Dolphin's Git version-control integration while leaving dolphinrc
+  # writable, so Dolphin can still save its other preferences normally.
+  home.activation.enableDolphinGitPlugin =
+  lib.hm.dag.entryAfter [ "writeBoundary" ] ''
+    mkdir -p "$HOME/.config"
+
+    $DRY_RUN_CMD ${lib.getExe' pkgs.kdePackages.kconfig "kwriteconfig6"} \
+      --file "$HOME/.config/dolphinrc" \
+      --group VersionControl \
+      --key enabledPlugins \
+      Git
   '';
 }

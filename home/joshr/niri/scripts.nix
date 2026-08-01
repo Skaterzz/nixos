@@ -461,57 +461,75 @@ let
   #
   # Thickness moves 8 → 9 with the radius (110 → 130) only to hold the ring's
   # weight steady; at 8 a 130 ring reads visibly thinner than the 110 one did.
-  lockSession = pkgs.writeShellApplication {
-    name = "lock-session";
-    runtimeInputs = [ swaylock ];
-    text = ''
-      # shellcheck disable=SC1091
-      if [ -r "${activeDir}/swaylock.env" ]; then . "${activeDir}/swaylock.env"; fi
+ lockSession = pkgs.writeShellApplication {
+  name = "lock-session";
+  runtimeInputs = [ swaylock ];
 
-      : "''${LOCK_BG:=0a0e0a}"
-      : "''${LOCK_ACCENT:=39ff14}"
-      : "''${LOCK_ACCENT_DIM:=1f8b0d}"
-      : "''${LOCK_FG:=c8f5c8}"
-      : "''${LOCK_FG_DIM:=5c7a5c}"
-      : "''${LOCK_ERR:=ff5555}"
-      : "''${LOCK_WARN:=f5d76e}"
+  text = ''
+    # shellcheck disable=SC1091
+    if [ -r "${activeDir}/swaylock.env" ]; then
+      . "${activeDir}/swaylock.env"
+    fi
 
-      exec swaylock \
-        --screenshots \
-        --color "$LOCK_BG" \
-        --clock \
-        --indicator \
-        --indicator-radius 130 \
-        --indicator-thickness 9 \
-        --effect-blur 8x5 \
-        --effect-vignette 0.4:0.4 \
-        --datestr "%A%n%B %d" \
-        --timestr "%I:%M %p" \
-        --font "FiraCode Nerd Font" \
-        --ring-color "$LOCK_ACCENT_DIM" \
-        --ring-clear-color "$LOCK_WARN" \
-        --ring-ver-color "$LOCK_ACCENT" \
-        --ring-wrong-color "$LOCK_ERR" \
-        --key-hl-color "$LOCK_ACCENT" \
-        --bs-hl-color "$LOCK_ERR" \
-        --inside-color "$LOCK_BG"cc \
-        --inside-clear-color "$LOCK_BG"cc \
-        --inside-ver-color "$LOCK_BG"cc \
-        --inside-wrong-color "$LOCK_BG"cc \
-        --line-color 00000000 \
-        --line-clear-color 00000000 \
-        --line-ver-color 00000000 \
-        --line-wrong-color 00000000 \
-        --separator-color 00000000 \
-        --text-color "$LOCK_FG" \
-        --text-clear-color "$LOCK_FG" \
-        --text-ver-color "$LOCK_FG" \
-        --text-wrong-color "$LOCK_ERR" \
-        --fade-in 0.2 \
-        --grace 2
-    '';
-  };
+    : "''${LOCK_BG:=0a0e0a}"
+    : "''${LOCK_ACCENT:=39ff14}"
+    : "''${LOCK_ACCENT_DIM:=1f8b0d}"
+    : "''${LOCK_FG:=c8f5c8}"
+    : "''${LOCK_FG_DIM:=5c7a5c}"
+    : "''${LOCK_ERR:=ff5555}"
+    : "''${LOCK_WARN:=f5d76e}"
 
+    # wallpaper-set stores the current wallpaper here. Keep the image
+    # arguments empty when it is missing or stale, which leaves --color as
+    # the reliable final fallback.
+    wallpaper=""
+    if [ -r "${stateDir}/wallpaper" ]; then
+      IFS= read -r wallpaper < "${stateDir}/wallpaper" || true
+    fi
+
+    image_args=()
+    if [ -n "$wallpaper" ] && [ -f "$wallpaper" ]; then
+      image_args=(
+        --image ":$wallpaper"
+        --scaling fill
+      )
+    fi
+
+    exec swaylock \
+      "''${image_args[@]}" \
+      --color "$LOCK_BG" \
+      --clock \
+      --indicator \
+      --indicator-radius 130 \
+      --indicator-thickness 9 \
+      --effect-blur 8x5 \
+      --effect-vignette 0.4:0.4 \
+      --datestr "%A%n%B %d" \
+      --timestr "%I:%M %p" \
+      --font "FiraCode Nerd Font" \
+      --ring-color "$LOCK_ACCENT_DIM" \
+      --ring-clear-color "$LOCK_WARN" \
+      --ring-ver-color "$LOCK_ACCENT" \
+      --ring-wrong-color "$LOCK_ERR" \
+      --key-hl-color "$LOCK_ACCENT" \
+      --bs-hl-color "$LOCK_ERR" \
+      --inside-color "$LOCK_BG"cc \
+      --inside-clear-color "$LOCK_BG"cc \
+      --inside-ver-color "$LOCK_BG"cc \
+      --inside-wrong-color "$LOCK_BG"cc \
+      --line-color 00000000 \
+      --line-clear-color 00000000 \
+      --line-ver-color 00000000 \
+      --line-wrong-color 00000000 \
+      --separator-color 00000000 \
+      --text-color "$LOCK_FG" \
+      --text-clear-color "$LOCK_FG" \
+      --text-ver-color "$LOCK_FG" \
+      --text-wrong-color "$LOCK_ERR" \
+      --fade-in 0.2 \
+      --grace 2
+  '';
+}; 
   # Sleep inhibitor. One entry point for the keybind and the waybar module,
   # so the two can't disagree about the state.
   #

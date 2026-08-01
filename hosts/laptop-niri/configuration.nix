@@ -17,6 +17,7 @@
     # niri replaces plasmalogin.nix.
     ../../modules/nixos/niri.nix
     ../../modules/nixos/desktop.nix
+    ../../modules/nixos/default-apps.nix
 
     # Fluent Emoji as the system emoji font. The picker that shows it off is
     # Mod+. — see home/joshr/niri/emoji.nix.

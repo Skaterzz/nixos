@@ -43,6 +43,7 @@
     ../../modules/nixos/office.nix
     ../../modules/nixos/content-creation.nix
     ../../modules/nixos/desktop-apps.nix
+    ../../modules/nixos/default-apps.nix
 
     # Development tooling: direnv, Docker, and the nix settings per-project
     # dev shells need.

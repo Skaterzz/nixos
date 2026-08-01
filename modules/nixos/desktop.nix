@@ -27,7 +27,4 @@
     services.blueman.enable = true;
 
     hardware.enableAllFirmware = true;
-
-    programs.nm-applet.enable = false;
-    programs.blueman-applet.enable = false;
 }

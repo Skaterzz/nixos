@@ -59,8 +59,31 @@
     # ranked over the last month, nothing below 1080p. Edit it and re-lock to
     # change what "top 20" means; the count itself is
     # `local.wallhaven.count`.
+    #
+    # `ratios` keeps it to widescreen. Both displays on the desk are 16:9
+    # (2560x1440 and 1920x1080, see home/joshr/displays/gamestation.nix), so
+    # 16:10 is the widest miss worth accepting — it scales to 16:9 losing a
+    # sliver off the top and bottom. Anything squarer arrives pillarboxed or
+    # cropped hard by whichever of awww or Plasma is drawing it. The laptop
+    # panel isn't pinned anywhere in here (displays/laptop.nix is empty on
+    # purpose), so it isn't what this is measured against; 16:10 covers it
+    # if it turns out to be one.
+    #
+    # The parameter takes a comma-separated list, written `%2C` here so the
+    # separator survives whatever Nix does to the query on its way to the
+    # fetcher — wallhaven url-decodes it back either way. wallhaven also has
+    # a `landscape` supergroup, but that is every non-portrait ratio it knows
+    # — 4x3 and 5x4 included — which is "not portrait" rather than "wide".
+    # The ultrawide ratios (21x9, 32x9) are left out on purpose: nothing
+    # here has a display to put them on, and on a 16:9 panel they letterbox
+    # to a strip.
+    #
+    # Narrowing the query narrows the pool it is drawn from, so a month with
+    # an unusually vertical toplist can return fewer than
+    # `local.wallhaven.count` images. That is handled — the sync script takes
+    # what is there — it just means the folder is occasionally short.
     wallhaven-toplist = {
-      url = "file+https://wallhaven.cc/api/v1/search?categories=111&purity=100&sorting=toplist&topRange=1M&order=desc&atleast=1920x1080";
+      url = "file+https://wallhaven.cc/api/v1/search?categories=111&purity=100&sorting=toplist&topRange=1M&order=desc&atleast=1920x1080&ratios=16x9%2C16x10";
       flake = false;
     };
   };

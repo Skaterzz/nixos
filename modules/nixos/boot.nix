@@ -372,7 +372,7 @@ let
         # disk is invisible until its partition is mounted — which is what
         # this does, read-only and only for as long as the scan takes.
         scan_other_esps() {
-          local boot_dev dev parttype fsuuid mnt
+          local boot_dev dev parttype partuuid mnt
 
           # Whatever backs the ESP NixOS boots from; already scanned.
           boot_dev="$(findmnt -no SOURCE --target "$esp" 2>/dev/null || true)"
@@ -394,20 +394,20 @@ let
             # limine addresses a volume it did not boot from by filesystem
             # UUID, so one without a readable UUID can't be pointed at even
             # if it does turn out to hold a loader.
-            fsuuid="$(lsblk -rno UUID "$dev" 2>/dev/null || true)"
-            [ -n "$fsuuid" ] || continue
+            partuuid="$(lsblk -rno PARTUUID "$dev" 2>/dev/null || true)"
+            [ -n "$partuuid" ] || continue
 
             # Mounted already (by hand, or because it is a second NixOS's
             # ESP)? Read it where it is rather than mounting it twice.
             mnt="$(findmnt -nfo TARGET "$dev" 2>/dev/null || true)"
             if [ -n "$mnt" ]; then
-              scan_root "$mnt" "uuid($fsuuid):"
+              scan_root "$mnt" "guid($partuuid):"
               continue
             fi
 
             scan_mount="$(mktemp -d)"
             if mount -o ro,nosuid,nodev,noexec "$dev" "$scan_mount" 2>/dev/null; then
-              scan_root "$scan_mount" "uuid($fsuuid):"
+              scan_root "$scan_mount" "guid($partuuid):"
               umount "$scan_mount" 2>/dev/null || true
             fi
             rmdir "$scan_mount" 2>/dev/null || true

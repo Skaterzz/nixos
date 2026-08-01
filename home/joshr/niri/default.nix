@@ -42,6 +42,12 @@
     brightnessctl
     playerctl
 
+    # Drives the bar's visualiser (see cavaBar in scripts.nix). Here as well
+    # so plain `cava` in a terminal works — that's the full-size version of
+    # the same thing, and it's the quickest way to tell whether it's cava or
+    # the widget at fault if the bar stays empty.
+    cava
+
     # Tray applet for NetworkManager, spawned at startup.
     # networkmanagerapplet
 

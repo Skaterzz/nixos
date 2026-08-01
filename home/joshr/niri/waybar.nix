@@ -38,6 +38,7 @@ in
       ];
       modules-center = [ "clock" ];
       modules-right = [
+        "custom/cava"
         "mpris"
         "tray"
         "pulseaudio"
@@ -66,6 +67,26 @@ in
           "^kitty$" = "  Terminal";
           "^$" = "  Desktop";
         };
+      };
+
+      # Eight bars of whatever is coming out of the speakers, sitting just
+      # left of the track name. Gone entirely when it's quiet — the script
+      # prints an empty line and waybar hides a custom module with no text —
+      # so the bar is unchanged from before whenever nothing is playing.
+      #
+      # Continuous, not polled: the script prints one frame per line and
+      # waybar takes each line as the new value. Deliberately no `interval`,
+      # which would switch waybar to running the script once per tick and
+      # reading a single value instead. `restart-interval` is the resilience:
+      # if cava exits — an audio device going away, pipewire restarting — it
+      # gets started again rather than leaving a dead slot.
+      #
+      # See cavaBar in scripts.nix for the cava config and the glyph mapping.
+      "custom/cava" = {
+        format = "{}";
+        exec = lib.getExe niriScripts.cavaBar;
+        restart-interval = 5;
+        tooltip = false;
       };
 
       mpris = {

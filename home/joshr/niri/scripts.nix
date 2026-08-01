@@ -515,6 +515,82 @@ let
       esac
     '';
   };
+
+  # Audio visualiser for the bar. See the custom/cava module in waybar.nix.
+  cavaConfig = pkgs.writeText "cava-waybar.conf" ''
+    [general]
+    # Eight glyphs in a status bar, not a full-screen visualiser — and every
+    # frame is a waybar label redraw, so 30 rather than cava's default 60.
+    framerate = 30
+    bars = 8
+    autosens = 1
+
+    # After two seconds of silence cava stops doing FFT and just checks for
+    # input once a second, until sound comes back. Nothing is playing most of
+    # the time, and this is meant to be a detail rather than a background job.
+    sleep_timer = 2
+
+    [input]
+    # pipewire-pulse is on (modules/nixos/niri.nix), and `pulse` with
+    # `source = auto` follows the *default sink's* monitor — so it tracks
+    # whichever output you switched to instead of a device named here.
+    method = pulse
+    source = auto
+
+    [output]
+    method = raw
+    raw_target = /dev/stdout
+    data_format = ascii
+    # 0-7, one value per block glyph in the mapping below.
+    ascii_max_range = 7
+  '';
+
+  # Eight bars of the playing audio, or nothing at all when it's quiet.
+  #
+  # Emitting an empty line is what hides it: waybar hides a custom module
+  # whose text is empty. So the bar looks exactly as it did before whenever
+  # the music stops, which is the point — the widget doesn't reserve a slot
+  # or leave a flat row of glyphs sitting there.
+  #
+  # It follows *audio*, not the mpris player, so a notification chime blips it
+  # for a moment too. That's deliberate: it needs no polling and no second
+  # process, and it reacts within a frame. To tie it to the player instead,
+  # the gate would have to be `playerctl --follow status` feeding this loop.
+  #
+  # No stdbuf anywhere in here, and it isn't an oversight — cava's raw output
+  # is plain write(2) with no stdio buffer (output/raw.c), and bash flushes
+  # its printf per iteration, so frames arrive one at a time on their own.
+  cavaBar = pkgs.writeShellApplication {
+    name = "cava-bar";
+    runtimeInputs = [ pkgs.cava ];
+    text = ''
+      cava -p ${cavaConfig} | while IFS= read -r frame; do
+        # `0;3;5;7;` -> `0357`
+        bars="''${frame//;/}"
+
+        # An all-zero frame is silence. Anything at all in 1-7 is sound.
+        case "$bars" in
+          *[1-7]*) ;;
+          *) echo; continue ;;
+        esac
+
+        # Parameter substitution rather than sed or tr: this runs thirty times
+        # a second, and a process per frame is not the way to draw a
+        # decoration. The replacements can't collide — every result is a
+        # non-digit.
+        bars="''${bars//0/▁}"
+        bars="''${bars//1/▂}"
+        bars="''${bars//2/▃}"
+        bars="''${bars//3/▄}"
+        bars="''${bars//4/▅}"
+        bars="''${bars//5/▆}"
+        bars="''${bars//6/▇}"
+        bars="''${bars//7/█}"
+
+        printf '%s\n' "$bars"
+      done
+    '';
+  };
 in
 {
   home.packages = [
@@ -532,6 +608,7 @@ in
     sessionMenu
     idleInhibit
     brightness
+    cavaBar
   ];
 
   _module.args.niriScripts = {
@@ -549,6 +626,7 @@ in
       sessionMenu
       idleInhibit
       brightness
+      cavaBar
       ;
   };
 }

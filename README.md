@@ -116,6 +116,23 @@ button goes red, because it's the one that can end the session. The lock
 button runs the same `lock-session` as `Mod+L` and the session menu's "Lock"
 entry, so all three take the active theme's colours.
 
+**The visualiser** is eight bars of cava just left of the track name, in the
+theme's dimmed accent. It is only there while something is actually making
+noise: the script prints an empty line on a silent frame and waybar hides a
+custom module with no text, so the bar looks exactly as it did before
+whenever nothing is playing — no reserved slot, no flat row of glyphs.
+
+It follows the *audio*, not the mpris player, so a notification chime blips
+it for a moment too. That's the trade for needing no polling and no second
+process: cava already knows whether there's sound. Tying it to the player
+would mean gating the loop on `playerctl --follow status`.
+
+After two seconds of silence cava stops doing FFT and only checks for input
+once a second, so the idle cost is close to nothing. `cava` is also on PATH
+on its own — running it in a terminal is the quickest way to tell whether
+it's cava or the widget at fault if the bar stays empty. See `cavaBar` in
+`home/joshr/niri/scripts.nix`.
+
 ### Theme switching
 
 20 palettes ship. Greens: `matrix` (bright phosphor, the default), `forest`,

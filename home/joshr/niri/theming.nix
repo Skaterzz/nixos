@@ -163,6 +163,7 @@ let
     #pulseaudio,
     #network,
     #battery,
+    #bluetooth,
     #custom-idle-inhibitor,
     #custom-lock,
     #custom-session {
@@ -185,6 +186,7 @@ let
     #pulseaudio:hover,
     #network:hover,
     #battery:hover,
+    #bluetooth:hover,
     #custom-idle-inhibitor:hover,
     #custom-lock:hover {
       background-color: alpha(@accent, 0.14);

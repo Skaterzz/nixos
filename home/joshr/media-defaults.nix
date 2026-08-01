@@ -45,8 +45,8 @@ let
 
   defaults =
     lib.genAttrs imageMimes (_: "org.kde.gwenview.desktop")
-    lib.genAttrs videoMimes (_: "org.kde.haruna.desktop")
-    lib.genAttrs audioMimes (_: "org.kde.elisa.desktop");
+    // lib.genAttrs videoMimes (_: "org.kde.haruna.desktop")
+    // lib.genAttrs audioMimes (_: "org.kde.elisa.desktop");
 in
 {
   xdg.configFile."mimeapps.list".force = true;

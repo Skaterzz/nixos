@@ -276,7 +276,12 @@ takes one slot on the strip, and `Mod+K`/`Mod+J` walk the tabs. `Mod+W` again
 puts the stack back. Nothing moves in or out of the column either way; it's
 purely how the column is drawn.
 
-`Mod+Shift+Slash` shows niri's own hotkey overlay.
+`Mod+Shift+Slash` shows niri's own **Important Hotkeys** overlay. That's a
+shorter list than the table above: niri hardcodes the entries it considers
+important, and anything else appears only if its bind carries a
+`hotkey-overlay-title`. `Mod+W` is given one for exactly that reason — the
+titled binds land after the hardcoded ones. Scroll binds can't appear there
+at all, so `Mod`+scroll stays a table-only entry.
 
 ### Clipboard history
 

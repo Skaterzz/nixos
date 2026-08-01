@@ -485,7 +485,12 @@ ${workspaceBlocks}
 
         Mod+V       { toggle-window-floating; }
         Mod+Shift+V { switch-focus-between-floating-and-tiling; }
-        Mod+W       { toggle-column-tabbed-display; }
+        // Titled so it shows up in the Important Hotkeys overlay at all.
+        // That page is niri's own hardcoded list of actions plus whatever
+        // carries a hotkey-overlay-title, and tabbed display isn't on the
+        // hardcoded list — float and float/tile focus just above it are,
+        // which is why they need no title and this does.
+        Mod+W hotkey-overlay-title="Tabbed column (toggle)" { toggle-column-tabbed-display; }
 
         Mod+Shift+P { power-off-monitors; }
     }

@@ -81,13 +81,10 @@ in
     joplin-desktop
     bitwarden-desktop
     nextcloud-client
-    obs-studio
-    lutris
     localsend
     playerctl
     cava
     cmatrix
-    yt-dlp
     haruna
     kdePackages.gwenview
     kdePackages.elisa

@@ -27,6 +27,7 @@
 
   home.packages = with pkgs; [
     sshfs
+    yt-dlp
   ];
 
   programs.btop = {

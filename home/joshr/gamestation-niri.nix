@@ -16,6 +16,7 @@
     ./niri
     ./displays/gamestation.nix
     ./office.nix
+    ./obs.nix
     ./content-creation.nix
   ];
 }

@@ -34,6 +34,7 @@
   home.packages = with pkgs; [
     kdePackages.dolphin
     kdePackages.dolphin-plugins
+    
     kdePackages.kconfig
     kdePackages.kio-fuse # mount remote filesystems in place
     kdePackages.kio-extras # sftp://, mtp://, trash:// and friends

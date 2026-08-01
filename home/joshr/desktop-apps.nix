@@ -95,6 +95,8 @@ in
 
     # Provides kbuildsycoca6, KDE's desktop-entry and MIME service cache.
     kdePackages.kservice
+
+    kdePackages.kimageformats
   ];
 
  home.activation.modifyNextcloudConfig = lib.hm.dag.entryAfter ["writeBoundary"] ''

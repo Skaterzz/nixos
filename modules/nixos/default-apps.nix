@@ -64,6 +64,12 @@ let
   # imports. On the other three hosts this entry simply doesn't resolve and
   # the next handler wins.
   images = "org.kde.gwenview.desktop;gwenview.desktop";
+
+  # Haruna is the default video player
+  videos = "org.kde.haruna.desktop;haruna.desktop";
+
+  # Elisa is the default music player
+  music = "org.kde.elisa.desktop;elisa.desktop";
 in
 {
   environment.etc."xdg/mimeapps.list".text = ''
@@ -88,5 +94,19 @@ in
     image/bmp=${images}
     image/avif=${images}
     image/heif=${images}
+
+    video/mp4=${videos}
+    video/mpeg=${videos}
+    video/quicktime=${videos}
+    video/x-msvideo=${videos}
+    video/x-matroska=${videos}
+    video/webm=${videos}
+
+    audio/mpeg=${music}
+    audio/wav=${music}
+    audio/flac=${music}
+    audio/ogg=${music}
+    audio/x-vorbis+ogg=${music}
+    audio/aac=${music}
   '';
 }

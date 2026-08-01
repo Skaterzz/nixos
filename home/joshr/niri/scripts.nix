@@ -15,24 +15,33 @@ let
 
   wallpaperDir = "${config.home.homeDirectory}/.local/share/wallpapers";
 
-  # swaylock, patched so the lock screen's date can't overhang the ring.
+  # swaylock, patched so the date stacks onto two lines and can't overhang the
+  # ring.
   #
-  # Upstream sizes that line at a hardcoded `arc_radius / 6` (render.c), so it
-  # grows in exact proportion to the circle and a long date overhangs by the
-  # same fraction at every radius. No flag reaches it — `--font-size` sets the
-  # clock above it and nothing else is exposed — so a wider `--indicator-radius`
-  # cannot buy the room, and the only options in configuration are to shorten
-  # the date or narrow the font. The patch measures the text and scales it down
-  # only when it would not fit, which keeps the full `%A, %B %d` and leaves
-  # short dates at their normal size.
+  # Upstream draws the date as one row sized at a hardcoded `arc_radius / 6`
+  # (render.c), so it grows in exact proportion to the circle and a long date
+  # overhangs by the same fraction at every radius. No flag reaches it —
+  # `--font-size` sets the clock above it and nothing else is exposed — so a
+  # wider `--indicator-radius` cannot buy the room. Without the patch the only
+  # options are to shorten the date or narrow the font, and both give something
+  # up: the installed fonts are FiraCode and Poppins, with nothing condensed.
   #
-  # It bounds against the ring's inner chord at the text's own baseline rather
-  # than the diameter, because the date sits below the centre where the circle
-  # has already begun to narrow.
+  # So the patch teaches it to split `--datestr` on a newline (strftime `%n`)
+  # and stack the halves — weekday over month and day. Two short lines fit at
+  # full size where one long one didn't: at radius 130 "Wednesday" and
+  # "September 24" come out 117px and 156px against chords of 246px and 231px,
+  # where the single row was 299px against 240px.
+  #
+  # It also scales a line down if it still wouldn't fit, bounded by the ring's
+  # inner chord at that line's own baseline rather than the diameter, since the
+  # date sits below the centre where the circle has already narrowed. With
+  # stacking that never triggers for this format — it's the backstop that makes
+  # an overhang impossible for any format or locale.
   #
   # Costs a source build of swaylock-effects, which is a small C project and
   # quick. If a nixpkgs bump ever moves those lines the patch will fail to
-  # apply, and the fallback is a shorter `--datestr` (`%b` for `%B` is enough).
+  # apply, and the fallback is a one-line `--datestr` short enough to fit
+  # (`%a, %b %d`).
   swaylock = pkgs.swaylock-effects.overrideAttrs (old: {
     patches = (old.patches or [ ]) ++ [ ./swaylock-date-fit.patch ];
   });
@@ -315,10 +324,10 @@ let
   # niri's `layout { background-color }` has no bearing on this. That is the
   # backdrop behind windows; swaylock's own surface covers it.
   #
-  # The date stays the full `%A, %B %d`. It used to overhang the ring on the
-  # long months, and what fixes that is the patch on `swaylock` above rather
-  # than anything here — a wider ring cannot, because swaylock sizes the date
-  # off the radius and it grows with the circle. See the comment there.
+  # The `%n` in `--datestr` is the line break that stacks the weekday over the
+  # month and day. Stock swaylock would draw it as a literal newline character
+  # in one row; reading it as a break is the patch on `swaylock` above, which
+  # is also what keeps the date from overhanging. See the comment there.
   #
   # Thickness moves 8 → 9 with the radius (110 → 130) only to hold the ring's
   # weight steady; at 8 a 130 ring reads visibly thinner than the 110 one did.
@@ -346,7 +355,7 @@ let
         --indicator-thickness 9 \
         --effect-blur 8x5 \
         --effect-vignette 0.4:0.4 \
-        --datestr "%A, %B %d" \
+        --datestr "%A%n%B %d" \
         --timestr "%I:%M %p" \
         --font "FiraCode Nerd Font" \
         --ring-color "$LOCK_ACCENT_DIM" \

@@ -24,9 +24,4 @@
     services.blueman.enable = true;
 
     hardware.enableAllFirmware = true;
-    hardware.pulseaudio.enable = true;
-    services.pulseaudio = {
-      enable = true;
-      package = pkgs.pulseaudioFull;
-    };
 }

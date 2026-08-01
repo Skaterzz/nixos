@@ -171,6 +171,52 @@
   #   '';
   # };
 
+  # wallhaven.cc's toplist, downloaded into
+  # ~/.local/share/wallpapers/WallhavenFlake from the `wallhaven-toplist`
+  # flake input. See home/joshr/wallhaven.nix.
+  options.local.wallhaven.enable = lib.mkOption {
+    type = lib.types.bool;
+    default = true;
+    description = ''
+      Keep ~/.local/share/wallpapers/WallhavenFlake in sync with the
+      `wallhaven-toplist` flake input.
+
+      Only reaches machines that import home/joshr/wallhaven.nix, which is
+      the desktop base — the server and root have no wallpapers at all. Turn
+      it off and the directory is simply left where it stands: nothing
+      removes it, because nothing runs. `rm -r` it yourself if you want it
+      gone.
+    '';
+  };
+
+  options.local.wallhaven.count = lib.mkOption {
+    type = lib.types.ints.between 1 24;
+    default = 20;
+    description = ''
+      How many of the listing's wallpapers to keep — the 20 in "top 20".
+
+      The ceiling is a page of wallhaven's API, which holds 24 results and is
+      what the input asks for. Lowering this deletes the surplus on the next
+      switch, same as the toplist moving on would.
+    '';
+  };
+
+  options.local.wallhaven.timeout = lib.mkOption {
+    type = lib.types.ints.positive;
+    default = 600;
+    description = ''
+      Seconds the download run may take before it gives up and leaves the
+      rest for next time.
+
+      This exists because the run happens inside `nixos-rebuild switch`. A
+      network that drops packets rather than refusing connections would
+      otherwise let twenty files' worth of timeouts and retries stack up into
+      a rebuild that looks hung. Nothing is lost when the budget runs out:
+      what did download stays, nothing is deleted, and the next activation or
+      login picks up where this one stopped.
+    '';
+  };
+
   options.local.plasma.secondaryMonitorPanel = lib.mkEnableOption ''
     the status bar on the second monitor (screen 1).
 

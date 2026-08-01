@@ -88,5 +88,5 @@
   };
 
   # Do not bump this after the initial install; see the NixOS manual.
-  system.stateVersion = "24.11";
+  system.stateVersion = "26.11";
 }

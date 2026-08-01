@@ -404,9 +404,7 @@ in
     jack.enable = true;
   };
 
-  # Disable applets
-  programs.nm-applet.enable = false;
-  services.blueman-applet.enable = false;
+ 
 
   # Screen sharing needs a portal backend; the niri module already pulls in
   # xdg-desktop-portal-gnome and sets the routing.

@@ -47,6 +47,7 @@
     # X11 apps under niri.
     xwayland-satellite
   ];
+  
 
   # Cursor theme is set in ../home.nix so the Plasma and niri sessions share
   # one definition; niri.nix just names it in `cursor { xcursor-theme … }`.

@@ -37,10 +37,10 @@
     };
   };
 
+  services.blueman-applet.enable = false; 
 
   home.packages = with pkgs; [
     sshfs
-
   ];
 
   programs.btop = {

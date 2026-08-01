@@ -304,6 +304,7 @@ ${workspaceBlocks}
 
         // --- window management -----------------------------------------
         Mod+Q repeat=false { close-window; }
+        Alt+F4 repeat=false { close-window; }
         Mod+O repeat=false { toggle-overview; }
         Mod+Tab repeat=false { toggle-overview; }
 

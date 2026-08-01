@@ -33,4 +33,13 @@
     services.blueman.enable = true;
 
     hardware.enableAllFirmware = true;
+
+    # Firewall
+    networking.firewall.allowedTCPPorts= [
+      53317 # Localsend
+    ];
+
+    networking.firewall.allowedUDPPorts = [
+      53317 # Localsend
+    ];
 }

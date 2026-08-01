@@ -81,7 +81,8 @@
         "home-manager": "home-manager",
         "nixpkgs": "nixpkgs",
         "plasma-manager": "plasma-manager",
-        "spicetify-nix": "spicetify-nix"
+        "spicetify-nix": "spicetify-nix",
+        "wallhaven-toplist": "wallhaven-toplist"
       }
     },
     "spicetify-nix": {
@@ -118,6 +119,18 @@
         "owner": "nix-systems",
         "repo": "default",
         "type": "github"
+      }
+    },
+    "wallhaven-toplist": {
+      "flake": false,
+      "locked": {
+        "narHash": "sha256-qE7K0UczboEJkRiS1eybzjFXf7xDYjyzm23JRGeoKC4=",
+        "type": "file",
+        "url": "https://wallhaven.cc/api/v1/search?atleast=1920x1080&categories=111&order=desc&purity=100&sorting=toplist&topRange=1M"
+      },
+      "original": {
+        "type": "file",
+        "url": "https://wallhaven.cc/api/v1/search?atleast=1920x1080&categories=111&order=desc&purity=100&sorting=toplist&topRange=1M"
       }
     }
   },

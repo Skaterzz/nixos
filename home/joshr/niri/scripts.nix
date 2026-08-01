@@ -229,56 +229,109 @@ let
     '';
   };
 
-  wallpaperMenu = pkgs.writeShellApplication {
-    name = "wallpaper-menu";
-    runtimeInputs = with pkgs; [
-      wofi
-      findutils
-      coreutils
-      imagemagick
-      wallpaperSet
-    ];
-    text = ''
-      dir="${wallpaperDir}"
-      [ -d "$dir" ] || { echo "no wallpaper dir: $dir" >&2; exit 1; }
+wallpaperMenu = pkgs.writeShellApplication {
+  name = "wallpaper-menu";
 
-      cache="''${XDG_CACHE_HOME:-$HOME/.cache}/wallpaper-menu"
-      entries="$(mktemp)"
-      mkdir -p "$cache"
-      trap 'rm -f "$entries"' EXIT
+  runtimeInputs = with pkgs; [
+    wofi
+    findutils
+    coreutils
+    imagemagick
+    libnotify
+    wallpaperSet
+  ];
 
-      # Wofi can display image escape entries. Cache small, uniformly cropped
-      # previews so opening the picker does not decode every full-resolution
-      # wallpaper from scratch each time.
-      while IFS= read -r img; do
-        rel="''${img#"$dir"/}"
-        stamp="$(stat -c '%Y:%s' "$img")"
-        key="$(printf '%s\0%s' "$img" "$stamp" | sha256sum | cut -d ' ' -f1)"
-        thumb="$cache/$key.jpg"
+  text = ''
+    dir="${wallpaperDir}"
+    [ -d "$dir" ] || {
+      echo "no wallpaper dir: $dir" >&2
+      exit 1
+    }
 
-        if [ ! -f "$thumb" ]; then
-          tmp="$cache/.$key.tmp.jpg"
-          if magick "$img" -auto-orient \
-              -thumbnail '320x180^' -gravity center -extent 320x180 \
-              -strip -quality 85 "$tmp" 2>/dev/null; then
-            mv -f "$tmp" "$thumb"
-          else
-            rm -f "$tmp"
-          fi
+    cache="''${XDG_CACHE_HOME:-$HOME/.cache}/wallpaper-menu"
+    entries="$(mktemp)"
+    images="$(mktemp)"
+
+    mkdir -p "$cache"
+    trap 'rm -f "$entries" "$images"' EXIT
+
+    find -L "$dir" -type f \
+      \( -iname '*.png' \
+      -o -iname '*.jpg' \
+      -o -iname '*.jpeg' \
+      -o -iname '*.webp' \) \
+      -print 2>/dev/null |
+      sort > "$images"
+
+    [ -s "$images" ] || {
+      echo "no wallpapers found in: $dir" >&2
+      exit 1
+    }
+
+    # Count thumbnails that actually need generating before doing the work.
+    missing_count=0
+
+    while IFS= read -r img; do
+      stamp="$(stat -c '%Y:%s' "$img")"
+      key="$(
+        printf '%s\0%s' "$img" "$stamp" |
+          sha256sum |
+          cut -d ' ' -f1
+      )"
+      thumb="$cache/$key.jpg"
+
+      if [ ! -f "$thumb" ]; then
+        missing_count=$((missing_count + 1))
+      fi
+    done < "$images"
+
+    if [ "$missing_count" -ge 10 ]; then
+      notify-send \
+        -a wallpaper-menu \
+        -i preferences-desktop-wallpaper \
+        -t 6000 \
+        "Wallpaper picker" \
+        "Building $missing_count wallpaper previews. This may take a moment." \
+        || true
+    fi
+
+    # Build missing previews and generate the entries consumed by Wofi.
+    while IFS= read -r img; do
+      rel="''${img#"$dir"/}"
+      stamp="$(stat -c '%Y:%s' "$img")"
+      key="$(
+        printf '%s\0%s' "$img" "$stamp" |
+          sha256sum |
+          cut -d ' ' -f1
+      )"
+      thumb="$cache/$key.jpg"
+
+      if [ ! -f "$thumb" ]; then
+        tmp="$cache/.$key.tmp.jpg"
+
+        if magick "$img" -auto-orient \
+            -thumbnail '320x180^' \
+            -gravity center \
+            -extent 320x180 \
+            -strip \
+            -quality 85 \
+            "$tmp" 2>/dev/null; then
+          mv -f "$tmp" "$thumb"
+        else
+          rm -f "$tmp"
         fi
+      fi
 
-        preview="$img"
-        [ -f "$thumb" ] && preview="$thumb"
-        printf 'img:%s:text:%s\n' "$preview" "$rel" >> "$entries"
-      done < <(
-        find -L "$dir" -type f \
-          \( -iname '*.png' -o -iname '*.jpg' -o -iname '*.jpeg' -o -iname '*.webp' \) \
-          -print 2>/dev/null | sort
-      )
+      preview="$img"
+      [ -f "$thumb" ] && preview="$thumb"
 
-      [ -s "$entries" ] || { echo "no wallpapers found in: $dir" >&2; exit 1; }
+      printf 'img:%s:text:%s\n' \
+        "$preview" \
+        "$rel" >> "$entries"
+    done < "$images"
 
-      choice="$(wofi --dmenu \
+    choice="$(
+      wofi --dmenu \
         --prompt "Wallpaper" \
         --insensitive \
         --allow-images \
@@ -289,15 +342,13 @@ let
         --lines 3 \
         --columns 4 \
         --define=image_size=180 \
-        < "$entries")"
+        < "$entries"
+    )"
 
-      # Depending on the wofi build, dmenu mode can return either the visible
-      # label or the complete image escape. This handles both.
-      choice="''${choice#*:text:}"
-      [ -n "$choice" ] && wallpaper-set "$dir/$choice"
-    '';
-  };
-
+    choice="''${choice#*:text:}"
+    [ -n "$choice" ] && wallpaper-set "$dir/$choice"
+  '';
+}; 
   wallpaperRandom = pkgs.writeShellApplication {
     name = "wallpaper-random";
     runtimeInputs = with pkgs; [
@@ -466,83 +517,184 @@ let
   # Prefer a playing player. When nothing is actively playing, retain the
   # first paused track so the lock screen still reflects the current media
   # session. No player means no output, which makes Hyprlock hide the label.
-  lockNowPlaying = pkgs.writeShellApplication {
-    name = "lock-now-playing";
+lockNowPlaying = pkgs.writeShellApplication {
+  name = "lock-now-playing";
 
-    runtimeInputs = with pkgs; [
-      playerctl
-      coreutils
-      gnused
-    ];
+  runtimeInputs = with pkgs; [
+    playerctl
+    coreutils
+    gnused
+  ];
 
-    text = ''
-      player=""
-      paused_player=""
+  text = ''
+    player=""
+    paused_player=""
 
-      while IFS= read -r candidate; do
-        [ -n "$candidate" ] || continue
+    # Prefer an actively playing source. Keep the first paused source as a
+    # fallback when nothing is currently playing.
+    while IFS= read -r candidate; do
+      [ -n "$candidate" ] || continue
 
-        status="$(playerctl --player="$candidate" status 2>/dev/null || true)"
-
-        case "$status" in
-          Playing)
-            player="$candidate"
-            break
-            ;;
-          Paused)
-            [ -n "$paused_player" ] || paused_player="$candidate"
-            ;;
-        esac
-      done < <(playerctl --list-all 2>/dev/null || true)
-
-      [ -n "$player" ] || player="$paused_player"
-      [ -n "$player" ] || exit 0
-
-      status="$(playerctl --player="$player" status 2>/dev/null || true)"
-
-      metadata="$(
-        playerctl \
-          --player="$player" \
-          metadata \
-          --format '{{artist}}|||{{title}}' \
-          2>/dev/null || true
+      status="$(
+        playerctl --player="$candidate" status 2>/dev/null || true
       )"
-
-      artist="''${metadata%%|||*}"
-      title="''${metadata#*|||}"
-
-      # The delimiter remains when metadata was unavailable.
-      [ "$metadata" != "$title" ] || exit 0
-      [ -n "$title" ] || exit 0
 
       case "$status" in
-        Playing) icon="󰎆" ;;
-        Paused)  icon="" ;;
-        *)       exit 0 ;;
+        Playing)
+          player="$candidate"
+          break
+          ;;
+        Paused)
+          [ -n "$paused_player" ] || paused_player="$candidate"
+          ;;
       esac
+    done < <(playerctl --list-all 2>/dev/null || true)
 
-      if [ -n "$artist" ]; then
-        display="$artist · $title"
-      else
-        display="$title"
-      fi
+    [ -n "$player" ] || player="$paused_player"
+    [ -n "$player" ] || exit 0
 
-      # Labels support Pango markup, so escape metadata rather than allowing
-      # a song title containing &, < or > to become accidental markup.
-      display="$(
-        printf '%s' "$display" |
-          tr '\r\n' '  ' |
-          sed \
-            -e 's/[[:space:]][[:space:]]*/ /g' \
-            -e 's/&/\&amp;/g' \
-            -e 's/</\&lt;/g' \
-            -e 's/>/\&gt;/g' |
-          cut -c 1-100
-      )"
+    status="$(
+      playerctl --player="$player" status 2>/dev/null || true
+    )"
 
-      printf '%s  %s\n' "$icon" "$display"
-    '';
-  };
+    metadata="$(
+      playerctl \
+        --player="$player" \
+        metadata \
+        --format '{{artist}}|||{{title}}' \
+        2>/dev/null || true
+    )"
+
+    artist="''${metadata%%|||*}"
+    title="''${metadata#*|||}"
+
+    # No delimiter means the metadata query failed.
+    [ "$metadata" != "$title" ] || exit 0
+    [ -n "$title" ] || exit 0
+
+    # playerName is cleaner than the D-Bus instance name, but fall back to the
+    # candidate selected above for players that do not expose it properly.
+    player_name="$(
+      playerctl \
+        --player="$player" \
+        metadata \
+        --format '{{playerName}}' \
+        2>/dev/null || true
+    )"
+
+    [ -n "$player_name" ] || player_name="$player"
+
+    # Remove instance suffixes such as firefox.instance123 and normalize case.
+    source="$(
+      printf '%s' "$player_name" |
+        tr '[:upper:]' '[:lower:]'
+    )"
+    source="''${source%%.*}"
+
+    # Browser players normally identify as the browser, but the media URL can
+    # reveal recognizable web services.
+    media_url="$(
+      playerctl \
+        --player="$player" \
+        metadata xesam:url \
+        2>/dev/null || true
+    )"
+
+    case "$media_url" in
+      *open.spotify.com/* | spotify:*)
+        source="spotify"
+        ;;
+      *music.youtube.com/*)
+        source="youtube-music"
+        ;;
+      *youtube.com/* | *youtu.be/*)
+        source="youtube"
+        ;;
+    esac
+
+    case "$source" in
+      spotify | spotifyd)
+        player_icon=""
+        ;;
+
+      firefox)
+        player_icon="󰈹"
+        ;;
+
+      chromium | chrome | google-chrome)
+        player_icon=""
+        ;;
+
+      brave | brave-browser)
+        player_icon="󰖟"
+        ;;
+
+      vivaldi | vivaldi-stable)
+        player_icon="󰖟"
+        ;;
+
+      mpv)
+        player_icon=""
+        ;;
+
+      vlc)
+        player_icon="󰕼"
+        ;;
+
+      cider | cider-2)
+        player_icon=""
+        ;;
+
+      youtube | youtube-music)
+        player_icon=""
+        ;;
+
+      cmus | mpd | rhythmbox | strawberry | amberol)
+        player_icon="󰎆"
+        ;;
+
+      *)
+        player_icon="󰎆"
+        ;;
+    esac
+
+    case "$status" in
+      Playing)
+        status_text=""
+        ;;
+      Paused)
+        status_text="  "
+        ;;
+      *)
+        exit 0
+        ;;
+    esac
+
+    if [ -n "$artist" ]; then
+      display="$artist · $title"
+    else
+      display="$title"
+    fi
+
+    # Hyprlock labels support markup, so sanitize media metadata before it
+    # reaches the generated label.
+    display="$(
+      printf '%s' "$display" |
+        tr '\r\n' '  ' |
+        sed \
+          -e 's/[[:space:]][[:space:]]*/ /g' \
+          -e 's/&/\&amp;/g' \
+          -e 's/</\&lt;/g' \
+          -e 's/>/\&gt;/g' |
+        cut -c 1-100
+    )"
+
+    printf '%s%s  %s\n' \
+      "$player_icon" \
+      "$status_text" \
+      "$display"
+  '';
+};
  lockSession = pkgs.writeShellApplication {
   name = "lock-session";
 

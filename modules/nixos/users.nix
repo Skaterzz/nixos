@@ -11,10 +11,12 @@
     shell = pkgs.fish;
 
     # `docker` and `libvirtd` are conditional because the groups only exist
-    # when their daemons do, and those live in modules/nixos/development.nix,
-    # which is commented out per host. Naming a group that nothing declares
-    # fails activation with "group does not exist" — so the membership
-    # follows the daemon rather than assuming it.
+    # when their daemons do, and those are per-host imports —
+    # modules/nixos/development.nix for Docker, modules/nixos/virtualization.nix
+    # for libvirtd. Naming a group that nothing declares fails activation with
+    # "group does not exist" — so the membership follows the daemon rather than
+    # assuming it. Keying off the daemon rather than the module is also what
+    # lets those two be imported independently.
     extraGroups =
       [
         "wheel"

@@ -292,6 +292,25 @@ let
   #
   # niri's `layout { background-color }` has no bearing on this. That is the
   # backdrop behind windows; swaylock's own surface covers it.
+  #
+  # On the ring size and the abbreviated month: those two are one change, not
+  # two. The date used to spill past the ring on the long months, and a wider
+  # ring does not fix that on its own, because swaylock sizes the text off the
+  # radius. render.c takes the clock as `arc_radius / 3` and the date line as a
+  # hardcoded `arc_radius / 6`, so the date grows in exact proportion to the
+  # circle and the overhang stays put at any radius. (`--font-size` is no help
+  # either — it only reaches the clock; the date's divisor is not configurable.)
+  #
+  # FiraCode is monospace at 0.6em per glyph, so the date renders about
+  # `chars * 0.6 * radius/6` wide against a `2 * radius` circle — i.e. it fits
+  # only up to 20 characters, whatever the radius. "Wednesday, September 24" is
+  # 23 and overhangs by ~15%, which is the slight overhang that was showing.
+  # `%b` for `%B` makes the worst case "Wednesday, Sep 24" at 17, comfortably
+  # inside. Abbreviating the month rather than the weekday because the month is
+  # what pushed it over.
+  #
+  # Thickness moves 8 → 9 with the radius (110 → 130) only to hold the ring's
+  # weight steady; at 8 a 130 ring reads visibly thinner than the 110 one did.
   lockSession = pkgs.writeShellApplication {
     name = "lock-session";
     runtimeInputs = with pkgs; [ swaylock-effects ];
@@ -312,11 +331,11 @@ let
         --color "$LOCK_BG" \
         --clock \
         --indicator \
-        --indicator-radius 110 \
-        --indicator-thickness 8 \
+        --indicator-radius 130 \
+        --indicator-thickness 9 \
         --effect-blur 8x5 \
         --effect-vignette 0.4:0.4 \
-        --datestr "%A, %B %d" \
+        --datestr "%A, %b %d" \
         --timestr "%I:%M %p" \
         --font "FiraCode Nerd Font" \
         --ring-color "$LOCK_ACCENT_DIM" \

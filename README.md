@@ -476,23 +476,74 @@ doesn't rest on one daemon asking another the right question.
 
 ### The lid
 
-`modules/nixos/laptop.nix` is the single owner: **suspend** on battery,
-**ignore** on mains, **ignore** when docked.
+Three cases:
 
-It didn't used to be. `modules/nixos/niri.nix` set the same three
-`services.logind.settings.Login` keys, and the two disagreed — `lock` there
-against `ignore` here for external power and docked. `laptop-niri` imports
-both modules, and two modules setting one option to different values is a
-conflict NixOS refuses to merge, so that host could not evaluate at all. A
-lid is hardware rather than a desktop session, which is why `laptop.nix` is
-where it lives — `niri.nix` also runs on `gamestation-niri`, which has no
-lid.
+| Lid closed… | What happens |
+| --- | --- |
+| on battery | suspend |
+| on mains, nothing else attached | lock the session |
+| docked | nothing |
 
-The values are unchanged by that untangling: the fix was to stop `niri.nix`
-setting them, not to pick a new behaviour. If you'd rather the lid locked
-than did nothing while plugged in, `"lock"` is the word — it doesn't suspend,
-it just doesn't leave the session open on a machine you've shut and walked
-away from.
+**"Docked" is logind's own definition, and it's broader than a dock**: an ACPI
+dock station reporting docked, *or* at least one external display connected.
+Shutting a laptop that's driving a monitor is the case that wants nothing to
+happen — the session stays up on the external screen rather than locking
+behind a lid nobody was looking at.
+
+The order those are tested in is what makes that hold, and it's logind's
+rather than ours: docked first, then external power, then the plain case. A
+dock supplies power, so the other order would never reach the docked rule and
+a docked laptop would lock.
+
+`modules/nixos/laptop.nix` owns the logind half — the three
+`services.logind.settings.Login` keys. `HandleLidSwitchExternalPower` is
+ignored entirely unless it's set, for backwards compatibility, so leaving it
+out doesn't mean "do nothing on mains", it means mains falls through to
+`HandleLidSwitch` and suspends. `lock` doesn't suspend: it asks every session
+to lock, which under niri is swayidle's `lock` event running `lock-session`,
+the same path `loginctl lock-session` takes. On battery the lock still happens
+one step later, from swayidle's `before-sleep`, so the machine never resumes
+unlocked either way.
+
+`lock` and `suspend` differ in one place, and that's logind's doing rather than
+a setting: while the lid stays shut logind keeps re-evaluating which of the
+three cases applies, but the lock is only ever sent on the closing edge — a
+no-op on those rechecks, or it would re-lock on every wakeup. So pulling the
+monitor out of an already-closed laptop suspends it if that leaves it on
+battery, and leaves the session as it was if it's still plugged in. Opening
+and shutting the lid locks it.
+
+The mains inhibitor from the section above doesn't get in the way, even
+though "on mains" is exactly when it's held: `LidSwitchIgnoreInhibited`
+defaults to yes, so lid handling ignores the high-level idle and sleep locks.
+The low-level `handle-lid-switch` lock is always honoured, which is why
+`Mod+Shift+I` still stops the lid doing anything at all.
+
+What happens to the *panel* is niri's business rather than logind's, and it
+lines up with the table: with an external monitor connected niri turns the
+built-in one off when the lid shuts, so the docked case leaves a working
+desktop on the monitor. With no external monitor it leaves the panel on —
+disabling the only output would leave the session with nowhere to draw — so
+the lock screen sits behind a closed lid until swayidle blanks it on its own
+timer.
+
+**Under Plasma, none of those keys fire.** powerdevil takes a block inhibitor
+on `handle-lid-switch` at session start ("KDE handles power events") and
+handles the lid itself, so the same three cases are restated for it in
+`home/joshr/laptop.nix`: `lockScreen` on AC, `sleep` on battery, and
+`inhibitLidActionWhenExternalMonitorConnected` for the docked case — powerdevil
+has no docked profile, it has a per-profile "don't act when an external
+monitor is connected", which is the same rule written from the other side.
+The logind half still covers the greeter and a bare TTY there, which is why
+both are set. Sleeping locks on the way back either way: that's
+`kscreenlocker.lockOnResume` in `home/joshr/plasma.nix`.
+
+It didn't always live in one place per session. `modules/nixos/niri.nix` set
+the same three logind keys and disagreed with `laptop.nix`, and two modules
+setting one option to different values is a conflict NixOS refuses to merge —
+`laptop-niri` imports both, so that host could not evaluate at all. A lid is
+hardware rather than a desktop session, which is why `laptop.nix` is where it
+lives; `niri.nix` also runs on `gamestation-niri`, which has no lid.
 
 ### Displays
 

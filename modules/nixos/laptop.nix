@@ -35,35 +35,65 @@
   # Trim for the SSD.
   services.fstrim.enable = true;
 
-  # Closing the lid suspends only on battery.
+  # What closing the lid does. Three cases:
   #
-  # This module is the single owner of lid behaviour. modules/nixos/niri.nix
-  # used to set the same three keys as well, and disagreed — `lock` there
-  # against `ignore` here for external power and docked. laptop-niri imports
-  # both, and two modules setting one option to different values is a
-  # conflict NixOS refuses to merge, so that host could not build at all.
+  #   on battery              suspend
+  #   on mains, not docked    lock the session
+  #   docked                  nothing
   #
-  # The values below are deliberately unchanged by that untangling. The fix
-  # was to stop niri.nix setting them, not to pick a new behaviour, and
-  # quietly flipping what the lid does while resolving a module conflict is
-  # exactly the kind of change nobody asks for and everybody notices.
+  # "Docked" is logind's own definition and it is broader than a dock: an
+  # ACPI dock station reporting docked, *or* at least one external display
+  # connected (`manager_is_docked_or_external_displays`). Shutting a laptop
+  # that is driving a monitor is the case that wants nothing to happen — the
+  # session stays up on the external screen rather than locking behind a lid
+  # nobody was looking at.
   #
-  # `lock` is the alternative worth knowing about for the two non-battery
-  # cases: it doesn't suspend, it just doesn't leave the session open on a
-  # machine you've shut and walked away from. Worth switching to on purpose.
+  # The order those three are tested in is what makes that work, and it's
+  # logind's, not ours: docked is checked first, then external power, then
+  # the plain case. A dock supplies power, so the other order would never
+  # reach the docked rule and a docked laptop would lock.
   #
-  # HandleLidSwitchExternalPower defaults to whatever HandleLidSwitch is, so
-  # it has to be set explicitly to get the "battery only" behaviour — setting
-  # HandleLidSwitch alone would suspend on AC too.
+  # HandleLidSwitchExternalPower is ignored entirely unless it is set, for
+  # backwards compatibility — leave it out and mains falls through to
+  # HandleLidSwitch, which is to say it suspends.
   #
-  # Docked is ignored separately: with the lid shut and external displays
-  # attached, suspending is rarely what's wanted.
+  # `lock` doesn't suspend. It asks every session to lock, which under niri
+  # is swayidle's `lock` event running lock-session (home/joshr/niri/lock.nix)
+  # — the same path `loginctl lock-session` takes. On battery the lock still
+  # happens, one step later: swayidle's `before-sleep` fires on the way down,
+  # so the machine never resumes unlocked either way.
+  #
+  # `lock` and `suspend` differ in one place, and it is logind's doing rather
+  # than a setting: while the lid stays shut logind keeps re-evaluating which
+  # of the three cases applies, but the lock is only ever sent on the closing
+  # edge — it is deliberately a no-op on those rechecks, or it would re-lock
+  # on every wakeup. So pulling the monitor out of an already-closed laptop
+  # suspends it if that leaves it on battery, and leaves the session as it was
+  # if it is still plugged in. Opening and shutting the lid locks it.
+  #
+  # modules/nixos/power.nix doesn't get in the way of this, even though "on
+  # mains" is exactly when it holds its idle inhibitor:
+  # LidSwitchIgnoreInhibited defaults to yes, so lid handling ignores the
+  # high-level idle and sleep locks. The low-level handle-lid-switch lock is
+  # always honoured, which is how Mod+Shift+I (idle-inhibit, also in lock.nix)
+  # still stops the lid doing anything at all.
+  #
+  # Under Plasma none of this fires: powerdevil takes a block inhibitor on
+  # handle-lid-switch at session start and implements the lid itself, so the
+  # same three cases are restated for it in home/joshr/laptop.nix. What's
+  # here still covers the greeter and a bare TTY on that host.
+  #
+  # This module is the single owner of the logind half. modules/nixos/niri.nix
+  # used to set the same three keys as well, and disagreed with this file.
+  # laptop-niri imports both, and two modules setting one option to different
+  # values is a conflict NixOS refuses to merge, so that host could not build
+  # at all.
   #
   # (These live under services.logind.settings.Login now; the old
   # services.logind.lidSwitch* options are renamed aliases that warn.)
   services.logind.settings.Login = {
     HandleLidSwitch = "suspend";
-    HandleLidSwitchExternalPower = "ignore";
+    HandleLidSwitchExternalPower = "lock";
     HandleLidSwitchDocked = "ignore";
   };
 }

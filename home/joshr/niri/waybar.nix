@@ -41,6 +41,7 @@ in
         "mpris"
         "tray"
         "pulseaudio"
+        "bluetooth"
         "network"
         "battery"
         "custom/idle-inhibitor"
@@ -82,10 +83,10 @@ in
           {position} / {length}
         '';
 
-        title-len = 25;
-        artist-len = 25;
-        album-len = 25;
-        dynamic-len = 55;
+        title-len = 20;
+        artist-len = 20;
+        album-len = 20;
+        dynamic-len = 30;
 
         dynamic-order = [
           "title"
@@ -97,7 +98,7 @@ in
           "artist"
         ];
 
-        dynamic-separator = "  •  ";
+        dynamic-separator = " • ";
 
         player-icons = {
           default = "󰎆";
@@ -191,6 +192,17 @@ in
         tooltip-format-wifi = "{essid}  ({signalStrength}%)\n{ipaddr}";
         tooltip-format-ethernet = "{ifname}\n{ipaddr}";
         on-click = "${pkgs.networkmanagerapplet}/bin/nm-connection-editor";
+      };
+
+      bluetooth = {
+        format = "󰂯 {status}";
+        #format-connected = "󰂯 Connected";
+        format-connected-battery = "󰂯 {status} {device_battery_percentage}%";
+        tooltip-format = "{controller_alias}\t{controller_status}\n\n{num_connections} connected";
+        tooltip-format-connected = "{controller_alias}\t{controller_status}\n\n{num_connections} connected\n\n{device_enumerate}";
+        tooltip-format-enumerate-connected = "{device_alias}\t{device_address}";
+        tooltip-format-enumerate-connected-battery = "{device_alias}\t{device_address}\t{device_battery_percentage}%";
+        on-click = "blueman-manager";
       };
 
       battery = {

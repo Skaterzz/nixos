@@ -23,7 +23,7 @@ hosts/server/                     # headless: no desktop, cron jobs
   hardware-configuration.nix      # PLACEHOLDER — regenerate on the machine
 modules/nixos/
   base.nix                        # nix settings, locale/timezone, fish, base fonts
-  desktop.nix                     # SDDM (Wayland) + Plasma 6, portals, audio, Flatpak
+  plasmalogin.nix                     # SDDM (Wayland) + Plasma 6, portals, audio, Flatpak
   development.nix                 # direnv, Docker, libvirtd/QEMU/virt-manager, nix
                                   #   settings — commented out per host, see below
   cron.nix                        # local.cron.jobs -> the system crontab

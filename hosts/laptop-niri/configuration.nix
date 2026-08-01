@@ -14,8 +14,10 @@
     ../../modules/nixos/base.nix
     ../../modules/nixos/boot.nix
 
-    # niri replaces desktop.nix.
+    # niri replaces plasmalogin.nix.
     ../../modules/nixos/niri.nix
+    ../../modules/nixos/desktop.nix
+
 
     ../../modules/nixos/laptop.nix
     #../../modules/nixos/gaming.nix

@@ -6,6 +6,7 @@
     ./kernel-params.nix
     ../../modules/nixos/base.nix
     ../../modules/nixos/boot.nix
+    ../../modules/nixos/plasmalogin.nix
     ../../modules/nixos/desktop.nix
     # Workaround for nixpkgs#126590 (huge XDG_DATA_DIRS makes every app slow
     # to start). Rebuilds plasma-workspace from source — remove this import

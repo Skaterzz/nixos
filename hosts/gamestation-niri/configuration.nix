@@ -22,9 +22,11 @@
     ../../modules/nixos/base.nix
     ../../modules/nixos/boot.nix
 
-    # niri replaces desktop.nix: it brings its own session, SDDM, portals,
+    # niri replaces plasmalogin.nix: it brings its own session, SDDM, portals,
     # audio and polkit agent.
     ../../modules/nixos/niri.nix
+    ../../modules/nixos/desktop.nix
+
 
     ../../modules/nixos/nvidia.nix
     ../../modules/nixos/gaming.nix

@@ -226,7 +226,8 @@ ${workspaceBlocks}
     window-rule {
         match app-id="kcalc"
         open-floating true
-	default-floating-size width=400 height=550
+    	default-column-width { fixed 400; }
+    	default-window-height { fixed 550; }	
     }	
 
     // Rounded corners everywhere, matching waybar and wofi.

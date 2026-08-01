@@ -45,18 +45,21 @@ let
     // Included by config.kdl; niri reloads automatically when this changes.
     layout {
         focus-ring {
-            width 2
-            active-color "${t.accent}"
-            inactive-color "${t.accentDim}"
+            off
         }
 
         border {
-            off
-            width 2
-            active-color "${t.accent}"
-            inactive-color "${t.bgAlt}"
-        }
+   	    on
+            width 3
 
+            // A workspace-relative gradient shifts subtly as the scrolling
+            // layout moves, without requiring a continuous animation.
+            active-color "${t.accent}"
+
+            // Unfocused windows retain a darker tint of the active accent.
+            inactive-color "${t.accentDim}"
+            urgent-color "${t.err}"
+        } 
         shadow {
             on
             softness 24

@@ -178,6 +178,17 @@ the same one Plasma sends when you apply a colour scheme — so an open Dolphin
 repaints without being restarted. That part is best effort; anything that
 doesn't listen picks the change up next time it starts.
 
+That `"kde"` costs one thing worth knowing about. home-manager maps the name
+to a fixed package list, and it includes **KDE System Settings** — which is
+why that app used to appear in the launcher on a session with no Plasma to
+configure. `qt.platformTheme.package` is therefore spelled out in
+`home/joshr/niri/default.nix`: the module takes the first non-empty of
+[your list, the name's list], so naming `kio` and `plasma-integration`
+explicitly means the third one is never installed. Both of those are
+load-bearing — the KDE file dialog and the plugin that reads `kdeglobals` —
+and `QT_QPA_PLATFORMTHEME` is still `kde`. The Plasma hosts are unaffected;
+they get System Settings from Plasma itself.
+
 **VS Code** has no "read colours from this path" setting — a colour theme can
 only arrive as an extension. So each palette renders a complete one-theme
 extension, and `home/joshr/niri/vscode.nix` symlinks the whole directory into

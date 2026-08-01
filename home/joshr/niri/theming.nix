@@ -490,6 +490,7 @@ let
     ColorScheme=niri-${name}
     AccentColor=${rgb t.accent}
     accentColorFromWallpaper=false
+    TerminalApplication=${pkgs.kitty}/bin/kitty
 
     [Icons]
     Theme=Papirus-Dark

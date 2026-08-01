@@ -10,7 +10,8 @@ chezmoi repo.
 ## What's here
 
 ```
-flake.nix                        # inputs: nixpkgs, home-manager, plasma-manager, dotfiles
+flake.nix                        # inputs: nixpkgs, home-manager, plasma-manager,
+                                 #   dotfiles, wallhaven-toplist
 hosts/gamestation/                # the desk: NVIDIA, multi-monitor
   configuration.nix               # top-level system config, imports the modules below
   hardware-configuration.nix      # PLACEHOLDER — replace with your real hardware scan
@@ -51,6 +52,8 @@ home/joshr/
   browser.nix                      # the default browser: Vivaldi, $BROWSER
                                    #   (handlers: modules/nixos/default-apps.nix)
   firefox.nix                      # Firefox: profile, prefs, sync (installed, not default)
+  wallhaven.nix                    # wallhaven's top 20 -> ~/.local/share/wallpapers/
+                                   #   WallhavenFlake, from the locked listing
   kitty.nix                        # kitty terminal + zenwritten_dark theme
   vscode.nix                       # VS Code settings + extension list
   niri/                            # the niri desktop; see the section below
@@ -765,6 +768,108 @@ a plain one. It reaches the **launcher** icon only: OpenRGB loads its tray
 icon from a pixmap compiled into the binary rather than looking it up in the
 icon theme, so nothing outside the package can change that one. Upstream has
 an open request for it (OpenRGB issue #2453).
+
+## Wallpapers
+
+`~/.local/share/wallpapers` has two halves. The collection out of the
+dotfiles repo is the permanent one. Beside it, `WallhavenFlake/` holds
+[wallhaven.cc](https://wallhaven.cc)'s current top 20 — and only those
+twenty, so as the toplist moves on, the folder moves with it.
+
+Both desktops pick the new files up for free: niri's `Mod+W` picker globs the
+whole tree, and Plasma's slideshow is pointed at the same directory.
+
+### Which twenty, and who decides
+
+A flake input:
+
+```nix
+wallhaven-toplist = {
+  url = "file+https://wallhaven.cc/api/v1/search?categories=111&purity=100&sorting=toplist&topRange=1M&order=desc&atleast=1920x1080";
+  flake = false;
+};
+```
+
+That's the API's JSON search response — the **list**, not the images. Nix
+fetches and hashes it like any other input, which is the whole point of doing
+it this way: the twenty are pinned in `flake.lock`, the desk and the laptop
+show the same twenty, and they change when you run `nix flake update` rather
+than whenever wallhaven's front page does.
+
+```bash
+nix flake update --refresh wallhaven-toplist
+```
+
+`--refresh` because Nix caches fetched files for an hour and will otherwise
+hand back the copy it already has. `file+https` rather than plain `https`
+because the plain form is the *tarball* fetcher, which would try to unpack a
+JSON document.
+
+The query is the website's Toplist view: all three categories (`111`), SFW
+only (`100`), ranked over the last month, nothing below 1080p. Edit it and
+re-lock to change what "top 20" means — drop `atleast` for the unfiltered
+list, `topRange=1d` for today's. How many to keep is separate, and is
+`local.wallhaven.count` (1–24, the size of one API page).
+
+### Why the images aren't in the store
+
+A flake input is one URL locked by one hash. The twenty image URLs aren't
+known until that JSON has been fetched and read, by which point evaluation is
+already under way — and wallhaven publishes no checksum for the files
+anywhere in its API, so there is nothing for `pkgs.fetchurl` to verify even
+if the URLs were known in time.
+
+So the list is declarative and the files are not. `home/joshr/wallhaven.nix`
+builds a `wallhaven-sync` script around the locked JSON; home-manager runs it
+at activation and again at login (`wallhaven-wallpapers.service`), and you can
+run it by hand. It downloads what the list names, deletes everything it
+doesn't, and is careful in the two ways that matter:
+
+- **It won't prune after a failed download.** Deleting yesterday's twenty
+  because the network dropped halfway through would leave the picker emptier
+  than it started. A run with any failure keeps everything and exits non-zero;
+  the next one finishes the job.
+- **It checks the JSON is a search response before believing it.** `nix flake
+  update` will pin an error page as happily as a result set, and an error page
+  parses as "zero wallpapers".
+
+Files are named for wallhaven's id, so a wallpaper that merely slides from 3rd
+to 5th place isn't downloaded again. A run with nothing to fetch touches the
+network zero times — the list is a local store path by then.
+
+The practical consequence of all this: a machine that hasn't had network since
+the last `nix flake update` still shows the previous twenty. It isn't broken,
+it just hasn't caught up. `wallhaven-sync` when it's back online.
+
+### The one-off directory change
+
+`~/.local/share/wallpapers` used to be a single symlink to the dotfiles'
+wallpaper directory in the store. It's now a real directory of per-file links
+(`recursive = true` in `home/joshr/home.nix`), because a read-only store path
+has nowhere to put `WallhavenFlake/`.
+
+Switching between those two shapes is not something home-manager handles on
+its own — with the old symlink still there, every wallpaper's target resolves
+*through* it into the store, and the linker spends the switch trying to back
+up files it cannot move. So `wallhaven.nix` removes the stale link first, once,
+before the linking phase. It only does this for a symlink pointing into the
+store; one you made yourself, to another disk say, is left alone with a
+warning.
+
+### What the first rebuild will do
+
+`flake.lock` has no `wallhaven-toplist` entry yet — wallhaven.cc was not
+reachable from where this was written, so there was nothing to hash. Nix adds
+the entry itself on the first evaluation that has network; commit the result
+like any other lock change.
+
+That also means the response shape was matched against wallhaven's documented
+API (`data[].path`, one page of 24) rather than a live call. The sync was
+exercised end to end against a stand-in server — fresh sync, toplist rotation,
+mid-run download failure, an error page in place of a listing — but not
+against wallhaven itself. If a field has moved since, the failure is the loud
+kind: `wallhaven-sync` says "not a wallhaven search response", exits non-zero
+and changes nothing.
 
 ## Dates and times
 
@@ -1556,6 +1661,10 @@ nix flake update
 
 # Update just one input (e.g. after pushing to the dotfiles repo):
 nix flake update dotfiles
+
+# Pull a fresh wallhaven toplist. --refresh because Nix caches fetched files
+# for an hour; without it you get the copy you already have. See "Wallpapers":
+nix flake update --refresh wallhaven-toplist
 ```
 
 `nix flake update` rewrites `flake.lock` — commit it alongside whatever

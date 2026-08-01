@@ -38,6 +38,31 @@
       url = "github:joshrandall8478/dotfiles";
       flake = false;
     };
+
+    # wallhaven.cc's current toplist, as the API's JSON search response. This
+    # is the *list*, not the images: home/joshr/wallhaven.nix reads it and
+    # downloads the twenty files it names into
+    # ~/.local/share/wallpapers/WallhavenFlake.
+    #
+    # Locking the response is the point of doing it this way. The twenty
+    # become a property of flake.lock like every other input — the same
+    # twenty on the desk and on the laptop, changing when `nix flake update`
+    # says so and not whenever wallhaven's front page moves. Nix caches
+    # fetched files for an hour, so re-locking twice in one sitting wants
+    # --refresh:
+    #
+    #     nix flake update --refresh wallhaven-toplist
+    #
+    # `file+https` rather than plain https: the plain form is the tarball
+    # fetcher, which would try to unpack a JSON document. The query is the
+    # website's Toplist view — all three categories (111), SFW only (100),
+    # ranked over the last month, nothing below 1080p. Edit it and re-lock to
+    # change what "top 20" means; the count itself is
+    # `local.wallhaven.count`.
+    wallhaven-toplist = {
+      url = "file+https://wallhaven.cc/api/v1/search?categories=111&purity=100&sorting=toplist&topRange=1M&order=desc&atleast=1920x1080";
+      flake = false;
+    };
   };
 
   outputs =

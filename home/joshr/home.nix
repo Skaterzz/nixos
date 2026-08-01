@@ -14,6 +14,7 @@
     ./spicetify.nix
     ./firefox.nix
     ./browser.nix
+    ./wallhaven.nix
   ];
 
   home.username = "joshr";
@@ -68,7 +69,17 @@
   xdg.dataFile."icons/j-contrast.svg".source =
     "${inputs.dotfiles}/dot_local/share/icons/j-contrast.svg";
 
-  xdg.dataFile."wallpapers".source = "${inputs.dotfiles}/dot_local/share/wallpapers";
+  # Linked file by file rather than as one symlink to the store directory,
+  # which is what `recursive` buys: ~/.local/share/wallpapers ends up a real
+  # directory whose dotfiles entries are individually symlinked, leaving room
+  # beside them for WallhavenFlake/ — twenty files downloaded at activation
+  # time, which a read-only store path has nowhere to put. See
+  # ./wallhaven.nix, which also handles the one-off removal of the old
+  # symlink on the first switch after this change.
+  xdg.dataFile."wallpapers" = {
+    source = "${inputs.dotfiles}/dot_local/share/wallpapers";
+    recursive = true;
+  };
 
   xdg.dataFile."color-schemes/DarkObsidianII.colors".source = ./files/DarkObsidianII.colors;
 

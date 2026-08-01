@@ -7,6 +7,9 @@
     ../../modules/nixos/boot.nix
     ../../modules/nixos/plasmalogin.nix
     ../../modules/nixos/desktop.nix
+    # Fluent Emoji as the system emoji font. Plasma's own picker is already
+    # on Meta+. — see home/joshr/plasma.nix.
+    ../../modules/nixos/emoji.nix
     # Workaround for nixpkgs#126590 (huge XDG_DATA_DIRS makes every app slow
     # to start). Rebuilds plasma-workspace from source — remove this import
     # if the build cost outweighs the win.

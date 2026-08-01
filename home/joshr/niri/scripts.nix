@@ -259,6 +259,11 @@ let
 
   screenshotDir = "${config.home.homeDirectory}/Pictures/Screenshots";
 
+  # Where the last selected region is remembered. Its own directory rather
+  # than niri-theme/ next to the wallpaper: that one is named for the theme
+  # state it holds, and a screenshot region isn't part of a theme.
+  screenshotStateDir = "${config.home.homeDirectory}/.local/state/niri-screenshot";
+
   # Annotated region capture: slurp selects, grim captures, satty annotates
   # and writes the result.
   #
@@ -266,6 +271,25 @@ let
   # `screenshot-screen` / `screenshot-window` actions instead — the compositor
   # already knows the exact geometry, so there's nothing for a script to
   # compute and get wrong.
+  #
+  # Two modes:
+  #
+  #   screenshot          select a region, remember it, capture it
+  #   screenshot last     capture the remembered region again, no selection
+  #
+  # `last` is for the repeat case — the same panel or window region, shot over
+  # and over, where redrawing the selection by hand each time is the tedious
+  # part and is also what makes the frames not line up.
+  #
+  # slurp has no way to *pre-fill* a selection, which is why this is a separate
+  # mode rather than "reopen slurp with last time's box ready to nudge". Its
+  # `-r` reads boxes on stdin and restricts the selection to them, so feeding
+  # it the saved region would let you click that box to accept it but never
+  # drag its edges — a worse version of `last`, with an extra click.
+  #
+  # The saved geometry is grim's own `X,Y WxH`, straight from slurp and passed
+  # back to grim unparsed. Nothing here needs to understand it, so nothing here
+  # can misparse it.
   screenshot = pkgs.writeShellApplication {
     name = "screenshot";
     runtimeInputs = with pkgs; [
@@ -277,7 +301,10 @@ let
       coreutils
     ];
     text = ''
-      mkdir -p "${screenshotDir}"
+      mkdir -p "${screenshotDir}" "${screenshotStateDir}"
+      region="${screenshotStateDir}/region"
+      mode="''${1:-select}"
+
       # Month-day-year on a 12-hour clock, matching niri's own
       # `screenshot-path` and every other clock in the session. The cost is
       # that filenames no longer sort chronologically; "%Y-%m-%d_%H-%M-%S"
@@ -285,14 +312,40 @@ let
       stamp="$(date '+%m-%d-%Y_%I-%M-%S-%p')"
       out="${screenshotDir}/screenshot_$stamp.png"
 
-      # Cancelled selection exits non-zero; that's not an error.
-      geom="$(slurp -d -b '#0a0e0acc' -c '#39ff14' -s '#39ff1420' -w 2)" || exit 0
+      # grim writes to a file rather than down a pipe into satty, so that a
+      # geometry it rejects is catchable here. Piping would only surface as a
+      # pipefail exit after satty had already been handed nothing.
+      shot="$(mktemp -t screenshot-XXXXXXXX.png)"
+      trap 'rm -f "$shot"' EXIT
 
-      grim -g "$geom" - \
-        | satty --filename - \
-            --output-filename "$out" \
-            --early-exit \
-            --copy-command wl-copy
+      geom=""
+      if [ "$mode" = "last" ]; then
+        geom="$(cat "$region" 2>/dev/null || true)"
+      fi
+
+      # A remembered region can stop being valid — a monitor unplugged, or the
+      # layout rearranged under it. Fall through to a fresh selection rather
+      # than failing, since the point of the key is to be quick.
+      if [ -n "$geom" ] && ! grim -g "$geom" "$shot" 2>/dev/null; then
+        notify-send -a screenshot \
+          "Screenshot" "Last region isn't on screen any more — select a new one."
+        geom=""
+      fi
+
+      if [ -z "$geom" ]; then
+        # Cancelled selection exits non-zero; that's not an error.
+        geom="$(slurp -d -b '#0a0e0acc' -c '#39ff14' -s '#39ff1420' -w 2)" || exit 0
+        grim -g "$geom" "$shot"
+
+        # Only after grim accepts it, so a region that can't be captured is
+        # never the one `last` comes back to.
+        printf %s "$geom" > "$region"
+      fi
+
+      satty --filename "$shot" \
+        --output-filename "$out" \
+        --early-exit \
+        --copy-command wl-copy
 
       if [ -f "$out" ]; then
         notify-send -a screenshot -i "$out" "Screenshot" "Saved $(basename "$out")"

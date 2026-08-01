@@ -326,10 +326,18 @@ ${workspaceBlocks}
         // Region capture goes through satty for annotation; the plain
         // screen/window captures use niri's own actions, which already know
         // the exact geometry.
+        //
+        // `last` re-shoots the region selected the time before, with no
+        // slurp step — for taking the same frame repeatedly, where redrawing
+        // the box by hand is both the tedious part and the reason successive
+        // shots don't line up. It falls back to a selection if there's no
+        // remembered region yet, or if that region has gone off-screen.
         Print              hotkey-overlay-title="Screenshot region" { spawn "${bin niriScripts.screenshot}"; }
+        Shift+Print        hotkey-overlay-title="Screenshot last region" { spawn "${bin niriScripts.screenshot}" "last"; }
         Ctrl+Print         { screenshot-screen; }
         Alt+Print          { screenshot-window; }
         Mod+Shift+S        hotkey-overlay-title="Screenshot region" { spawn "${bin niriScripts.screenshot}"; }
+        Mod+Ctrl+S         hotkey-overlay-title="Screenshot last region" { spawn "${bin niriScripts.screenshot}" "last"; }
 
         // --- media / hardware keys -------------------------------------
         XF86AudioRaiseVolume allow-when-locked=true { spawn-sh "${pkgs.wireplumber}/bin/wpctl set-volume @DEFAULT_AUDIO_SINK@ 0.05+ -l 1.0"; }

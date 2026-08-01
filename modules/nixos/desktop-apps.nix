@@ -21,6 +21,7 @@
         haruna
         kdePackages.gwenview
         kdePackages.elisa
-	    termius
+	termius
+	kdePackages.kcalc
     ];
 }

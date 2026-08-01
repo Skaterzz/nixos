@@ -334,6 +334,9 @@ ${workspaceBlocks}
         XF86AudioPrev allow-when-locked=true { spawn "${bin pkgs.playerctl}" "previous"; }
         XF86AudioNext allow-when-locked=true { spawn "${bin pkgs.playerctl}" "next"; }
 
+	// Launch calcultor
+	XF86Calculator { spawn-sh "${pkgs.kdePackages.kcalc}/bin/kcalc" };
+
         // `brightness` rather than brightnessctl directly: it steps *every*
         // backlight device, where brightnessctl on its own takes the first
         // one it finds. That's the same thing on the laptop's single internal

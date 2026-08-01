@@ -232,6 +232,10 @@
         };
       };
 
-      formatter.${system} = pkgs.nixfmt-rfc-style;
+      # Same program as `nixfmt-rfc-style`, under its own name. nixpkgs used
+      # to carry two formatters — that one and a `nixfmt-classic` — and the
+      # long name distinguished them; classic has since been removed and
+      # `nixfmt-rfc-style` is now an alias that warns on every evaluation.
+      formatter.${system} = pkgs.nixfmt;
     };
 }

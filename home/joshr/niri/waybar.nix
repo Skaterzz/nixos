@@ -21,7 +21,12 @@ in
     # switcher can `systemctl --user restart waybar` and be certain the
     # stylesheet is re-read. (SIGUSR2 alone did not reliably repaint.)
     systemd.enable = true;
-    systemd.target = "graphical-session.target";
+
+    # A list since home-manager renamed the singular `systemd.target`, which
+    # now warns. Named rather than left to `wayland.systemd.target`'s default,
+    # matching swayidle and cliphist: niri starts the session and everything
+    # graphical in this config hangs off graphical-session.target.
+    systemd.targets = [ "graphical-session.target" ];
 
     settings.main = {
       layer = "top";

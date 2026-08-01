@@ -94,6 +94,69 @@ in
         description = "long list with git status";
         body = "eza -l --git --git-repos --icons=auto --group-directories-first $argv";
       };
+
+      # On-demand version of the weekly sweep in modules/nixos/base.nix, for
+      # when you want the space back now or want a different cutoff than the
+      # timer's 7d. Shared by joshr and root, hence the id check below.
+      #
+      # Two runs, not one, and that's the whole reason this is a function
+      # rather than an abbreviation. `nix-collect-garbage` only walks the
+      # profiles it can see, and "which profiles" follows $HOME: the sudo run
+      # gets the system profile — every old kernel, initrd and system closure,
+      # which is where the space actually is — but root's HOME is /root, so it
+      # never sees ~/.local/state/nix/profiles, where home-manager keeps
+      # joshr's generations. Run only the sudo half and those stay pinned as
+      # live GC roots, taking their whole closures with them.
+      #
+      # Nothing here touches the current generation: --delete-older-than and
+      # -d both keep it. What they do cost is rollback — the boot menu is the
+      # recovery path for a bad switch (see "Rebuilding after changes" in the
+      # README), so `nix-clean all` is deliberately something you have to ask
+      # for by name rather than the default.
+      nix-clean = {
+        description = "delete nix generations older than <age>, default 7d ('all' for every old one)";
+        body = ''
+          set -l age $argv[1]
+          test -z "$age"; and set age 7d
+
+          # The cutoff is spelled out at each call site rather than held in a
+          # variable: `set -l cutoff --delete-older-than $age` would hand
+          # `set` a value starting with a dash, which it reads as its own
+          # option.
+          echo "Deleting system generations ($age)…"
+          if test "$age" = all
+              sudo nix-collect-garbage -d
+          else
+              sudo nix-collect-garbage --delete-older-than "$age"
+          end
+
+          if test $status -ne 0
+              echo "nix-collect-garbage failed; stopping here." >&2
+              return 1
+          end
+
+          # Already covered by the run above when this *is* root.
+          if test (id -u) -ne 0
+              echo "Deleting home-manager generations ($age)…"
+              if test "$age" = all
+                  nix-collect-garbage -d
+              else
+                  nix-collect-garbage --delete-older-than "$age"
+              end
+
+              if test $status -ne 0
+                  echo "System generations were cleaned, home-manager's were not." >&2
+                  return 1
+              end
+          end
+
+          echo
+          echo "Deleted generations are still listed in the boot menu."
+          echo "Prune it with: sudo nixos-rebuild boot --flake /etc/nixos#<host>"
+          echo "<host> is the flake attribute (gamestation, laptop-niri, server…),"
+          echo "which is not this machine's hostname."
+        '';
+      };
     };
   };
 

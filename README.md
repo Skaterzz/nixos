@@ -1183,6 +1183,37 @@ Note that only fish carries the eza aliases (`ls`, `ll`, `la`, `lt`, `lg`) —
 those came from the dotfiles' `config.fish.tmpl` and haven't been mirrored
 into the other shells.
 
+### `nix-clean`
+
+Also fish-only, and also in `home/common/shell.nix`, so `joshr` and `root`
+both get it. It's the on-demand version of the weekly garbage collection in
+`modules/nixos/base.nix`, for when you want the space back now:
+
+```fish
+nix-clean          # generations older than 7d, matching the weekly timer
+nix-clean 30d      # any age nix-collect-garbage accepts
+nix-clean all      # every generation but the current one
+```
+
+It runs `nix-collect-garbage` **twice**, and that's the point of it. The tool
+only walks the profiles it can see, and which profiles those are follows
+`$HOME`. The `sudo` run gets the system profile — old kernels, initrds and
+system closures, which is where the space actually is — but root's `$HOME` is
+`/root`, so it never reaches `~/.local/state/nix/profiles`, where
+home-manager keeps joshr's generations. Sweep only the system half and those
+stay pinned as live GC roots, holding their whole closures down with them.
+The second run is skipped when you're already root, where it would just
+repeat the first.
+
+The current generation always survives, both here and under `all`. What you
+spend is rollback: picking a previous generation from the boot menu is the
+recovery path for a bad switch, which is why `all` has to be asked for by
+name. Deleted generations also stay *listed* in the menu until the bootloader
+config is regenerated, so the function ends by reminding you to
+`sudo nixos-rebuild boot --flake /etc/nixos#<host>` — and `<host>` there is
+the flake attribute, not the hostname. On this machine those differ:
+`gamestation` and `gamestation-niri` both run on a box called `dialga`.
+
 ## Development environments
 
 Both machines are set up so that **no language toolchain is installed

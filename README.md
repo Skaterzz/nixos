@@ -799,7 +799,7 @@ A flake input:
 
 ```nix
 wallhaven-toplist = {
-  url = "file+https://wallhaven.cc/api/v1/search?categories=111&purity=100&sorting=toplist&topRange=1M&order=desc&atleast=1920x1080";
+  url = "file+https://wallhaven.cc/api/v1/search?categories=111&purity=100&sorting=toplist&topRange=1M&order=desc&atleast=1920x1080&ratios=16x9%2C16x10";
   flake = false;
 };
 ```
@@ -815,15 +815,43 @@ nix flake update --refresh wallhaven-toplist
 ```
 
 `--refresh` because Nix caches fetched files for an hour and will otherwise
-hand back the copy it already has. `file+https` rather than plain `https`
-because the plain form is the *tarball* fetcher, which would try to unpack a
-JSON document.
+hand back the copy it already has. That's for re-locking the *same* URL —
+editing the query is a different input entirely, and the next evaluation
+re-locks it on its own. Commit the resulting `flake.lock` alongside the edit.
+`file+https` rather than plain `https` because the plain form is the *tarball*
+fetcher, which would try to unpack a JSON document.
 
 The query is the website's Toplist view: all three categories (`111`), SFW
-only (`100`), ranked over the last month, nothing below 1080p. Edit it and
-re-lock to change what "top 20" means — drop `atleast` for the unfiltered
-list, `topRange=1d` for today's. How many to keep is separate, and is
-`local.wallhaven.count` (1–24, the size of one API page).
+only (`100`), ranked over the last month, nothing below 1080p, and — via
+`ratios` — widescreen only. Edit it and re-lock to change what "top 20"
+means: drop `atleast` for the unfiltered list, `topRange=1d` for today's.
+How many to keep is separate, and is `local.wallhaven.count` (1–24, the size
+of one API page).
+
+**`ratios=16x9,16x10`** is the widescreen filter. Both displays on the desk
+are 16:9 — 2560x1440 and 1920x1080 — so 16:10 is the widest miss worth
+taking, losing a sliver off the top and bottom when it scales. Anything
+squarer arrives pillarboxed or cropped hard by whichever of awww or Plasma is
+drawing it. The laptop panel isn't pinned in this repo at all
+(`home/joshr/displays/laptop.nix` is deliberately empty), so it isn't what
+the filter is measured against — `16x10` covers it if it happens to be one.
+
+Two things about that parameter are easy to get wrong. It takes a
+comma-separated list, but wallhaven's `landscape` supergroup is *not* the
+same request — that's every non-portrait ratio it knows, `4x3` and `5x4`
+included, which means "not portrait" rather than "wide". And the ultrawide
+ratios (`21x9`, `32x9`) are left out deliberately: there's no display here to
+put them on, and on a 16:9 panel they letterbox to a strip.
+
+The comma is written `%2C` in `flake.nix`. Nix parses the query into
+parameters rather than passing the URL through verbatim — you can see it
+re-emit them alphabetically in `flake.lock` — so encoding the separator keeps
+it unambiguously part of the value. wallhaven decodes it back on receipt.
+
+A narrower query is drawn from a smaller pool, so a month with an unusually
+vertical toplist can return fewer than `local.wallhaven.count` images.
+Nothing breaks — the sync script takes what's there — the folder is just
+occasionally short.
 
 ### Why the images aren't in the store
 

@@ -23,5 +23,6 @@
         kdePackages.elisa
 	termius
 	kdePackages.kcalc
+	thunderbird
     ];
 }

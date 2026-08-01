@@ -56,6 +56,19 @@
     shortcuts = {
       "services/kitty.desktop"."_launch" = "Meta+Return";
       "services/org.kde.dolphin.desktop"."_launch" = "Meta+E";
+
+      # The emoji picker. This one *is* the KDE default and breaks the rule
+      # above, deliberately: the niri session binds Mod+. to a picker of its
+      # own (home/joshr/niri/emoji.nix), and stating the Plasma side here is
+      # what stops the same key from quietly meaning different things — or
+      # nothing — depending on which session booted. It costs one line and
+      # survives KDE changing its mind about the default.
+      #
+      # Plasma ships the picker itself (plasma-emojier, part of plasma-
+      # desktop), so there's nothing to install. It draws whatever fontconfig
+      # calls the emoji font, which modules/nixos/emoji.nix makes Fluent
+      # Emoji — so both sessions show the same artwork.
+      "services/org.kde.plasma.emojier.desktop"."_launch" = "Meta+.";
     };
 
     # Raw config-file settings that don't (yet) have a dedicated high-level

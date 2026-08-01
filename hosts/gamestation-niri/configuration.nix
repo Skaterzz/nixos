@@ -27,6 +27,9 @@
     ../../modules/nixos/niri.nix
     ../../modules/nixos/desktop.nix
 
+    # Fluent Emoji as the system emoji font. The picker that shows it off is
+    # Mod+. — see home/joshr/niri/emoji.nix.
+    ../../modules/nixos/emoji.nix
 
     ../../modules/nixos/nvidia.nix
     ../../modules/nixos/gaming.nix

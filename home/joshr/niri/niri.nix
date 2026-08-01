@@ -1,4 +1,4 @@
-{ config, lib, pkgs, niriTheming, niriScripts, niriClipboard, ... }:
+{ config, lib, pkgs, niriTheming, niriScripts, niriClipboard, niriEmoji, ... }:
 
 # niri's own config. There is no home-manager module for niri, so this is
 # written out as a KDL file.
@@ -262,6 +262,13 @@ ${workspaceBlocks}
         // somewhere unrelated. See clipboard.nix.
         Mod+Ctrl+V hotkey-overlay-title="Clipboard history" { spawn "${bin niriClipboard.clipboardHistory}"; }
 
+        // --- emoji ------------------------------------------------------
+        // Mod+. because that is what opens the emoji picker on Windows, and
+        // that reflex is the whole reason it's here. It cost this key's old
+        // binding, `expel-window-from-column`, which moved down to
+        // Mod+Shift+Period among the sizing binds. See emoji.nix.
+        Mod+Period hotkey-overlay-title="Emoji" { spawn "${bin niriEmoji.emojiPicker}"; }
+
         // --- session ---------------------------------------------------
         // Lock is Mod+L, matching the Windows/KDE reflex. That costs the
         // vim-key `Mod+L` for focus-column-right — Mod+Right, Mod+scroll and
@@ -405,7 +412,11 @@ ${workspaceBlocks}
         Mod+BracketLeft  { consume-or-expel-window-left; }
         Mod+BracketRight { consume-or-expel-window-right; }
         Mod+Comma  { consume-window-into-column; }
-        Mod+Period { expel-window-from-column; }
+        // Expel is on Mod+Shift+Period rather than beside its Mod+Comma
+        // partner, because Mod+Period is the emoji picker now. Nothing is
+        // lost either way — Mod+BracketLeft/Right already consume and expel,
+        // and they're the pair that reads as a direction.
+        Mod+Shift+Period { expel-window-from-column; }
 
         Mod+V       { toggle-window-floating; }
         Mod+Shift+V { switch-focus-between-floating-and-tiling; }

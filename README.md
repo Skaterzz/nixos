@@ -27,6 +27,7 @@ modules/nixos/
   development.nix                 # direnv, Docker, libvirtd/QEMU/virt-manager, nix
                                   #   settings — commented out per host, see below
   cron.nix                        # local.cron.jobs -> the system crontab
+  emoji.nix                       # Microsoft Fluent Emoji as the system emoji font
   plasma-xdg-data-dirs.nix        # workaround for nixpkgs#126590 (see below)
   nvidia.nix                      # NVIDIA driver + 32-bit graphics for Steam/Proton
   gaming.nix                      # Steam, MangoHud
@@ -54,6 +55,7 @@ home/joshr/
     niri.nix waybar.nix            #   compositor config and the bar
     scripts.nix notifications.nix  #   theme/wallpaper/lock/screenshot helpers
     clipboard.nix browser.nix      #   clipboard history, default-browser wiring
+    emoji.nix                      #   the Mod+. emoji picker
     vscode.nix lock.nix            #   editor theming, idle handling
   plasma.nix                       # KDE Plasma settings/panels/shortcuts (plasma-manager)
   files/                           # DarkObsidianII.colors
@@ -214,6 +216,7 @@ restored at login.
 | `Mod+Return` / `Mod+D` / `Mod+E` / `Mod+B` | terminal, launcher, Dolphin, browser |
 | `Mod+Ctrl+E` | ranger, in a terminal |
 | `Mod+Ctrl+V` | clipboard history |
+| `Mod+.` | emoji picker |
 | `Mod+Q` / `Mod+O` | close window, overview |
 | `Mod+H/J/K` | focus (arrows also work; `Mod+L` is lock, so use `Mod+Right`) |
 | `Mod+1..5` | named workspaces |
@@ -272,6 +275,79 @@ image-aware app still works.
 third spelling.
 
 See `home/joshr/niri/clipboard.nix`.
+
+### Emoji picker
+
+`Mod+.`, because that's the key Windows uses and that reflex is the whole
+reason it exists. Type to search by name, `Enter` to pick, `Escape` to
+cancel — and what you use most floats to the top of the list next time.
+
+The emoji is **typed into the focused window and put on the clipboard**, both.
+Typing alone would be the closer copy of Windows, but it depends on the window
+accepting synthetic keystrokes, and when one doesn't there'd be nothing to
+show for the keypress. The clipboard is the fallback that's already in place
+by the time typing is attempted. `cliphist` keeps whatever selection it
+displaced, so nothing is lost either way.
+
+It's [`bemoji`](https://github.com/marty-oehme/bemoji) driving wofi, with two
+things changed:
+
+- **The list is built at build time**, not downloaded. bemoji normally curls
+  `unicode.org/Public/emoji/latest/emoji-test.txt` into `~/.local/share/bemoji`
+  on first run. That puts a keybind behind the network, behind a `latest` URL
+  that moves, and behind mutable state no rebuild reproduces — so the same
+  transformation runs in a derivation instead, against the pinned copy in
+  `pkgs.unicode-emoji`, and `BEMOJI_DB_LOCATION` points at the store path.
+  Pointing it there also settles the download question permanently: bemoji only
+  fetches when that directory comes back empty, and a store path never is. The
+  derivation fails the build if the parse yields fewer than a thousand entries,
+  so a format change upstream stops the rebuild rather than shipping an empty
+  picker.
+- **Typing goes through a wrapper** that sleeps 150 ms first. `wtype` starts
+  the moment wofi exits, and niri needs a beat to hand focus back to the
+  window underneath; without the pause the keystrokes can land while nothing
+  is focused yet.
+
+Only the picker's own history at `~/.local/state/bemoji` is mutable. Adding
+another list — symbols, kaomoji — means adding a file to the derivation in
+`emoji.nix`, not dropping one in a directory.
+
+`Mod+.` used to be `expel-window-from-column`, which moved to
+`Mod+Shift+Period`. `Mod+BracketLeft` / `Mod+BracketRight` already consume and
+expel, and they're the pair that reads as a direction, so nothing is really
+lost.
+
+The picker gets its own stylesheet, `wofi-emoji.css`, generated from the same
+palette as `wofi.css` with rows at 20px — big enough to tell 😀 from 😃 at a
+glance, with the search box left at the normal size. It follows theme
+switches like everything else.
+
+**The font is Microsoft's Fluent Emoji**, which is what makes this look like
+the thing `Win+.` opens rather than like Android. nixpkgs has no Fluent Emoji
+font — Microsoft publishes `fluentui-emoji` as loose SVG and PNG assets and
+the packaging request ([nixpkgs#347889](https://github.com/NixOS/nixpkgs/issues/347889))
+was closed as not planned — so `modules/nixos/emoji.nix` packages
+[tetunori/fluent-emoji-webfont](https://github.com/tetunori/fluent-emoji-webfont),
+a build of those assets into a real font, pinned to its v0.8.5 commit. It's
+set as `fonts.fontconfig.defaultFonts.emoji`, so it's what Firefox, kitty,
+Discord and everything else draw too, with `noto-fonts-color-emoji` left
+behind it to cover anything Unicode has added since the Fluent set was last
+built.
+
+It is an 87 MB font, which is most of what this costs. The build carries three
+colour formats for the same 33k glyphs — CBDT bitmaps, COLRv1 vectors and
+OT-SVG — because it's meant for browsers, where which one gets used depends on
+the engine. FreeType needs one of them. It ships whole anyway: stripping tables
+means a fonttools pass whose output would have to be trusted sight-unseen, and
+a silently broken emoji font is worse than a large one.
+
+See `home/joshr/niri/emoji.nix` and `modules/nixos/emoji.nix`.
+
+On the Plasma hosts the font applies just the same, and `Meta+.` is already
+KDE's own emoji picker (`plasma-emojier`). That default is restated explicitly
+in `home/joshr/plasma.nix` — the one place that file states a stock KDE
+default on purpose — so the same key can't quietly mean different things
+depending on which session booted.
 
 ### Staying awake
 
@@ -1378,6 +1454,16 @@ than from memory, but please run `nix flake check` before your first
   `~/.vscode/extensions` — so it should be picked up on the next start, but
   if `workbench.colorTheme = "Niri"` falls back to the default dark theme,
   `code --list-extensions` will say whether it was scanned.
+- the emoji picker, on three counts. The font was inspected rather than
+  rendered — its `name` table really does say `Fluent Emoji Color` and it
+  really does carry CBDT, COLRv1 and OT-SVG tables, but nothing here ever drew
+  a glyph with it, so if emoji come out as tofu boxes check `fc-match emoji`
+  first. The typing half depends on `wtype`, which needs the virtual-keyboard
+  protocol niri implements; if emoji land on the clipboard but never appear in
+  the window, that's the half that failed, and the 150 ms pause in
+  `emoji-type` is the number to raise. And wofi is being handed roughly 3,800
+  rows, an order of magnitude more than the clipboard picker's 300 — it should
+  be fine, but it was never timed.
 - limine's `uuid(…)` volume specifier, used for entries found on a disk other
   than the one NixOS boots from. Entries on this machine's own ESP use
   `boot():` and don't depend on it. `sudo systemctl start limine-theme-sync`

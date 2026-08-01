@@ -14,6 +14,7 @@
     ./notifications.nix
     ./lock.nix
     ./clipboard.nix
+    ./emoji.nix
     ./browser.nix
     ./vscode.nix
     #./firefox.nix

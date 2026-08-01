@@ -16,7 +16,10 @@
 #
 #   niri     `include` node, live-reloaded when the target changes
 #   waybar   started with `-s <path>`, restarted by the switcher
-#   wofi     `style` key in its config, re-read on every launch
+#   wofi     `style` key in its config, re-read on every launch. Two
+#            stylesheets: `wofi.css` for the launcher and the menus, and
+#            `wofi-emoji.css` — the same thing with bigger rows — which the
+#            emoji picker asks for with `--style`
 #   dunst    `services.dunst.configFile`, restarted by the switcher
 #   kitty    `include` at the end of kitty.conf, reloaded on SIGUSR1
 #   KDE apps `~/.config/kdeglobals` symlink, re-read at app startup
@@ -249,7 +252,15 @@ let
   '';
 
   # Complete wofi stylesheet.
-  renderWofiCss = name: t: ''
+  #
+  # `extra` is appended verbatim at the end, which is how the emoji picker
+  # gets its own variant below: GTK CSS takes the last matching rule, so a
+  # block down there overrides whatever the shared part already set. The two
+  # stylesheets share one renderer rather than being two copies that slowly
+  # stop matching each other.
+  renderWofiCssWith =
+    { extra ? "" }:
+    name: t: ''
     /* Generated from home/joshr/niri/themes.nix — theme "${name}". */
     @define-color bg         ${t.bg};
     @define-color bg-alt     ${t.bgAlt};
@@ -333,7 +344,36 @@ let
       color: @bg;
       text-decoration: underline;
     }
+    ${extra}
   '';
+
+  renderWofiCss = renderWofiCssWith { };
+
+  # The emoji picker's stylesheet: everything above, plus rows that put Fluent
+  # Emoji at the front of the font stack and draw them big enough to tell
+  # apart at a glance.
+  #
+  # Only `#entry` is enlarged, not `*`. The search box keeps the normal 14px —
+  # what you type there is a name like "grinning", not an emoji, and a 20px
+  # input just makes the window taller for nothing.
+  #
+  # `#entry #text` is named alongside `#entry` rather than left to inherit,
+  # because the `*` rule near the top matches that label directly and a direct
+  # match beats an inherited value however far down the file the parent's rule
+  # is. Setting only `#entry` would leave the rows at 14px.
+  #
+  # The text fonts stay in the stack behind Fluent Emoji because each row is
+  # `😀 grinning face`: the glyph comes from the first family that has it, the
+  # description from FiraCode as everywhere else. Naming the emoji font alone
+  # would leave the names to whatever fontconfig picked.
+  renderWofiEmojiCss = renderWofiCssWith {
+    extra = ''
+      #entry, #entry #text {
+        font-family: "Fluent Emoji Color", "FiraCode Nerd Font", "Noto Sans", sans-serif;
+        font-size: 20px;
+      }
+    '';
+  };
 
   renderDunstrc = name: t: ''
     # Generated from home/joshr/niri/themes.nix — theme "${name}".
@@ -1255,6 +1295,7 @@ let
       cp ${pkgs.writeText "niri.kdl" (renderNiri name t)}            "$out/niri.kdl"
       cp ${pkgs.writeText "waybar.css" (renderWaybarCss name t)}     "$out/waybar.css"
       cp ${pkgs.writeText "wofi.css" (renderWofiCss name t)}         "$out/wofi.css"
+      cp ${pkgs.writeText "wofi-emoji.css" (renderWofiEmojiCss name t)} "$out/wofi-emoji.css"
       cp ${pkgs.writeText "dunstrc" (renderDunstrc name t)}          "$out/dunstrc"
       cp ${pkgs.writeText "swaylock.env" (renderSwaylockEnv name t)} "$out/swaylock.env"
       cp ${pkgs.writeText "kdeglobals" (renderKdeglobals name t)}     "$out/kdeglobals"

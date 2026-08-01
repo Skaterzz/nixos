@@ -951,7 +951,7 @@ lockNowPlaying = pkgs.writeShellApplication {
 
     # Hyprlock blocks until the session is unlocked. A nonzero exit here
     # means it failed to initialize, not merely that a password was wrong.
-    if hyprlock --config "$config" --grace 1; then
+    if hyprlock --config "$config" --grace 2; then
       exit 0
     fi
 
@@ -994,7 +994,7 @@ lockNowPlaying = pkgs.writeShellApplication {
       --text-ver-color "$LOCK_FG" \
       --text-wrong-color "$LOCK_ERR" \
       --fade-in 0.2 \
-      --grace 1
+      --grace 2
   '';
 }; 
   # Sleep inhibitor. One entry point for the keybind and the waybar module,

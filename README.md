@@ -107,6 +107,7 @@ home/joshr/niri/
   niri.nix                    # config.kdl: binds, layout, window rules
   waybar.nix                  # bar layout + style
   notifications.nix           # dunst + wofi
+  osd.nix                     # swayosd: the volume/brightness pop-up
   lock.nix                    # swayidle timers
   scripts.nix                 # theme/wallpaper/screenshot/session helpers
 ```
@@ -147,6 +148,65 @@ on its own — running it in a terminal is the quickest way to tell whether
 it's cava or the widget at fault if the bar stays empty. See `cavaBar` in
 `home/joshr/niri/scripts.nix`.
 
+### The on-screen display
+
+Volume and brightness raise a pop-up — icon, bar and the number, low and
+centred on every output, in the active theme's colours. niri has none of its
+own, being a compositor and nothing else, so before this the keys were silent:
+the level moved and the only way to see where it had landed was waybar, which
+shows volume but not brightness, and only on the display you happen to be
+looking at.
+
+**swayosd** draws it. `swayosd-server` is a user service (`osd.nix`); a
+one-shot `swayosd-client` asks it to draw over the session bus. The mute keys
+get a worded message instead of a bar — "Muted", "Microphone muted" — because a
+toggle has no level to show, and because a client request can't grey out the
+bar the way swayosd's own volume OSD does.
+
+**swayosd never changes anything, only draws.** `swayosd-client --output-volume
+raise` would do both in one call, and that is the usage its README documents,
+but with the server down it does neither — a crashed OSD daemon would take the
+media keys with it. So `volume` and `brightness` (`scripts.nix`) make the
+change themselves, read the result back, and then ask for a pop-up, with every
+one of those calls best-effort. The worst case is a change you don't see.
+
+Brightness has a second reason: swayosd drives `brightnessctl` with at most one
+`--device`, which is the exact thing `brightness` exists to work around (see
+"Brightness" below), and asking it for a wildcard makes `brightnessctl get`
+print one line per display into a parser that wants a single number.
+
+Reading the level back rather than predicting it is also what keeps the number
+honest — clamping at 0% and 100% is `brightnessctl`'s and `wpctl`'s, and a
+level computed here would be wrong at both ends of the range. `volume show`
+draws the current level without changing it, which is the quickest way to tell
+whether the daemon is up.
+
+Every route to the volume goes through that one script: the media keys, and
+waybar's click-to-mute and scroll. The bar's scroll passes an explicit step of
+1, since a scroll notch moves a single point where a key moves five —
+`scroll-step` no longer does anything once `on-scroll-up`/`on-scroll-down` are
+set, so it's gone from the module rather than left there looking load-bearing.
+
+It appears on **every** output rather than only the focused one, which is
+swayosd's default and is left alone. `swayosd-client --monitor <name>` would
+narrow it, but only if something works out which output is focused first —
+`niri msg focused-output` on every keypress, with a fallback for when that
+fails — and two small pop-ups is a cheaper thing to live with than a key that
+sometimes shows nothing.
+
+Two things it deliberately doesn't do. **The idle dim doesn't raise one**: the
+dim happens when you've stopped touching the machine and the restore happens
+the instant you touch it again, so a pop-up on the way back would fire on every
+return to the desk to report a level that hasn't changed. And **nothing shows
+on the lock screen** — a session lock draws above every layer-shell surface,
+which is the point of it. The keys still work there; `allow-when-locked` is
+about the volume moving, not about the pop-up.
+
+The libinput backend — caps lock, num lock, scroll lock — is not set up. That
+half is a system service wanting udev rules and polkit, it reads every input
+device to do its job, and none of the three keys is one this session has
+anything to say about.
+
 ### Theme switching
 
 20 palettes ship. Greens: `matrix` (bright phosphor, the default), `forest`,
@@ -176,10 +236,11 @@ complete set of config files, and the only mutable state is one symlink:
 
 Each tool is pointed at a file under that symlink: niri via its `include` node
 (live-reloaded), waybar started with `-s <active>/waybar.css`, wofi via its
-`style` config key, dunst via `services.dunst.configFile`, kitty via an
-`include` at the end of `kitty.conf`. `theme-apply` moves the symlink, restarts
-waybar and dunst, and sends kitty SIGUSR1 so open terminals repaint in place;
-wofi re-reads on each launch.
+`style` config key, dunst via `services.dunst.configFile`, swayosd via
+`--style <active>/swayosd.css`, kitty via an `include` at the end of
+`kitty.conf`. `theme-apply` moves the symlink, restarts waybar, dunst and
+swayosd, and sends kitty SIGUSR1 so open terminals repaint in place; wofi
+re-reads on each launch.
 
 **Dolphin and other KDE apps** read `~/.config/kdeglobals`, which is a symlink
 into the active theme. Two things have to be true for that to work, and the
@@ -216,9 +277,18 @@ and `userContent.css` are symlinks into the active theme, read once at
 startup. See "The browser" below.
 
 Adding a theme is one attrset in `themes.nix` — the niri fragment, both
-stylesheets, the dunstrc, the swaylock palette, the SDDM config, Dolphin's
-kdeglobals, VS Code's extension and Firefox's two chrome stylesheets are all
-generated from its ten colour roles.
+stylesheets, the dunstrc, the OSD's stylesheet, the swaylock palette, the SDDM
+config, Dolphin's kdeglobals, VS Code's extension and Firefox's two chrome
+stylesheets are all generated from its ten colour roles.
+
+The OSD's sheet is the one that overrides rather than replaces: swayosd loads
+its own at GTK's APPLICATION priority and ours at USER priority, which is
+higher, so only the colours and the corner radius are restated and the layout
+stays upstream's. It is written against GTK4 node names — `window#osd`,
+`#container`, `progressbar > trough > progress` — because swayosd 0.3 is a
+GTK4 application, and it spells its `rgba()` channels out rather than using
+GTK's `alpha(@theme_bg_color, …)`, which resolves only if the loaded GTK theme
+defines that name.
 
 kitty is the exception, because a terminal needs sixteen ANSI colours and ten
 semantic roles don't contain them — there's no blue, magenta or cyan in a
@@ -287,6 +357,7 @@ the greeter and boot menu on the default palette.
 | `Mod+Shift+I` | stay awake (toggle the sleep inhibitor) |
 | `Mod+Shift+T` / `Mod+Ctrl+T` | random theme, pick theme |
 | `Mod+Shift+W` / `Mod+Ctrl+W` | random wallpaper, pick wallpaper |
+| volume / brightness keys | change it and show an OSD — see "The on-screen display" |
 | `Mod`+scroll / `Mod+Shift`+scroll | walk windows / workspaces (wheel and touchpad) |
 
 `Mod+W` is the one that isn't guessable from the key. A column normally
@@ -646,6 +717,13 @@ Two things worth knowing:
   not `brightnessctl` directly. `brightnessctl` with no `--device` adjusts
   the *first* device it finds — invisible with one internal panel, wrong
   with one device per monitor.
+
+The OSD that comes up with the keys reports the *first* device's level, read
+back after the write. On the laptop that is the only device there is, and on
+the desk every display has just taken the same step — but they can still drift
+apart, if a monitor refuses a write or gets adjusted from its own buttons, and
+what you get then is one display's real level rather than an average of two
+that belongs to neither. See "The on-screen display".
 
 Not enabled on the Plasma variant of the desk. It would work, but it would
 also hand powerdevil's idle timer real dimming on displays it currently can't
@@ -1942,6 +2020,14 @@ than from memory, but please run `nix flake check` before your first
   `emoji-type` is the number to raise. And wofi is being handed roughly 3,800
   rows, an order of magnitude more than the clipboard picker's 300 — it should
   be fine, but it was never timed.
+- the OSD's stylesheet. The GTK4 node names and the two style-provider
+  priorities were read off swayosd 0.3.1's own `style.scss` and `main.rs`, and
+  the icon names off the gresource manifest it compiles into the binary, but
+  nothing here ever drew the window. A pop-up in stock grey means the sheet
+  didn't load — `systemctl --user status swayosd` prints "Loaded user defined
+  CSS file" when it did, and a parse error when it didn't. `osd progress
+  display-brightness-symbolic 50` draws one on demand without touching
+  anything.
 - limine's `uuid(…)` volume specifier, used for entries found on a disk other
   than the one NixOS boots from. Entries on this machine's own ESP use
   `boot():` and don't depend on it. `sudo systemctl start limine-theme-sync`

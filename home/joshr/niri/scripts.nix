@@ -67,6 +67,8 @@ let
   #           restart is the only way to be sure the stylesheet is re-read —
   #           SIGUSR2 alone did not reliably repaint.
   #   dunst   restarted; it's launched with `-config <active>/dunstrc`.
+  #   swayosd restarted. Same reason as the other two — it's started with
+  #           `--style <active>/swayosd.css` and reads that once, at startup.
   #   wofi    nothing — it reads its stylesheet fresh on each launch.
   #   kitty   SIGUSR1, which is kitty's documented "re-read kitty.conf"
   #           signal. It follows the include and repaints open windows, so
@@ -111,6 +113,7 @@ let
 
       systemctl --user restart waybar.service || true
       systemctl --user restart dunst.service || true
+      systemctl --user restart swayosd.service || true
 
       # -x so this matches the kitty process and not, say, an editor that
       # happens to have "kitty" in its command line. Non-zero simply means no
@@ -1119,6 +1122,188 @@ lockNowPlaying = pkgs.writeShellApplication {
     '';
   };
 
+  # The on-screen display, as one entry point.
+  #
+  # swayosd draws it (see ./osd.nix); this is the only thing that knows how to
+  # ask. Two shapes, matching the two a client request can actually produce:
+  #
+  #   osd progress <icon> <percent>   icon, bar and a percentage
+  #   osd message  <icon> <text>      icon and a line of text
+  #
+  # `<icon>` is a Freedesktop icon name. swayosd bundles its own set inside the
+  # binary — `sink-volume-{muted,low,medium,high}-symbolic`, the matching
+  # `source-volume-*` for microphones, and `display-brightness-symbolic` — and
+  # those are the ones to reach for: they are the glyphs its native OSD draws,
+  # and being compiled in they cannot go missing when the icon theme changes.
+  #
+  # Every call is best effort. `swayosd-client` exits non-zero when the server
+  # isn't up, and a missing pop-up must never turn into a volume or brightness
+  # key that appears to have failed.
+  #
+  # That is also why swayosd is never asked to *change* anything, only to draw.
+  # `swayosd-client --output-volume raise` and `--brightness raise` do the
+  # change and the drawing together, and that is the usage its README
+  # documents — but with the server down they do neither, so a crashed OSD
+  # daemon would take the media keys with it. Its brightness backend is a
+  # second reason: it is `brightnessctl` with at most one `--device`, which is
+  # the exact behaviour `brightness` below exists to work around, and asking it
+  # for a wildcard makes `brightnessctl get` print one line per display into a
+  # parser that wants a single number. So both callers make the change
+  # themselves and read the result back.
+  osd = pkgs.writeShellApplication {
+    name = "osd";
+    runtimeInputs = with pkgs; [
+      swayosd
+      gawk
+      coreutils
+    ];
+    text = ''
+      icon="''${2:-}"
+
+      case "''${1:-}" in
+        progress)
+          pct="''${3:-}"
+
+          # A malformed reading draws nothing rather than a wrong bar.
+          case "$pct" in
+            "" | *[!0-9]*) exit 0 ;;
+          esac
+
+          # The bar takes a 0.0–1.0 fraction; the label is padded to the width
+          # of "100%" so the bar beside it doesn't shift sideways as the number
+          # gains a digit. swayosd's own volume OSD pins that label at four
+          # characters for the same reason, but a client-drawn one has no width
+          # to set — only the text.
+          swayosd-client \
+            --custom-icon "$icon" \
+            --custom-progress "$(awk -v p="$pct" 'BEGIN { printf "%.2f", p / 100 }')" \
+            --custom-progress-text "$(printf '%3d%%' "$pct")" \
+            >/dev/null 2>&1 || true
+          ;;
+        message)
+          swayosd-client \
+            --custom-icon "$icon" \
+            --custom-message "''${3:-}" \
+            >/dev/null 2>&1 || true
+          ;;
+        *)
+          echo "usage: osd [progress <icon> <percent>|message <icon> <text>]" >&2
+          exit 2
+          ;;
+      esac
+    '';
+  };
+
+  # Volume, and the display that goes with it.
+  #
+  # wpctl is still what moves the volume, with the same arguments the keybinds
+  # used to carry inline — this exists so that changing it and showing it are
+  # one action, and so that every route to the volume goes through one place.
+  # There are three: the media keys, waybar's click to mute, and waybar's
+  # scroll. That last one is why `up`/`down` take an optional step — the bar
+  # scrolls in single points where a key moves five.
+  #
+  # The level is read back from wpctl after the change rather than tracked
+  # here. That costs one extra call and buys a display that is telling the
+  # truth: `volume show` on its own draws whatever the system is actually at,
+  # including a level set from pavucontrol or by an application.
+  #
+  # Mute is a message rather than a greyed-out bar. swayosd's native volume OSD
+  # dims the bar by marking the widget insensitive, which a client request
+  # can't do — and "Muted" in words is clearer than a bar you have to notice is
+  # a different shade anyway.
+  #
+  # Raising while muted stays muted, which is wpctl's behaviour and was this
+  # config's before. The OSD makes that state visible instead of leaving you to
+  # work out why the sound didn't come back.
+  volume = pkgs.writeShellApplication {
+    name = "volume";
+    runtimeInputs = with pkgs; [
+      wireplumber
+      gawk
+      coreutils
+      osd
+    ];
+    text = ''
+      # Percentage points per press. wpctl reads "5%+" and "0.05+" as the same
+      # thing (its argument regex is `(\d*\.?\d*)(%?)([-+]?)`, and a `%` just
+      # divides by 100); percent is the form here because the step can also
+      # arrive as an argument, and waybar's scroll passes 1.
+      default_step=5
+      sink="@DEFAULT_AUDIO_SINK@"
+      mic="@DEFAULT_AUDIO_SOURCE@"
+
+      # Optional second argument on up/down. A non-number falls back rather
+      # than failing: a mistyped step should still change the volume.
+      step="''${2:-$default_step}"
+      case "$step" in
+        "" | *[!0-9]*) step="$default_step" ;;
+      esac
+
+      # `wpctl get-volume` prints "Volume: 0.65", or "Volume: 0.65 [MUTED]".
+      show_sink() {
+        state="$(wpctl get-volume "$sink" 2>/dev/null || true)"
+        [ -n "$state" ] || return 0
+
+        case "$state" in
+          *MUTED*)
+            osd message sink-volume-muted-symbolic "Muted"
+            return 0
+            ;;
+        esac
+
+        pct="$(printf '%s\n' "$state" | awk 'NR == 1 { printf "%d", $2 * 100 + 0.5 }')"
+
+        # The same thresholds swayosd's native OSD uses, so the glyph means the
+        # same thing however the volume was changed.
+        if [ "$pct" -le 0 ]; then
+          icon=muted
+        elif [ "$pct" -le 33 ]; then
+          icon=low
+        elif [ "$pct" -le 66 ]; then
+          icon=medium
+        else
+          icon=high
+        fi
+
+        osd progress "sink-volume-$icon-symbolic" "$pct"
+      }
+
+      # The microphone has no level bound to a key, only a mute toggle, so it
+      # gets the state in words rather than a bar.
+      show_mic() {
+        state="$(wpctl get-volume "$mic" 2>/dev/null || true)"
+        [ -n "$state" ] || return 0
+
+        case "$state" in
+          *MUTED*) osd message source-volume-muted-symbolic "Microphone muted" ;;
+          *)       osd message source-volume-high-symbolic  "Microphone on" ;;
+        esac
+      }
+
+      case "''${1:-}" in
+        # -l 1.0 caps the sink at 100%. Software gain above that is available
+        # in pavucontrol for the once-a-year quiet recording; on a key held
+        # down it is a way to damage speakers.
+        up)       wpctl set-volume "$sink" "''${step}%+" -l 1.0 ; show_sink ;;
+        down)     wpctl set-volume "$sink" "''${step}%-"        ; show_sink ;;
+        mute)     wpctl set-mute   "$sink" toggle               ; show_sink ;;
+        mic-mute) wpctl set-mute   "$mic"  toggle               ; show_mic ;;
+        set)
+          [ -n "''${2:-}" ] || { echo "usage: volume set <percent>" >&2; exit 2; }
+          wpctl set-volume "$sink" "$2%" -l 1.0
+          show_sink
+          ;;
+        # Draw the current level without changing it.
+        show) show_sink ;;
+        *)
+          echo "usage: volume [up|down [pct]|mute|mic-mute|set <pct>|show]" >&2
+          exit 2
+          ;;
+      esac
+    '';
+  };
+
   # Brightness, across every backlight device rather than only the first.
   #
   # `brightnessctl set` with no --device picks the first device it finds and
@@ -1137,6 +1322,8 @@ lockNowPlaying = pkgs.writeShellApplication {
       brightnessctl
       util-linux
       coreutils
+      gawk
+      osd
     ];
     text = ''
       step=5
@@ -1181,15 +1368,49 @@ lockNowPlaying = pkgs.writeShellApplication {
         done
       }
 
+      # The on-screen display, drawn from a fresh reading of the device rather
+      # than from a level computed here. Nothing in this script has to know
+      # what a step did — including the clamping at 0% and 100%, which is
+      # brightnessctl's, and which a predicted number would get wrong at both
+      # ends of the range.
+      #
+      # The first device speaks for all of them. That is brightnessctl's own
+      # no-`--device` semantics, it is the only device there is on the laptop,
+      # and on the desk every display has just taken the same step. They can
+      # still drift apart — a monitor that refused a write, or one adjusted
+      # from its own buttons — in which case this shows the first display's
+      # level rather than an average, which is at least a number that belongs
+      # to something real.
+      #
+      # awk rather than `head -1`: this runs under `set -o pipefail`, and a
+      # reader that closes the pipe early would make brightnessctl die of
+      # SIGPIPE and take the whole script with it.
+      show_osd() {
+        local pct
+        pct="$(
+          brightnessctl --class=backlight --machine-readable --list 2>/dev/null \
+            | awk -F, 'NR == 1 { sub(/%$/, "", $4); print $4 }' || true
+        )"
+
+        osd progress display-brightness-symbolic "$pct"
+      }
+
       case "''${1:-}" in
-        up)   each set "+''${step}%" ;;
-        down) each set "''${step}%-" ;;
+        up)   each set "+''${step}%" ; show_osd ;;
+        down) each set "''${step}%-" ; show_osd ;;
         set)
           [ -n "''${2:-}" ] || { echo "usage: brightness set <percent>" >&2; exit 2; }
           each set "$2%"
+          show_osd
           ;;
         # Save the current level and drop to <percent>. This is the swayidle
         # dim warning; `restore` is its resumeCommand.
+        #
+        # No OSD on either: the dim is what happens when you have stopped
+        # touching the machine, and the restore is what happens the instant you
+        # touch it again. A pop-up on the second one would fire on every return
+        # to the desk, reporting a level that hasn't changed from what it was
+        # before the timer ran.
         dim)
           [ -n "''${2:-}" ] || { echo "usage: brightness dim <percent>" >&2; exit 2; }
           each --save set "$2%"
@@ -1294,6 +1515,8 @@ in
     switchUser
     sessionMenu
     idleInhibit
+    osd
+    volume
     brightness
     cavaBar
   ];
@@ -1312,6 +1535,8 @@ in
       switchUser
       sessionMenu
       idleInhibit
+      osd
+      volume
       brightness
       cavaBar
       ;

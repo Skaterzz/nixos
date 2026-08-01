@@ -213,13 +213,23 @@ in
         ];
       };
 
+      # Click and scroll both go through the same `volume` script the media
+      # keys use, so every route to the volume raises the OSD and none of them
+      # can drift from the others.
+      #
+      # That replaces the module's built-in scrolling rather than adding to it:
+      # `Pulseaudio::handleScroll` hands off to the generic handler as soon as
+      # either `on-scroll-*` is a string, and never reaches its own code. So
+      # `scroll-step` is gone too — it would look like it still set the step,
+      # and the 1 that does is the argument below.
       pulseaudio = {
         format = "{icon}  {volume}%";
         format-muted = "󰝟  muted";
         format-icons.default = [ "󰕿" "󰖀" "󰕾" ];
-        scroll-step = 1;
-        on-click = "${pkgs.wireplumber}/bin/wpctl set-mute @DEFAULT_AUDIO_SINK@ toggle";
+        on-click = "${lib.getExe niriScripts.volume} mute";
         on-click-right = "${pkgs.pavucontrol}/bin/pavucontrol";
+        on-scroll-up = "${lib.getExe niriScripts.volume} up 1";
+        on-scroll-down = "${lib.getExe niriScripts.volume} down 1";
         tooltip-format = "{desc}";
       };
 

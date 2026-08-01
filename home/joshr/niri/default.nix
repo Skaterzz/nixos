@@ -18,6 +18,7 @@
     ./niri.nix
     ./waybar.nix
     ./notifications.nix
+    ./osd.nix
     ./lock.nix
     ./clipboard.nix
     ./emoji.nix

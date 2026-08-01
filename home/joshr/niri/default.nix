@@ -1,4 +1,10 @@
-{ config, lib, pkgs, niriTheming, ... }:
+{
+  config,
+  lib,
+  pkgs,
+  niriTheming,
+  ...
+}:
 
 # niri desktop for joshr: compositor config, bar, notifications, launcher,
 # lock screen, and the theme/wallpaper switcher.
@@ -29,6 +35,11 @@
     kdePackages.dolphin
     kdePackages.kio-fuse # mount remote filesystems in place
     kdePackages.kio-extras # sftp://, mtp://, trash:// and friends
+
+    # Plasma normally starts kded6 and maintains KDE's application/MIME
+    # service cache. A standalone niri session has to provide both explicitly.
+    kdePackages.kded
+    kdePackages.kservice
 
     # The File Associations panel (kcm_filetypes) and the standalone
     # keditfiletype that Dolphin's file-properties dialog opens. This is what
@@ -67,6 +78,26 @@
 
   services.blueman-applet.enable = false;
 
+  # Dolphin resolves applications through KDE's service database. Plasma
+  # refreshes it and starts kded6 automatically; niri does neither for us.
+  systemd.user.services.kded6 = {
+    Unit = {
+      Description = "KDE daemon for the niri session";
+      PartOf = [ "graphical-session.target" ];
+      After = [ "graphical-session.target" ];
+    };
+
+    Service = {
+      Type = "dbus";
+      BusName = "org.kde.kded6";
+      ExecStartPre = "${lib.getExe' pkgs.kdePackages.kservice "kbuildsycoca6"} --noincremental";
+      ExecStart = lib.getExe pkgs.kdePackages.kded;
+      Restart = "on-failure";
+    };
+
+    Install.WantedBy = [ "graphical-session.target" ];
+  };
+
   xdg.configFile."autostart/blueman.desktop" = {
     force = true;
     text = ''
@@ -75,7 +106,7 @@
       Name=Blueman Applet
       Hidden=true
     '';
-  }; 
+  };
 
   # Cursor theme is set in ../home.nix so the Plasma and niri sessions share
   # one definition; niri.nix just names it in `cursor { xcursor-theme … }`.

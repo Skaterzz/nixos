@@ -1,4 +1,10 @@
-{ config, lib, pkgs, niriTheming, ... }:
+{
+  config,
+  lib,
+  pkgs,
+  niriTheming,
+  ...
+}:
 
 # Runtime helpers, all built as store scripts and bound to keys in config.kdl.
 #
@@ -48,7 +54,7 @@ let
 
   # name -> store path, as a shell case statement.
   themeCases = lib.concatStringsSep "\n" (
-    lib.mapAttrsToList (n: d: ''      ${n}) target="${d}" ;;'') themeDirs
+    lib.mapAttrsToList (n: d: ''${n}) target="${d}" ;;'') themeDirs
   );
 
   themeNames = lib.concatStringsSep "\n" (lib.attrNames themes);
@@ -80,7 +86,12 @@ let
   #           modules/nixos/niri.nix.
   themeApply = pkgs.writeShellApplication {
     name = "theme-apply";
-    runtimeInputs = with pkgs; [ libnotify systemd procps dbus ];
+    runtimeInputs = with pkgs; [
+      libnotify
+      systemd
+      procps
+      dbus
+    ];
     text = ''
       name="''${1:-}"
       if [ -z "$name" ]; then
@@ -155,7 +166,11 @@ let
   # same way.
   themeRandom = pkgs.writeShellApplication {
     name = "theme-random";
-    runtimeInputs = with pkgs; [ coreutils gnugrep themeApply ];
+    runtimeInputs = with pkgs; [
+      coreutils
+      gnugrep
+      themeApply
+    ];
     text = ''
       current="$(cat "${stateDir}/current" 2>/dev/null || echo "")"
 
@@ -177,11 +192,12 @@ let
   # Pick a theme from a wofi menu.
   themeMenu = pkgs.writeShellApplication {
     name = "theme-menu";
-    runtimeInputs = with pkgs; [ wofi themeApply ];
+    runtimeInputs = with pkgs; [
+      wofi
+      themeApply
+    ];
     text = ''
-      choice="$(printf '%s\n' ${
-        lib.escapeShellArgs (lib.attrNames themes)
-      } | wofi --dmenu --prompt "Theme" --insensitive)"
+      choice="$(printf '%s\n' ${lib.escapeShellArgs (lib.attrNames themes)} | wofi --dmenu --prompt "Theme" --insensitive)"
       [ -n "$choice" ] && theme-apply "$choice"
     '';
   };
@@ -190,7 +206,10 @@ let
   # The chosen path is remembered so it can be restored at login.
   wallpaperSet = pkgs.writeShellApplication {
     name = "wallpaper-set";
-    runtimeInputs = with pkgs; [ awww libnotify ];
+    runtimeInputs = with pkgs; [
+      awww
+      libnotify
+    ];
     text = ''
       img="''${1:-}"
       [ -z "$img" ] && { echo "usage: wallpaper-set <image>" >&2; exit 2; }
@@ -212,26 +231,80 @@ let
 
   wallpaperMenu = pkgs.writeShellApplication {
     name = "wallpaper-menu";
-    runtimeInputs = with pkgs; [ wofi findutils coreutils wallpaperSet ];
+    runtimeInputs = with pkgs; [
+      wofi
+      findutils
+      coreutils
+      imagemagick
+      wallpaperSet
+    ];
     text = ''
       dir="${wallpaperDir}"
       [ -d "$dir" ] || { echo "no wallpaper dir: $dir" >&2; exit 1; }
 
-      # -L so the symlink home-manager creates into the dotfiles store path
-      # is followed.
-      choice="$(find -L "$dir" -type f \
-                  \( -iname '*.png' -o -iname '*.jpg' -o -iname '*.jpeg' \) \
-                  -printf '%P\n' 2>/dev/null \
-                | sort \
-                | wofi --dmenu --prompt "Wallpaper" --insensitive)"
+      cache="''${XDG_CACHE_HOME:-$HOME/.cache}/wallpaper-menu"
+      entries="$(mktemp)"
+      mkdir -p "$cache"
+      trap 'rm -f "$entries"' EXIT
 
+      # Wofi can display image escape entries. Cache small, uniformly cropped
+      # previews so opening the picker does not decode every full-resolution
+      # wallpaper from scratch each time.
+      while IFS= read -r img; do
+        rel="''${img#"$dir"/}"
+        stamp="$(stat -c '%Y:%s' "$img")"
+        key="$(printf '%s\0%s' "$img" "$stamp" | sha256sum | cut -d ' ' -f1)"
+        thumb="$cache/$key.jpg"
+
+        if [ ! -f "$thumb" ]; then
+          tmp="$cache/.$key.tmp.jpg"
+          if magick "$img" -auto-orient \
+              -thumbnail '320x180^' -gravity center -extent 320x180 \
+              -strip -quality 85 "$tmp" 2>/dev/null; then
+            mv -f "$tmp" "$thumb"
+          else
+            rm -f "$tmp"
+          fi
+        fi
+
+        preview="$img"
+        [ -f "$thumb" ] && preview="$thumb"
+        printf 'img:%s:text:%s\n' "$preview" "$rel" >> "$entries"
+      done < <(
+        find -L "$dir" -type f \
+          \( -iname '*.png' -o -iname '*.jpg' -o -iname '*.jpeg' -o -iname '*.webp' \) \
+          -print 2>/dev/null | sort
+      )
+
+      [ -s "$entries" ] || { echo "no wallpapers found in: $dir" >&2; exit 1; }
+
+      choice="$(wofi --dmenu \
+        --prompt "Wallpaper" \
+        --insensitive \
+        --allow-images \
+        --parse-search \
+        --no-custom-entry \
+        --cache-file /dev/null \
+        --width 80% \
+        --lines 3 \
+        --columns 4 \
+        --define=image_size=180 \
+        < "$entries")"
+
+      # Depending on the wofi build, dmenu mode can return either the visible
+      # label or the complete image escape. This handles both.
+      choice="''${choice#*:text:}"
       [ -n "$choice" ] && wallpaper-set "$dir/$choice"
     '';
   };
 
   wallpaperRandom = pkgs.writeShellApplication {
     name = "wallpaper-random";
-    runtimeInputs = with pkgs; [ findutils coreutils wallpaperSet ];
+    runtimeInputs = with pkgs; [
+      findutils
+      coreutils
+      wallpaperSet
+    ];
     text = ''
       dir="${wallpaperDir}"
       [ -d "$dir" ] || exit 0
@@ -245,7 +318,11 @@ let
   # Restore the remembered wallpaper at login, falling back to a random one.
   wallpaperRestore = pkgs.writeShellApplication {
     name = "wallpaper-restore";
-    runtimeInputs = [ pkgs.awww wallpaperSet wallpaperRandom ];
+    runtimeInputs = [
+      pkgs.awww
+      wallpaperSet
+      wallpaperRandom
+    ];
     text = ''
       awww query >/dev/null 2>&1 || { awww-daemon & sleep 0.5; }
       saved="$(cat "${stateDir}/wallpaper" 2>/dev/null || echo "")"
@@ -449,7 +526,11 @@ let
   # keybind would have no way in. It also wouldn't hold off logind sleep.
   idleInhibit = pkgs.writeShellApplication {
     name = "idle-inhibit";
-    runtimeInputs = with pkgs; [ systemd libnotify procps ];
+    runtimeInputs = with pkgs; [
+      systemd
+      libnotify
+      procps
+    ];
     text = ''
       unit=idle-inhibit.service
 
@@ -505,7 +586,10 @@ let
   # without this, switching back would land straight in an unlocked desktop.
   switchUser = pkgs.writeShellApplication {
     name = "switch-user";
-    runtimeInputs = with pkgs; [ dbus lockSession ];
+    runtimeInputs = with pkgs; [
+      dbus
+      lockSession
+    ];
     text = ''
       seat="''${XDG_SEAT_PATH:-/org/freedesktop/DisplayManager/Seat0}"
 
@@ -564,7 +648,11 @@ let
   # same thing.
   brightness = pkgs.writeShellApplication {
     name = "brightness";
-    runtimeInputs = with pkgs; [ brightnessctl util-linux coreutils ];
+    runtimeInputs = with pkgs; [
+      brightnessctl
+      util-linux
+      coreutils
+    ];
     text = ''
       step=5
 

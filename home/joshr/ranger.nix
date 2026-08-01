@@ -1,4 +1,9 @@
-{ config, lib, pkgs, ... }:
+{
+  config,
+  lib,
+  pkgs,
+  ...
+}:
 
 # ranger with previews.
 #
@@ -110,6 +115,20 @@ let
     file --dereference --brief -- "$FILE_PATH" && exit 0
     exit 1
   '';
+
+  # Ranger opens files through its own `rifle` rules rather than through
+  # mimeapps.list. Prepend the three forced media handlers, then retain the
+  # complete upstream rule set for text, archives, PDFs and everything else.
+  rifle = pkgs.runCommand "ranger-rifle.conf" { } ''
+    cat > "$out" <<'EOF'
+    mime ^image, X, flag f = ${pkgs.kdePackages.gwenview}/bin/gwenview -- "$@"
+    mime ^video, X, flag f = ${pkgs.haruna}/bin/haruna -- "$@"
+    mime ^audio, X, flag f = ${pkgs.kdePackages.elisa}/bin/elisa -- "$@"
+
+    EOF
+
+    cat ${pkgs.ranger.src}/ranger/config/rifle.conf >> "$out"
+  '';
 in
 {
   programs.ranger = {
@@ -143,6 +162,11 @@ in
       mouse_enabled = true;
       confirm_on_delete = "multiple";
     };
+  };
+
+  xdg.configFile."ranger/rifle.conf" = {
+    source = rifle;
+    force = true;
   };
 
   # Also make the tools available in the shell — handy independently of

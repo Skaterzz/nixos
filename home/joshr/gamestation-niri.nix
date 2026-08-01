@@ -12,7 +12,7 @@
 {
   imports = [
     ./home.nix
-    ./media-defaults.nix
+    ./desktop-apps.nix
     ./niri
     ./displays/gamestation.nix
   ];

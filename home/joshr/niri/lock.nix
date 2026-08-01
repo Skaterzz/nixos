@@ -34,10 +34,16 @@ in
 
     timeouts = [
       # Dim first as a warning, restore on activity.
+      #
+      # Through `brightness` (scripts.nix) so this covers every display, not
+      # just whichever backlight device brightnessctl happened to enumerate
+      # first. On the desk that's one device per monitor — before ddcci
+      # existed there were none at all, so this dim was silently a no-op
+      # there and the screen went straight from full brightness to locked.
       {
         timeout = 240;
-        command = "${pkgs.brightnessctl}/bin/brightnessctl -s set 20%";
-        resumeCommand = "${pkgs.brightnessctl}/bin/brightnessctl -r";
+        command = "${lib.getExe niriScripts.brightness} dim 20";
+        resumeCommand = "${lib.getExe niriScripts.brightness} restore";
       }
       # Then lock.
       {

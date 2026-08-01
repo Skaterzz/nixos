@@ -308,8 +308,13 @@ ${workspaceBlocks}
         XF86AudioPrev allow-when-locked=true { spawn "${bin pkgs.playerctl}" "previous"; }
         XF86AudioNext allow-when-locked=true { spawn "${bin pkgs.playerctl}" "next"; }
 
-        XF86MonBrightnessUp   allow-when-locked=true { spawn "${bin pkgs.brightnessctl}" "--class=backlight" "set" "+5%"; }
-        XF86MonBrightnessDown allow-when-locked=true { spawn "${bin pkgs.brightnessctl}" "--class=backlight" "set" "5%-"; }
+        // `brightness` rather than brightnessctl directly: it steps *every*
+        // backlight device, where brightnessctl on its own takes the first
+        // one it finds. That's the same thing on the laptop's single internal
+        // panel, but the desk has one device per monitor (see
+        // modules/nixos/ddcci.nix) and only one of them would move.
+        XF86MonBrightnessUp   allow-when-locked=true { spawn "${bin niriScripts.brightness}" "up"; }
+        XF86MonBrightnessDown allow-when-locked=true { spawn "${bin niriScripts.brightness}" "down"; }
 
         // --- window management -----------------------------------------
         Mod+Q repeat=false { close-window; }

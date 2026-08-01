@@ -257,6 +257,7 @@ restored at login.
 | `Mod+H/J/K` | focus (arrows also work; `Mod+L` is lock, so use `Mod+Right`) |
 | `Mod+1..5` | named workspaces |
 | `Mod+R` / `Mod+F` / `Mod+V` | preset widths, maximize, float |
+| `Mod+W` | tab the focused column — its windows stack, one shown at a time |
 | `Print` / `Mod+Shift+S` | region screenshot, annotated in satty |
 | `Shift+Print` / `Mod+Ctrl+S` | same region as last time, no selection step |
 | `Ctrl+Print` / `Alt+Print` | screen / window (niri's built-ins) |
@@ -266,6 +267,14 @@ restored at login.
 | `Mod+Shift+T` / `Mod+Ctrl+T` | random theme, pick theme |
 | `Mod+Shift+W` / `Mod+Ctrl+W` | random wallpaper, pick wallpaper |
 | `Mod`+scroll / `Mod+Shift`+scroll | walk windows / workspaces (wheel and touchpad) |
+
+`Mod+W` is the one that isn't guessable from the key. A column normally
+divides its height between the windows stacked in it, so a column of four is
+four short windows. Tabbed, they share one full-height slot and only the
+focused one is drawn, with an indicator marking the rest — the column still
+takes one slot on the strip, and `Mod+K`/`Mod+J` walk the tabs. `Mod+W` again
+puts the stack back. Nothing moves in or out of the column either way; it's
+purely how the column is drawn.
 
 `Mod+Shift+Slash` shows niri's own hotkey overlay.
 
@@ -776,8 +785,8 @@ dotfiles repo is the permanent one. Beside it, `WallhavenFlake/` holds
 [wallhaven.cc](https://wallhaven.cc)'s current top 20 — and only those
 twenty, so as the toplist moves on, the folder moves with it.
 
-Both desktops pick the new files up for free: niri's `Mod+W` picker globs the
-whole tree, and Plasma's slideshow is pointed at the same directory.
+Both desktops pick the new files up for free: niri's `Mod+Ctrl+W` picker globs
+the whole tree, and Plasma's slideshow is pointed at the same directory.
 
 ### Which twenty, and who decides
 

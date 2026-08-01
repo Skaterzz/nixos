@@ -14,6 +14,9 @@
         # 'false'.
         FastConnectable = true; 
         Enable = "Source,Sink,Media,Socket";
+
+        # make airpods work
+        ControllerMode = "bredr";
       };
       Policy = {
         # Enable all controllers when they are found. This includes

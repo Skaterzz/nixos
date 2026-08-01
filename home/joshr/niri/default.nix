@@ -33,6 +33,7 @@
   # through kdeglobals — see the symlink below.
   home.packages = with pkgs; [
     kdePackages.dolphin
+    kdePackages.dolphin-plugins
     kdePackages.kio-fuse # mount remote filesystems in place
     kdePackages.kio-extras # sftp://, mtp://, trash:// and friends
 

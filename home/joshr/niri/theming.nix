@@ -185,7 +185,7 @@ let
       padding: 0 10px;
       margin: 4px 1px;
       border-radius: 8px;
-      color: @fg;
+      color: @fg-dim;
     }
 
     #tray > .passive {

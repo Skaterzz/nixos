@@ -675,6 +675,23 @@ sleep.
 niri's `layout { background-color }` does not help here: that is the backdrop
 behind windows, and swaylock's own surface covers it.
 
+**swaylock is patched** (`home/joshr/niri/swaylock-date-fit.patch`) so the date
+can't overhang the ring. Upstream sizes that line at a hardcoded
+`arc_radius / 6`, so it grows in exact proportion to the circle — a long date
+like "Wednesday, September 24" hangs over by the same fraction at *every*
+radius, and widening `--indicator-radius` buys nothing. No flag reaches it
+either: `--font-size` sets the clock above it, and the date's divisor isn't
+exposed. Without the patch the only fixes available in configuration are to
+shorten the date (`%b` for `%B`) or narrow the font.
+
+The patch measures the text and scales it down only when it wouldn't fit,
+bounded by the ring's inner chord at the text's own baseline rather than the
+diameter, since the date sits below the centre where the circle has already
+started to narrow. Short dates keep their normal size. It costs a source build
+of swaylock-effects, which is a small C project and quick. If a nixpkgs bump
+moves those lines the patch will fail to apply — the fallback is a shorter
+`--datestr`.
+
 **`Mod+Escape` blanks the monitors on demand**, from the lock screen as well
 as from the desktop — for when you're walking away now and don't want to wait
 out the idle timer. Any input wakes them; on the lock screen that leaves

@@ -58,7 +58,10 @@ in
     ];
   };
 
-  home.packages = [ pkgs.swaylock-effects ];
+  # The patched build from scripts.nix, not pkgs.swaylock-effects — see the
+  # comment on `swaylock` there. Stock here would mean a bare `swaylock` on
+  # PATH whose date still overhangs the ring.
+  home.packages = [ niriScripts.swaylock ];
 
   # The sleep inhibitor: "keep this machine awake until I say otherwise".
   #

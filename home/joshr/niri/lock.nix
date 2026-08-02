@@ -2,14 +2,31 @@
 
 # Idle handling and the lock screen.
 #
-# The lock command itself is `lock-session` from scripts.nix — it reads its
-# colours from the active theme, so the lock screen follows theme switches.
-# This module is the idle timer and the sleep hook around it.
+# The lock screen itself is `lock-session` from scripts.nix — it reads its
+# colours from the active theme, so it follows theme switches. This module is
+# the idle timer and the sleep hook around it.
 #
 # `swaylock` needs a PAM entry to authenticate; that's set at system level in
 # modules/nixos/niri.nix, since home-manager can't write /etc/pam.d.
 let
-  lock = lib.getExe niriScripts.lockSession;
+  # `lock-now`, never `lock-session`, and that is the difference between this
+  # timer working and stopping dead the moment it locks.
+  #
+  # home-manager runs swayidle with `-w` (services.swayidle.extraArgs), and
+  # with `-w` swayidle forks the command once and then waits on it from inside
+  # its own Wayland event loop rather than double-forking and carrying on
+  # (cmd_exec, main.c). `lock-session` blocks until you type your password, so
+  # a timeout pointed at it froze every later timer at the instant of the
+  # lock: the 600s blank below never fired, and the screen stayed lit behind
+  # the lock screen until it was unlocked. `lock` and `before-sleep` wedged
+  # the same way.
+  #
+  # `lock-now` starts the locker, waits only until it is up, and returns in a
+  # few hundred milliseconds — which keeps what `-w` is actually for (swayidle
+  # holds logind's sleep delay lock until before-sleep returns, so the machine
+  # can't suspend ahead of the locker) without keeping what it cost. See the
+  # comment on lockNow in scripts.nix.
+  lock = lib.getExe niriScripts.lockNow;
 in
 {
   services.swayidle = {
@@ -49,7 +66,9 @@ in
         timeout = 300;
         command = lock;
       }
-      # Then blank the outputs. niri handles DPMS via its own IPC.
+      # Then blank the outputs. niri handles DPMS via its own IPC, and
+      # `power-off-monitors` is on its whitelist of actions that still run
+      # while the session is locked, so this fires through the lock above.
       {
         timeout = 600;
         command = "${pkgs.niri}/bin/niri msg action power-off-monitors";

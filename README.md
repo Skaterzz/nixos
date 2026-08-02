@@ -128,7 +128,7 @@ without editing anything.
 
 Lock and power are styled identically and differ only on hover — the power
 button goes red, because it's the one that can end the session. The lock
-button runs the same `lock-session` as `Mod+L` and the session menu's "Lock"
+button runs the same `lock-now` as `Mod+L` and the session menu's "Lock"
 entry, so all three take the active theme's colours.
 
 **The visualiser** is eight bars of cava just left of the track name, in the
@@ -353,6 +353,7 @@ the greeter and boot menu on the default palette.
 | `Shift+Print` / `Mod+Ctrl+S` | same region as last time, no selection step |
 | `Ctrl+Print` / `Alt+Print` | screen / window (niri's built-ins) |
 | `Mod+L` / `Mod+Shift+Escape` | lock, session menu |
+| `Mod+Shift+L` | lock **and** blank the monitors, in one key |
 | `Mod+Escape` | blank the monitors — works on the lock screen too |
 | `Mod+Shift+I` | stay awake (toggle the sleep inhibitor) |
 | `Mod+Shift+T` / `Mod+Ctrl+T` | random theme, pick theme |
@@ -571,7 +572,7 @@ a docked laptop would lock.
 ignored entirely unless it's set, for backwards compatibility, so leaving it
 out doesn't mean "do nothing on mains", it means mains falls through to
 `HandleLidSwitch` and suspends. `lock` doesn't suspend: it asks every session
-to lock, which under niri is swayidle's `lock` event running `lock-session`,
+to lock, which under niri is swayidle's `lock` event running `lock-now`,
 the same path `loginctl lock-session` takes. On battery the lock still happens
 one step later, from swayidle's `before-sleep`, so the machine never resumes
 unlocked either way.
@@ -843,9 +844,59 @@ version of the same thing, with an extra click.
 
 ### Lock screen
 
-`swaylock-effects` with a blurred screenshot background, ring colours from
-the active theme. `swayidle` dims at 4 minutes, locks at 5, blanks at 6, and
-locks before suspend.
+Hyprlock, with the current wallpaper blurred behind a clock, a greeting and
+one wide password field; colours come from the active theme, so it follows a
+theme switch. `swaylock-effects` is still installed and is the fallback the
+lock script drops to if Hyprlock fails to start — a locker regression must
+not leave the session sitting unlocked.
+
+`swayidle` dims at 4 minutes, locks at 5, blanks at 10, and locks before
+suspend.
+
+#### Everything locks through `lock-now`
+
+`lock-session` is the script that actually draws the lock screen, and it
+blocks until you unlock. Nothing calls it directly. The keybinds, the bar's
+lock button, the session menu, switch-user and swayidle all go through
+`lock-now`, which starts it, waits until it is up, and returns — a few hundred
+milliseconds rather than however long you are away.
+
+That indirection is not tidiness — it is the fix for the idle timer stopping
+dead at the moment it locked. home-manager runs swayidle with `-w`
+(`services.swayidle.extraArgs` defaults to it), and with `-w` swayidle's
+`cmd_exec` forks the command **once** and then `waitpid()`s it from inside its
+own Wayland event loop, instead of double-forking and returning. A timeout
+pointed straight at `lock-session` therefore froze every later timer for as
+long as the screen was locked: the 10-minute blank never fired, so the display
+stayed lit behind the lock screen indefinitely. `before-sleep` and the `lock`
+event — the lid closing on mains, `loginctl lock-session` — wedged the timer
+the same way.
+
+Dropping `-w` would have been the wrong fix. It is what makes swayidle hold
+logind's sleep delay lock until `before-sleep` has returned, which is the
+guarantee that the machine never suspends before the locker is on screen. So
+the command has to return quickly *and* not until the lock is really up, which
+is what `lock-now` does.
+
+`lock-now` is also idempotent, which is why every route can share it.
+`lock-session` holds an `flock` on a file under `$XDG_RUNTIME_DIR` for as long
+as it lives — an open descriptor rather than a PID file, so the kernel drops
+it however the process dies and there is no stale state to clean up — and a
+second lock request sees the lock held and returns success instead of starting
+a second locker on top of the first. That matters beyond tidiness, because
+`lock-session` falls back to swaylock when Hyprlock exits non-zero: without the
+guard, a duplicate lock request started a second Hyprlock, which cannot take an
+already-held session lock and exits non-zero, and the fallback then layered a
+swaylock over the perfectly good lock screen already on screen.
+
+The one thing `lock-now` cannot do is wait for a *rendered* lock screen. The
+file lock proves `lock-session` is running, which is a fraction of a second
+ahead of Hyprlock claiming the session lock and drawing, and there is no
+readiness signal to wait on instead — Hyprlock has no IPC, and a Wayland
+session lock is not visible to logind. So it ends on a 300 ms settle, which is
+an honest guess, generous for what it covers, and only matters to the two
+callers that touch the screen immediately afterwards: `lock-blank` powering the
+monitors off and `switch-user` handing the seat to the greeter.
 
 The lock script passes `--color` as well as `--screenshots`, and that is
 load-bearing rather than decorative. `--color` is the flat colour swaylock
@@ -858,8 +909,8 @@ of on the surface that failed, so one blanked monitor drops the screenshot
 background on *every* display and the whole lock screen comes up white.
 Pointing `--color` at the theme background makes that fallback a themed solid
 colour. It is easy to hit because blanking and locking are independent —
-`Mod+Escape` blanks on demand, and swayidle blanks at 360s and locks before
-sleep.
+`Mod+Escape` blanks on demand, `Mod+Shift+L` does both at once, and swayidle
+blanks at 600s and locks before sleep.
 
 niri's `layout { background-color }` does not help here: that is the backdrop
 behind windows, and swaylock's own surface covers it.
@@ -896,9 +947,19 @@ swaylock exactly where it was, so it's a screen-off, not an unlock.
 
 It works through the lock without an `allow-when-locked` on it because niri
 keeps a whitelist of actions that survive the lock screen —
-`power-off-monitors` is on it, which is the same reason the 6-minute blank
-above fires while locked. Setting that property here would actually be a
-config *error*: niri only accepts it on `spawn` binds.
+`power-off-monitors` is on it, which is the same reason the 10-minute blank
+above fires while locked. That check lives in `do_action`, so it covers
+`niri msg action power-off-monitors` over IPC as well as the keybind, which is
+how swayidle's blank reaches it. Setting that property here would actually be
+a config *error*: niri only accepts it on `spawn` binds.
+
+**`Mod+Shift+L` locks and blanks together**, which is the "I'm walking away"
+version of pressing `Mod+L` and then `Mod+Escape`. It differs from `Mod+L` in
+one more way: it passes `--grace 0`. Hyprlock's grace period is a window in
+which any input dismisses the lock with no password, and two seconds of that
+is right for an idle lock — the timer fired as you sat back down — but wrong
+for a deliberate one, where waking the screen to check that it locked would be
+enough to unlock it again.
 
 It's `Mod+Escape` and not bare `Escape` because niri intercepts a bound key
 unconditionally — it matches binds before it looks at the lock state, and

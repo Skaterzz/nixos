@@ -58,7 +58,7 @@
   # HandleLidSwitch, which is to say it suspends.
   #
   # `lock` doesn't suspend. It asks every session to lock, which under niri
-  # is swayidle's `lock` event running lock-session (home/joshr/niri/lock.nix)
+  # is swayidle's `lock` event running `lock-now` (home/joshr/niri/lock.nix)
   # — the same path `loginctl lock-session` takes. On battery the lock still
   # happens, one step later: swayidle's `before-sleep` fires on the way down,
   # so the machine never resumes unlocked either way.

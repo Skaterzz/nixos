@@ -560,8 +560,9 @@ wallpaperMenu = pkgs.writeShellApplication {
   # background turns that fallback into a themed solid colour.
   #
   # It's reachable in normal use because the blank and the lock are
-  # independent: Mod+Escape blanks on demand, and swayidle blanks at 360s and
-  # locks before sleep, so "outputs off" and "now lock" overlap easily.
+  # independent: Mod+Escape blanks on demand, Mod+Shift+L does both at once,
+  # and swayidle blanks at 600s and locks before sleep, so "outputs off" and
+  # "now lock" overlap easily.
   #
   # niri's `layout { background-color }` has no bearing on this. That is the
   # backdrop behind windows; swaylock's own surface covers it.
@@ -764,10 +765,57 @@ lockNowPlaying = pkgs.writeShellApplication {
     pkgs.coreutils
     pkgs.gawk
     pkgs.glibc.bin
+    pkgs.util-linux
     swaylock
   ];
 
   text = ''
+    # This blocks until the session is unlocked. Nothing on a timer should
+    # call it directly — see `lock-now` below, which is what swayidle, the
+    # keybinds and the bar all go through.
+
+    grace=2
+
+    while [ "$#" -gt 0 ]; do
+      case "$1" in
+        # Seconds during which any input dismisses the lock without a
+        # password. Two is comfortable for an idle lock — you walked back to
+        # the desk as it fired — and wrong for a deliberate one, so
+        # `lock-blank` passes 0.
+        --grace)
+          grace="''${2:-}"
+          case "$grace" in
+            "" | *[!0-9]*) echo "lock-session: --grace wants a number" >&2; exit 2 ;;
+          esac
+          shift 2
+          ;;
+        *)
+          echo "usage: lock-session [--grace <seconds>]" >&2
+          exit 2
+          ;;
+      esac
+    done
+
+    # One locker at a time, held for as long as this process lives.
+    #
+    # Without it a second lock request — the lid closing onto an already
+    # locked session, a stray Mod+L, before-sleep arriving after the idle
+    # timer — starts a second hyprlock, which cannot take the session lock
+    # and exits non-zero, and the fallback below then reads that as "hyprlock
+    # is broken" and layers a swaylock on top of the working lock screen.
+    #
+    # An open file descriptor rather than a PID file or a process-name match:
+    # the kernel drops the lock when the process dies however it dies, so
+    # there is no stale state to clean up, and it survives the `exec swaylock`
+    # at the bottom (fd 9 is not close-on-exec) so the fallback holds it too.
+    #
+    # `lock-now` tests the same file, which is how it knows the locker is up.
+    lockfile="''${XDG_RUNTIME_DIR:-/tmp}/lock-session.lock"
+    exec 9>"$lockfile"
+    if ! flock -n 9; then
+      exit 0
+    fi
+
     # shellcheck disable=SC1091
     if [ -r "${activeDir}/swaylock.env" ]; then
       . "${activeDir}/swaylock.env"
@@ -954,7 +1002,7 @@ lockNowPlaying = pkgs.writeShellApplication {
 
     # Hyprlock blocks until the session is unlocked. A nonzero exit here
     # means it failed to initialize, not merely that a password was wrong.
-    if hyprlock --config "$config" --grace 2; then
+    if hyprlock --config "$config" --grace "$grace"; then
       exit 0
     fi
 
@@ -997,9 +1045,113 @@ lockNowPlaying = pkgs.writeShellApplication {
       --text-ver-color "$LOCK_FG" \
       --text-wrong-color "$LOCK_ERR" \
       --fade-in 0.2 \
-      --grace 2
+      --grace "$grace"
   '';
-}; 
+};
+
+  # Lock, and come back as soon as the lock is up rather than when it ends.
+  #
+  # This exists because of one line in swayidle: home-manager passes it `-w`
+  # by default (`services.swayidle.extraArgs`), and with `-w` swayidle's
+  # `cmd_exec` does a single fork and then `waitpid()`s the command from
+  # inside its Wayland event loop instead of double-forking and returning
+  # (main.c). Pointing a timeout straight at `lock-session`, which blocks
+  # until you type your password, therefore froze the whole idle timer at the
+  # moment it locked: the 600s `power-off-monitors` never fired, so the
+  # screen locked and then stayed lit indefinitely. The `lock` and
+  # `before-sleep` events had the same problem — a lid close on mains, or a
+  # suspend, wedged the timer until the session was unlocked again.
+  #
+  # `-w` is worth keeping, though, and that's why this is a wrapper rather
+  # than an `extraArgs = [ ]`: it is what makes swayidle hold logind's sleep
+  # delay lock until `before-sleep` has returned, which is the guarantee that
+  # the machine never suspends before the locker is on screen. So the command
+  # has to return quickly *and* not before the lock has taken — both of which
+  # this does.
+  #
+  # Idempotent, so every route to the lock can call it: already locked is a
+  # silent success rather than a second locker.
+  lockNow = pkgs.writeShellApplication {
+    name = "lock-now";
+    runtimeInputs = with pkgs; [
+      coreutils
+      util-linux
+      lockSession
+    ];
+    text = ''
+      lockfile="''${XDG_RUNTIME_DIR:-/tmp}/lock-session.lock"
+
+      # True once lock-session holds the lock. Testing it in a subshell takes
+      # the lock only for the life of that subshell, so this never races the
+      # real holder — and `flock -n` failing is the *positive* answer here,
+      # hence the negation.
+      locked() { ! ( flock -n 9 ) 9>"$lockfile"; }
+
+      if locked; then
+        exit 0
+      fi
+
+      # setsid so the locker outlives this script and its caller. swayidle
+      # reaps the `sh -c` that ran us and nothing else; niri's `spawn` and
+      # waybar's `on-click` behave the same way.
+      setsid lock-session "$@" &
+
+      # Bounded wait for the locker to come up. Six seconds is far longer than
+      # hyprlock needs and still short enough that a locker which never starts
+      # can't hold a suspend past logind's own five-second inhibit delay.
+      up=0
+      for _ in $(seq 1 60); do
+        if locked; then
+          up=1
+          break
+        fi
+        sleep 0.1
+      done
+
+      if [ "$up" = "0" ]; then
+        echo "lock-now: no locker came up within 6s" >&2
+        exit 1
+      fi
+
+      # The lock file says lock-session is *running*, which is a fraction of a
+      # second before hyprlock has claimed the session lock and drawn. There
+      # is no readiness signal to wait on instead — hyprlock has no IPC, and a
+      # Wayland session lock isn't visible to logind — so this is a settle,
+      # honestly a guess, and deliberately a generous one relative to what it
+      # is covering. It matters for the two callers that do something to the
+      # screen straight afterwards: `lock-blank` powers the monitors off, and
+      # `switch-user` hands the seat to the greeter.
+      sleep 0.3
+    '';
+  };
+
+  # Lock and turn the displays off, in one key.
+  #
+  # The two halves are independent mechanisms — the lock is a Wayland session
+  # lock, the blank is niri's own DPMS over IPC — so this is the only thing
+  # that does both, and it is what Mod+Shift+L runs. Any input powers the
+  # monitors back on and lands on the lock screen, exactly as the 600s idle
+  # blank does.
+  #
+  # `--grace 0` because this key means "I am leaving". The two-second grace an
+  # idle lock gets is there for the case where the timer fires as you sit back
+  # down; on a deliberate lock it is a window in which the very act of waking
+  # the screen to check that it locked would unlock it again.
+  lockBlank = pkgs.writeShellApplication {
+    name = "lock-blank";
+    runtimeInputs = with pkgs; [
+      niri
+      lockNow
+    ];
+    text = ''
+      # lock-now returns once the locker is up and settled, so there is
+      # nothing to sleep on here — see the comment on its settle.
+      lock-now --grace 0
+
+      niri msg action power-off-monitors
+    '';
+  };
+
   # Sleep inhibitor. One entry point for the keybind and the waybar module,
   # so the two can't disagree about the state.
   #
@@ -1076,14 +1228,15 @@ lockNowPlaying = pkgs.writeShellApplication {
     name = "switch-user";
     runtimeInputs = with pkgs; [
       dbus
-      lockSession
+      lockNow
     ];
     text = ''
       seat="''${XDG_SEAT_PATH:-/org/freedesktop/DisplayManager/Seat0}"
 
-      # Lock in the background — lock-session blocks until unlocked.
-      lock-session &
-      sleep 0.3
+      # lock-now returns once the locker is up rather than when it ends, and
+      # carries the settle that the hand-rolled `lock-session & sleep 0.3`
+      # here used to do by hand.
+      lock-now
 
       dbus-send --system --print-reply \
         --dest=org.freedesktop.DisplayManager \
@@ -1098,7 +1251,7 @@ lockNowPlaying = pkgs.writeShellApplication {
       wofi
       systemd
       niri
-      lockSession
+      lockNow
       switchUser
     ];
     text = ''
@@ -1112,7 +1265,7 @@ lockNowPlaying = pkgs.writeShellApplication {
         | wofi --dmenu --prompt "Session" --insensitive --width 260 --height 300)"
 
       case "$choice" in
-        *Lock*)        lock-session ;;
+        *Lock*)        lock-now ;;
         *"Switch user"*) switch-user ;;
         *"Log out"*)   niri msg action quit --skip-confirmation ;;
         *Suspend*)     systemctl suspend ;;
@@ -1512,6 +1665,8 @@ in
     wallpaperRestore
     screenshot
     lockSession
+    lockNow
+    lockBlank
     switchUser
     sessionMenu
     idleInhibit
@@ -1532,6 +1687,8 @@ in
       wallpaperRestore
       screenshot
       lockSession
+      lockNow
+      lockBlank
       switchUser
       sessionMenu
       idleInhibit

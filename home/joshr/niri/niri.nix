@@ -296,7 +296,24 @@ ${workspaceBlocks}
         // Lock is Mod+L, matching the Windows/KDE reflex. That costs the
         // vim-key `Mod+L` for focus-column-right — Mod+Right, Mod+scroll and
         // Mod+End all still walk right, so only the h/j/k/l set loses its "l".
-        Mod+L hotkey-overlay-title="Lock" { spawn "${bin niriScripts.lockSession}"; }
+        //
+        // `lock-now` rather than `lock-session`: it is the one entry point
+        // every route to the lock goes through — this key, the bar's lock
+        // button, the session menu, switch-user and swayidle — so a second
+        // request while already locked is a no-op instead of a second locker.
+        // See scripts.nix.
+        Mod+L hotkey-overlay-title="Lock" { spawn "${bin niriScripts.lockNow}"; }
+
+        // Lock *and* turn the displays off, in one key.
+        //
+        // Mod+L then Mod+Escape does the same thing in two presses; this is
+        // the "I'm walking away" version, and it skips the two-second grace
+        // that Mod+L keeps — see lockBlank in scripts.nix for why a
+        // deliberate lock wants no grace and an idle one does.
+        //
+        // Any input powers the monitors back on and lands on the lock screen,
+        // the same as the 600s idle blank in lock.nix.
+        Mod+Shift+L hotkey-overlay-title="Lock and blank" { spawn "${bin niriScripts.lockBlank}"; }
 
         // Blank the monitors now, from the lock screen or from the desktop.
         // Any input wakes them; on the lock screen that leaves swaylock
@@ -309,8 +326,10 @@ ${workspaceBlocks}
         // those through regardless (`allowed_when_locked` in src/input/mod.rs).
         // Setting the property here would in fact be a config *error*: niri
         // only accepts `allow-when-locked` on spawn binds. It's the same
-        // whitelist that lets swayidle's 360s blank fire through the lock in
-        // lock.nix.
+        // whitelist that lets swayidle's 600s blank, and Mod+Shift+L's blank,
+        // fire through the lock. The whitelist is checked in `do_action`, so
+        // it covers `niri msg action power-off-monitors` over IPC too, not
+        // only the keybind.
         //
         // Mod+Escape rather than bare Escape because niri intercepts a bound
         // key unconditionally — `should_intercept_key` matches binds before

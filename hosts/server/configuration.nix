@@ -22,7 +22,7 @@
     ../../modules/nixos/base.nix
     ../../modules/nixos/boot.nix
     ../../modules/nixos/cron.nix
-    ../../modules/nixos/users.nix
+    ../../modules/nixos/server-users.nix
 
     # Development tooling: direnv, Docker, libvirtd/QEMU/virt-manager, and
     # the nix settings per-project dev shells need.
@@ -34,7 +34,7 @@
     ../../modules/nixos/development.nix
   ];
 
-  networking.hostName = "server";
+  networking.hostName = "jrh-server-01";
 
   # No theming to carry and no wallpaper to draw, so the boot menu doesn't
   # need limine — systemd-boot is the most boring, best-tested option on a

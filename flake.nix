@@ -153,6 +153,7 @@
             homeModules = {
               joshr = ./home/joshr/gamestation.nix;
               raiden = ./home/raiden/gamestation.nix;
+              amandak = ./home/amandak/gamestation.nix;
             };
           };
 
@@ -161,6 +162,7 @@
             homeModules = {
               joshr = ./home/joshr/laptop.nix;
               raiden = ./home/raiden/laptop.nix;
+              amandak = ./home/amandak/laptop.nix;
             };
           };
 
@@ -176,6 +178,7 @@
             homeModules = {
               joshr = ./home/joshr/gamestation-niri.nix;
               raiden = ./home/raiden/gamestation-niri.nix;
+              amandak = ./home/amandak/gamestation-niri.nix;
             };
           };
 
@@ -184,6 +187,7 @@
             homeModules = {
               joshr = ./home/joshr/laptop-niri.nix;
               raiden = ./home/raiden/laptop-niri.nix;
+              amandak = ./home/amandak/laptop-niri.nix;
             };
           };
 
@@ -194,14 +198,13 @@
             hostModule = ./hosts/server/configuration.nix;
             homeModules = {
               joshr = ./home/joshr/server.nix;
-              raiden = ./home/raiden/server.nix;
             };
           };
         };
 
       # Starting points for per-project development environments:
       #
-      #   nix flake init -t github:joshrandall8478/fine-ill-try-nix#python
+      #   nix flake init -t github:joshrandall8478/nixos#python
       #
       # or `dev-init python`, which does that and sets up direnv in one go.
       # See "Development environments" in MANUAL.md.

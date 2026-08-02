@@ -14,6 +14,7 @@
     ./home.nix
     ./desktop-apps.nix
     ./niri
+    ./niri/privacy.nix
     ./displays/gamestation.nix
     ./office.nix
     ./obs.nix

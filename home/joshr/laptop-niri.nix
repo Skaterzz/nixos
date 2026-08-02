@@ -11,6 +11,7 @@
   imports = [
     ./home.nix
     ./niri
+    ./niri/privacy.nix
     ./displays/laptop.nix
     ./desktop-apps.nix
     ./office.nix

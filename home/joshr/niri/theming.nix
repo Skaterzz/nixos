@@ -183,7 +183,8 @@ let
     #battery,
     #bluetooth,
     #mpris,
-    #keyboard-state,
+    #custom-caps-lock,
+    #custom-gamemode,
     #custom-idle-inhibitor,
     #custom-lock,
     #custom-session {
@@ -225,23 +226,24 @@ let
       color: @warn;
     }
 
-    /* Caps lock, one slot to the left, and read the same way: dim while the
-       lock is off, warn-coloured while it's on. The colour is not the only
-       signal — the module swaps the glyph too (see waybar.nix) — so the state
-       still carries at a glance without relying on the theme's warn colour
-       being distinct from its dimmed foreground.
-
-       Selectors go through `label` rather than sitting on `#keyboard-state`:
-       the module is a box holding one label per lock, and `.locked` is set on
-       the label, not on the box. No hover rule, unlike its neighbours — this
-       one is an indicator with nothing to click. */
-    #keyboard-state label {
-      color: @fg-dim;
+    /* Caps lock, one slot to the left. No off state to style: the module is
+       on screen only while the lock is on and waybar hides it completely the
+       rest of the time (see capsLockWatch in scripts.nix), so this is the lit
+       colour and nothing else. No hover rule either, unlike its neighbours —
+       there is nothing here to click. */
+    #custom-caps-lock {
+      color: @warn;
       font-size: 15px;
     }
 
-    #keyboard-state label.locked {
-      color: @warn;
+    /* GameMode, next to it and hidden the same way, so again there is only a
+       lit state to write. The accent rather than warn: it sits directly
+       beside caps lock and the two can be on at once, so they are told apart
+       by colour as much as by shape — and unlike caps lock, gamemode being on
+       is a thing you asked for rather than something to warn you about. */
+    #custom-gamemode {
+      color: @accent;
+      font-size: 15px;
     }
 
     #pulseaudio.muted {

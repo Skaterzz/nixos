@@ -1652,6 +1652,161 @@ lockNowPlaying = pkgs.writeShellApplication {
       done
     '';
   };
+  # Caps lock for the bar — the glyph while the lock is on, nothing at all
+  # while it is off. See the custom/caps-lock module in waybar.nix.
+  #
+  # The empty line is the entire design. waybar hides a custom module whose
+  # text is empty (Custom::update), and hiding is the only way for a module to
+  # cost *no* room: a glyph styled invisible still holds its slot, and even a
+  # zero-width label still costs the 6px `spacing` the bar puts between
+  # modules, because GTK only skips that gap for children that are hidden
+  # outright. So an indicator that is meant to exist only while the lock is on
+  # has to be a custom module that prints nothing the rest of the time —
+  # exactly the trick cava-bar above uses to vanish when the music stops.
+  #
+  # That is also why this isn't waybar's own `keyboard-state` module, which is
+  # otherwise precisely this widget: it always draws its label, locked or not,
+  # and no stylesheet can take that label out of the layout.
+  #
+  # It watches the LED rather than the key. The compositor owns the lock state
+  # and mirrors it onto the caps LED of every keyboard, and the kernel hands
+  # each EV_LED change to everything holding the device open (INPUT_PASS_TO_ALL
+  # in drivers/input/input.c) — so a blocking select over the keyboards is the
+  # whole loop. No polling, and the glyph turns over with the keypress rather
+  # than at the next tick.
+  #
+  # Python rather than shell: the shell version is `evtest` piped into `read`,
+  # which means picking the right event device out of a hex LED bitmask in
+  # /proc/bus/input/devices, and stdbuf to defeat evtest's block buffering once
+  # its stdout is a pipe. python-evdev asks each device what it supports and
+  # reads the starting state with an ioctl, which is the part shell can't do
+  # at all.
+  #
+  # Reading /dev/input needs the `input` group; joshr has it from
+  # modules/nixos/users.nix. Without it every device fails to open, the script
+  # finds no keyboards and exits, and the bar is simply short one module.
+  capsLockWatch = pkgs.writeText "caps-lock-watch.py" ''
+    """Print the caps lock glyph while caps lock is on, an empty line while it
+    is off. One line per change, forever."""
+
+    import select
+    import sys
+
+    from evdev import InputDevice, ecodes, list_devices
+
+    GLYPH = "󰪛"
+
+
+    def keyboards():
+        """Every input device that reports a caps lock LED."""
+        found = []
+        for path in sorted(list_devices()):
+            try:
+                device = InputDevice(path)
+            except OSError:
+                continue
+            if ecodes.LED_CAPSL in device.capabilities().get(ecodes.EV_LED, []):
+                found.append(device)
+            else:
+                device.close()
+        return found
+
+
+    def emit(on):
+        print(GLYPH if on else "", flush=True)
+
+
+    def main():
+        devices = keyboards()
+        if not devices:
+            emit(False)
+            return 1
+
+        state = any(ecodes.LED_CAPSL in device.leds() for device in devices)
+        emit(state)
+
+        while True:
+            readable, _, _ = select.select(devices, [], [])
+            for device in readable:
+                try:
+                    events = list(device.read())
+                except BlockingIOError:
+                    # Woken with nothing to read. Not an error, and not worth
+                    # tearing the module down over.
+                    continue
+                except OSError:
+                    # The keyboard was unplugged. Leave the slot empty and quit;
+                    # waybar's restart-interval starts a fresh scan, which is
+                    # also how a keyboard plugged in later gets picked up.
+                    emit(False)
+                    return 1
+
+                for event in events:
+                    if event.type != ecodes.EV_LED or event.code != ecodes.LED_CAPSL:
+                        continue
+                    if bool(event.value) != state:
+                        state = bool(event.value)
+                        emit(state)
+
+
+    if __name__ == "__main__":
+        sys.exit(main())
+  '';
+
+  capsLock = pkgs.writeShellApplication {
+    name = "caps-lock";
+    runtimeInputs = [ (pkgs.python3.withPackages (ps: [ ps.evdev ])) ];
+    text = ''
+      exec python3 ${capsLockWatch}
+    '';
+  };
+
+  # GameMode for the bar: the pad while a game is holding gamemode, nothing at
+  # all the rest of the time. See the custom/gamemode module in waybar.nix.
+  #
+  # Empty output rather than a dimmed glyph, the same as caps-lock above and
+  # for the same reason — gamemode is off nearly always, and an indicator for
+  # something that is almost never happening should cost nothing while it
+  # isn't.
+  #
+  # This one is asked rather than watched: the module polls it every 30s, and
+  # the gamemode start/end hooks in modules/nixos/gaming.nix send waybar
+  # SIGRTMIN+9 so the real answer lands the moment a game takes gamemode.
+  # Same arrangement as idle-inhibit above, and the poll is the backstop for
+  # the same reason — it catches a state that changed without the hook, which
+  # here means gamemoded having been killed outright.
+  gamemodeStatus = pkgs.writeShellApplication {
+    name = "gamemode-status";
+    runtimeInputs = with pkgs; [
+      gamemode
+      procps
+    ];
+    text = ''
+      # There is nothing to ask when the daemon is down, and asking would
+      # *start* it: gamemoded is D-Bus activated, so `gamemoded --status`
+      # would launch the very thing it is supposed to be reporting on, every
+      # time the module ticks.
+      #
+      # pgrep rather than `systemctl --user is-active gamemoded.service`
+      # because that hard-codes a unit name this config never sets. If the
+      # name were ever wrong the check would fail exactly like "gamemode is
+      # off" — silence that looks correct — where a wrong process name at
+      # least fails the same way for everyone and shows up the first time a
+      # game runs.
+      if ! pgrep -x -u "$UID" gamemoded >/dev/null; then
+        echo
+        exit 0
+      fi
+
+      # "gamemode is inactive", "gamemode is active", or "gamemode is active
+      # and [pid] registered". Matching `is active` rather than `active` is
+      # the whole trick — "inactive" contains "active".
+      case "$(gamemoded --status 2>/dev/null || true)" in
+        *"is active"*) printf '%s\n' '󰊗' ;;
+        *)             echo ;;
+      esac
+    '';
+  };
 in
 {
   home.packages = [
@@ -1674,6 +1829,8 @@ in
     volume
     brightness
     cavaBar
+    capsLock
+    gamemodeStatus
   ];
 
   _module.args.niriScripts = {
@@ -1696,6 +1853,8 @@ in
       volume
       brightness
       cavaBar
+      capsLock
+      gamemodeStatus
       ;
 
     # Not a script: the patched swaylock that lock-session wraps. Exported so

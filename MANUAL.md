@@ -187,9 +187,9 @@ home/joshr/niri/
 
 Left is the username, workspaces and the focused window title, centre is the
 clock and date, right is the tray, media controls, volume, network, battery,
-caps lock, the idle inhibitor, then **lock** and **power** as a matched pair at
-the far end. Each group is its own rounded floating pill rather than one long
-bar.
+caps lock and gamemode while each is on, the idle inhibitor, then **lock** and
+**power** as a matched pair at the far end. Each group is its own rounded
+floating pill rather than one long bar.
 
 **The username** is the first slot, in the accent colour — the same treatment
 the clock gets, because both are labels rather than controls. It's static
@@ -203,23 +203,55 @@ button goes red, because it's the one that can end the session. The lock
 button runs the same `lock-now` as `Mod+L` and the session menu's "Lock"
 entry, so all three take the active theme's colours.
 
-**Caps lock** is one glyph between the battery and the idle inhibitor — dim
-while the lock is off, the theme's warn colour while it's on. The glyph changes
-shape as well as colour, so the state still reads in a palette where warn and
-the dimmed foreground sit close together. It keeps its slot either way rather
-than appearing only when the lock is on, which would shove the modules beside
-it sideways on every press.
+**Caps lock** is one glyph between the battery and the idle inhibitor, in the
+theme's warn colour, and it is on the bar *only* while caps lock is on. The
+rest of the time it isn't dimmed or blank, it's gone — no glyph, no gap, the
+bar exactly as it was before.
 
-It's waybar's own `keyboard-state` module, not a script: it reads the
-keyboard's LED through libevdev and redraws on the event, so the glyph turns
-over with the keypress rather than up to a poll interval later. That needs read
-access to `/dev/input/event*`, which comes from `joshr` being in the `input`
-group (`modules/nixos/users.nix`). Take that membership away and the module
-throws while it's being built and waybar simply leaves the slot out — a missing
-glyph, not a missing bar. This is unrelated to the caps lock OSD that swayosd
-deliberately doesn't run (see "The on-screen display"): that one is a system
-service reading every input device, where this is the session's own bar reading
-its own keyboard.
+That last part is why it's a custom module and not waybar's built-in
+`keyboard-state`, which reads the same LED and would need no script at all.
+`keyboard-state` always draws its label; even with the text emptied out, the
+label stays in the layout and still costs the gap the bar puts between
+modules, and a GTK stylesheet has no `display: none` to take it out. A custom
+module that prints an empty line is hidden by waybar itself and costs nothing
+— the same trick the visualiser below uses to disappear when the music stops.
+
+The script watches the caps LED rather than polling: the compositor mirrors
+the lock state onto every keyboard's LED, and the kernel passes each change to
+everything holding the device open, so one blocking `select` is the whole loop
+and the glyph turns over with the keypress. It's Python because it needs to
+ask each device whether it has a caps LED and read the starting state with an
+ioctl, neither of which shell can do. Reading `/dev/input` needs the `input`
+group, which `joshr` has from `modules/nixos/users.nix`; without it the script
+finds no keyboards and exits, and the bar is just short one module. See
+`capsLockWatch` in `home/joshr/niri/scripts.nix`.
+
+None of this is the caps lock OSD that swayosd deliberately doesn't run (see
+"The on-screen display"): that one is a system service reading every input
+device to draw a pop-up, where this is the session's own bar reading the
+keyboard the session is already using.
+
+**GameMode** sits immediately to its right and disappears the same way — a
+controller glyph in the accent colour while a game holds gamemode, and no slot
+at all the rest of the time. The accent rather than caps lock's warn colour
+because the two are neighbours that can be lit at once, and because gamemode
+being on is something you asked for rather than something to warn you about.
+
+It's polled, not watched: gamemode has somewhere to *ask* — a D-Bus daemon
+with a status call — but nothing a shell can subscribe to. So the module works
+the way the idle inhibitor does, a 30-second `interval` as the backstop and a
+`signal` for the answer that matters. The gamemode start and end hooks in
+`modules/nixos/gaming.nix` already fire a notification; they now also send
+waybar `SIGRTMIN+9`, so the glyph appears as the game takes gamemode instead
+of up to half a minute later. **The signal number is written in two places**
+— that hook and the module in `waybar.nix` — and nothing checks that they
+still agree.
+
+The script (`gamemodeStatus` in `scripts.nix`) checks that `gamemoded` is
+running before asking it anything. gamemoded is D-Bus activated, so a bare
+`gamemoded --status` on a timer would keep starting the very daemon it's
+reporting on. It matches `is active` and not `active`, for the reason you'd
+expect from "inactive".
 
 **The visualiser** is eight bars of cava just left of the track name, in the
 theme's dimmed accent. It is only there while something is actually making

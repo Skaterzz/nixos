@@ -116,8 +116,8 @@ in
       nixos-cd = {
         description = "sudo and cd to /etc/nixos";
         body = ''
-        sudo -i
         cd /etc/nixos
+        sudo -s
         '';
       };
       nix-clean = {

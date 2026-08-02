@@ -152,7 +152,7 @@
             hostModule = ./hosts/gamestation/configuration.nix;
             homeModules = {
               joshr = ./home/joshr/gamestation.nix;
-              raiden = ./home/raiden/gamestation.nix;
+              # raiden = ./home/raiden/gamestation.nix;
               amandak = ./home/amandak/gamestation.nix;
             };
           };
@@ -161,7 +161,7 @@
             hostModule = ./hosts/laptop/configuration.nix;
             homeModules = {
               joshr = ./home/joshr/laptop.nix;
-              raiden = ./home/raiden/laptop.nix;
+              # raiden = ./home/raiden/laptop.nix;
               amandak = ./home/amandak/laptop.nix;
             };
           };
@@ -177,7 +177,7 @@
             hostModule = ./hosts/gamestation-niri/configuration.nix;
             homeModules = {
               joshr = ./home/joshr/gamestation-niri.nix;
-              raiden = ./home/raiden/gamestation-niri.nix;
+              # raiden = ./home/raiden/gamestation-niri.nix;
               amandak = ./home/amandak/gamestation-niri.nix;
             };
           };
@@ -186,7 +186,7 @@
             hostModule = ./hosts/laptop-niri/configuration.nix;
             homeModules = {
               joshr = ./home/joshr/laptop-niri.nix;
-              raiden = ./home/raiden/laptop-niri.nix;
+              # raiden = ./home/raiden/laptop-niri.nix;
               amandak = ./home/amandak/laptop-niri.nix;
             };
           };

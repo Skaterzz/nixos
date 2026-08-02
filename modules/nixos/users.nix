@@ -57,25 +57,25 @@ in
   # the "joshr" default in modules/nixos/options.nix stands) is what the login
   # screen and the boot menu take their theme and wallpaper from, and it is
   # the account the OpenRGB resume service runs as. Nothing about this one is
-  # machine-wide.
-  users.users.raiden = {
-    isNormalUser = true;
-    description = "Samuel Hunt";
-    shell = pkgs.fish;
+  # # machine-wide.
+  # users.users.raiden = {
+  #   isNormalUser = true;
+  #   description = "Samuel Hunt";
+  #   shell = pkgs.fish;
 
-    # No `wheel`: this account can use the machine but not administer it,
-    # which is the difference between it and joshr. `nixos-rebuild` and
-    # everything else behind sudo therefore needs joshr. Add "wheel" to the
-    # list to change that.
-    extraGroups = sessionGroups;
+  #   # No `wheel`: this account can use the machine but not administer it,
+  #   # which is the difference between it and joshr. `nixos-rebuild` and
+  #   # everything else behind sudo therefore needs joshr. Add "wheel" to the
+  #   # list to change that.
+  #   extraGroups = sessionGroups;
 
-    # No authorized keys — the one above is joshr's. Add this account's own
-    # public key here to reach it over SSH; base.nix has password auth off, so
-    # until then it is a console/greeter login only.
+  #   # No authorized keys — the one above is joshr's. Add this account's own
+  #   # public key here to reach it over SSH; base.nix has password auth off, so
+  #   # until then it is a console/greeter login only.
 
-    # Same caveat as joshr's above: first login only, then `passwd`.
-    initialPassword = "changeme";
-  };
+  #   # Same caveat as joshr's above: first login only, then `passwd`.
+  #   initialPassword = "changeme";
+  # };
 
   users.users.amandak = {
     isNormalUser = true;

@@ -152,5 +152,6 @@ in
       fd
       lazygit
       gnumake
+      claude-code
     ]);
 }

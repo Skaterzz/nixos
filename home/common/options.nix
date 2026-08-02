@@ -16,6 +16,15 @@
     '';
   };
 
+
+  options.local.waybar.cavaInBar = lib.mkOption {
+    type = lib.types.bool;
+    default = false;
+    description = ''
+      Enable cava in waybar in niri
+    '';
+  };
+
   # Per-host display layout for niri. Rendered into `output` blocks in
   # config.kdl by home/joshr/niri/niri.nix.
   #

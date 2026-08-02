@@ -890,7 +890,7 @@ lockNowPlaying = pkgs.writeShellApplication {
 
     # Remove characters that could break the generated Hyprlang line.
     first_name="$(printf %s "$first_name" | tr -d '\r\n{}"#')"
-    [ -n "$first_name" ] || first_name=${lib.escapeShellArg config.home.username}
+    [ -n "$first_name" ] || first_name="${lib.escapeShellArg config.home.username}"
 
     # Hyprlock gets a fixed, punctuation-free path. The selected wallpaper
     # itself may contain spaces or characters meaningful to Hyprlang.

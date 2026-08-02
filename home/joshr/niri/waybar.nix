@@ -4,8 +4,8 @@
 #
 #   left    workspaces + focused window title
 #   centre  clock and date
-#   right   tray, nowplaying, audio, network, battery, caps lock (only when
-#           it's on), session menu
+#   right   tray, nowplaying, audio, network, battery, caps lock and gamemode
+#           (each only while it's on), session menu
 #
 # Theming: waybar is started with `-s <active theme>/waybar.css` and the
 # switcher restarts it, so a theme change swaps the whole stylesheet. The
@@ -59,6 +59,7 @@ in
         "network"
         "battery"
         "custom/caps-lock"
+        "custom/gamemode"
         "custom/idle-inhibitor"
         "custom/lock"
         "custom/session"
@@ -306,6 +307,30 @@ in
         format = "{}";
         exec = lib.getExe niriScripts.capsLock;
         restart-interval = 5;
+        tooltip = false;
+      };
+
+      # GameMode, immediately right of caps lock and hidden the same way: the
+      # script prints an empty line while nothing holds gamemode, waybar hides
+      # the module, and the slot costs nothing. Two indicators that are both
+      # absent nearly all the time, side by side.
+      #
+      # Polled rather than continuous, unlike its neighbour, because gamemode
+      # has somewhere to ask — a D-Bus daemon with a status call — but nothing
+      # to subscribe to from a shell. So it works the way the idle inhibitor
+      # does: `signal` for the answer that matters and `interval` as the
+      # backstop.
+      #
+      # SIGRTMIN+9 is sent by the gamemode start/end hooks in
+      # modules/nixos/gaming.nix, which is what makes the pad appear as the
+      # game takes gamemode rather than up to 30 seconds afterwards. The two
+      # numbers have to agree; nothing checks that they do. 8 next door is the
+      # idle inhibitor's.
+      "custom/gamemode" = {
+        format = "{}";
+        exec = lib.getExe niriScripts.gamemodeStatus;
+        interval = 30;
+        signal = 9;
         tooltip = false;
       };
 

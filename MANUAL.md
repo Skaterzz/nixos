@@ -187,9 +187,9 @@ home/joshr/niri/
 
 Left is the username, workspaces and the focused window title, centre is the
 clock and date, right is the tray, media controls, volume, network, battery,
-caps lock while it's on, the idle inhibitor, then **lock** and **power** as a
-matched pair at the far end. Each group is its own rounded floating pill rather than one long
-bar.
+caps lock and gamemode while each is on, the idle inhibitor, then **lock** and
+**power** as a matched pair at the far end. Each group is its own rounded
+floating pill rather than one long bar.
 
 **The username** is the first slot, in the accent colour — the same treatment
 the clock gets, because both are labels rather than controls. It's static
@@ -230,6 +230,28 @@ None of this is the caps lock OSD that swayosd deliberately doesn't run (see
 "The on-screen display"): that one is a system service reading every input
 device to draw a pop-up, where this is the session's own bar reading the
 keyboard the session is already using.
+
+**GameMode** sits immediately to its right and disappears the same way — a
+controller glyph in the accent colour while a game holds gamemode, and no slot
+at all the rest of the time. The accent rather than caps lock's warn colour
+because the two are neighbours that can be lit at once, and because gamemode
+being on is something you asked for rather than something to warn you about.
+
+It's polled, not watched: gamemode has somewhere to *ask* — a D-Bus daemon
+with a status call — but nothing a shell can subscribe to. So the module works
+the way the idle inhibitor does, a 30-second `interval` as the backstop and a
+`signal` for the answer that matters. The gamemode start and end hooks in
+`modules/nixos/gaming.nix` already fire a notification; they now also send
+waybar `SIGRTMIN+9`, so the glyph appears as the game takes gamemode instead
+of up to half a minute later. **The signal number is written in two places**
+— that hook and the module in `waybar.nix` — and nothing checks that they
+still agree.
+
+The script (`gamemodeStatus` in `scripts.nix`) checks that `gamemoded` is
+running before asking it anything. gamemoded is D-Bus activated, so a bare
+`gamemoded --status` on a timer would keep starting the very daemon it's
+reporting on. It matches `is active` and not `active`, for the reason you'd
+expect from "inactive".
 
 **The visualiser** is eight bars of cava just left of the track name, in the
 theme's dimmed accent. It is only there while something is actually making

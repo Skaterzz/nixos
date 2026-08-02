@@ -184,6 +184,7 @@ let
     #bluetooth,
     #mpris,
     #custom-caps-lock,
+    #custom-gamemode,
     #custom-idle-inhibitor,
     #custom-lock,
     #custom-session {
@@ -232,6 +233,16 @@ let
        there is nothing here to click. */
     #custom-caps-lock {
       color: @warn;
+      font-size: 15px;
+    }
+
+    /* GameMode, next to it and hidden the same way, so again there is only a
+       lit state to write. The accent rather than warn: it sits directly
+       beside caps lock and the two can be on at once, so they are told apart
+       by colour as much as by shape — and unlike caps lock, gamemode being on
+       is a thing you asked for rather than something to warn you about. */
+    #custom-gamemode {
+      color: @accent;
       font-size: 15px;
     }
 

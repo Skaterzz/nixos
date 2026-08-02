@@ -7,7 +7,7 @@
 
   users.users.joshr = {
     isNormalUser = true;
-    description = "Joshua Randall";
+    description = "Josh Randall";
     shell = pkgs.fish;
 
     # `docker` and `libvirtd` are conditional because the groups only exist

@@ -186,6 +186,7 @@
             hostModule = ./hosts/laptop-niri/configuration.nix;
             homeModules = {
               joshr = ./home/joshr/laptop-niri.nix;
+              delta = ./home/delta/laptop-niri.nix;
               # raiden = ./home/raiden/laptop-niri.nix;
               amandak = ./home/amandak/laptop-niri.nix;
             };

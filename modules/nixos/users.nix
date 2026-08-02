@@ -95,22 +95,22 @@ in
     # Same caveat as joshr's above: first login only, then `passwd`.
     initialPassword = "changeme";
   };
-   users.users.delta = {
-    isNormalUser = true;
-    description = "Donovan Romaya";
-    shell = pkgs.fish;
+  #  users.users.delta = {
+  #   isNormalUser = true;
+  #   description = "Donovan Romaya";
+  #   shell = pkgs.fish;
 
-    # No `wheel`: this account can use the machine but not administer it,
-    # which is the difference between it and joshr. `nixos-rebuild` and
-    # everything else behind sudo therefore needs joshr. Add "wheel" to the
-    # list to change that.
-    extraGroups = sessionGroups;
+  #   # No `wheel`: this account can use the machine but not administer it,
+  #   # which is the difference between it and joshr. `nixos-rebuild` and
+  #   # everything else behind sudo therefore needs joshr. Add "wheel" to the
+  #   # list to change that.
+  #   extraGroups = sessionGroups;
 
-    # No authorized keys — the one above is joshr's. Add this account's own
-    # public key here to reach it over SSH; base.nix has password auth off, so
-    # until then it is a console/greeter login only.
+  #   # No authorized keys — the one above is joshr's. Add this account's own
+  #   # public key here to reach it over SSH; base.nix has password auth off, so
+  #   # until then it is a console/greeter login only.
 
-    # Same caveat as joshr's above: first login only, then `passwd`.
-    initialPassword = "changeme";
-  };
+  #   # Same caveat as joshr's above: first login only, then `passwd`.
+  #   initialPassword = "changeme";
+  # };
 }

@@ -76,13 +76,12 @@ in
     ];
   };
 
-  # The patched build from scripts.nix, not pkgs.swaylock-effects — see the
-  # comment on `swaylock` there. Stock here would mean a bare `swaylock` on
-  # PATH whose date still overhangs the ring.
+  # The patched swaylock build from scripts.nix keeps the date within its
+  # ring. Hyprlock no longer needs a custom source patch.
   home.packages = [
     niriScripts.swaylock
     pkgs.hyprlock
-  ]; 
+  ];
 
   # The sleep inhibitor: "keep this machine awake until I say otherwise".
   #

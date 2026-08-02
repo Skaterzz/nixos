@@ -776,6 +776,16 @@ lockNowPlaying = pkgs.writeShellApplication {
     '';
   };
 
+  # Exposed deliberately on the lock screen. Suspending leaves Hyprlock in
+  # place, so waking the machine returns to the same locked session.
+  suspendSystem = pkgs.writeShellApplication {
+    name = "suspend-system";
+    runtimeInputs = [ pkgs.systemd ];
+    text = ''
+      exec systemctl suspend
+    '';
+  };
+
   lockSession = pkgs.writeShellApplication {
   name = "lock-session";
 
@@ -900,7 +910,7 @@ lockNowPlaying = pkgs.writeShellApplication {
 
     cat > "$config" <<EOF
     general {
-        # The switch-user control below is clickable, so keep the pointer
+        # The session controls below are clickable, so keep the pointer
         # visible instead of making users hunt for it by echolocation.
         hide_cursor = false
         ignore_empty_input = true
@@ -1020,19 +1030,35 @@ lockNowPlaying = pkgs.writeShellApplication {
         valign = bottom
     }
 
-    # Return to SDDM while this user's session remains locked on its VT.
+    # Lightweight session actions, styled like the clock rather than as
+    # boxed controls. Hyprlock still shows the normal pointer over each label,
+    # but there is no custom color, scaling, or opacity hover effect.
     label {
         monitor =
-        text = 󰍃  Switch user
+        text = 󰍃 Switch user
         color = rgba(''${LOCK_FG}cc)
-        font_size = 17
+        font_size = 15
         font_family = FiraCode Nerd Font
 
-        position = 0, 18
+        position = -78, 18
         halign = center
         valign = bottom
 
         onclick = ${lib.getExe switchToGreeter}
+    }
+
+    label {
+        monitor =
+        text = 󰒲 Sleep
+        color = rgba(''${LOCK_FG}cc)
+        font_size = 15
+        font_family = FiraCode Nerd Font
+
+        position = 78, 18
+        halign = center
+        valign = bottom
+
+        onclick = ${lib.getExe suspendSystem}
     }
     EOF
 

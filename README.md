@@ -35,12 +35,15 @@ modules/nixos/
   cron.nix                        # local.cron.jobs -> the system crontab
   emoji.nix                       # Microsoft Fluent Emoji as the system emoji font
   plasma-xdg-data-dirs.nix        # workaround for nixpkgs#126590 (see below)
-  nvidia.nix                      # NVIDIA driver + 32-bit graphics for Steam/Proton
+  nvidia.nix                      # NVIDIA driver, 32-bit graphics for Steam/Proton,
+                                  #   and the suspend/resume video-memory handling
   gaming.nix                      # Steam, MangoHud
+  openrgb.nix                     # OpenRGB daemon + re-applying the profile on resume
   laptop.nix                       # power-profiles-daemon, upower, thermald, fstrim
   power.nix                        # no idle suspend while on mains power
   boot.nix                         # bootloader: limine theming + other-OS detection
-  options.nix                      # local.boot.*, local.power.*, local.sddm.*
+  options.nix                      # local.boot.*, local.power.*, local.sddm.*,
+                                   #   local.openrgb.*
   users.nix                        # the `joshr` and `root` accounts
 home/common/
   options.nix                      # local.* options the entrypoints toggle
@@ -618,6 +621,84 @@ setting one option to different values is a conflict NixOS refuses to merge —
 hardware rather than a desktop session, which is why `laptop.nix` is where it
 lives; `niri.nix` also runs on `gamestation-niri`, which has no lid.
 
+### Coming back from suspend
+
+Two things on the desk don't survive a sleep on their own, and neither is the
+session's fault — both are fixed at the system level.
+
+**The NVIDIA card.** By default the driver throws video memory away when the
+machine suspends. Nothing warns you: the suspend works, the machine wakes, the
+fans spin, and the session never comes back — niri's framebuffers, textures
+and every GL/Vulkan context lived in memory the driver no longer has, so it
+can't take the GPU back and you get a black screen on a machine that is
+otherwise running. SSH answering while the monitors stay dark is the quickest
+way to prove that's what happened.
+
+`hardware.nvidia.powerManagement.enable` (`modules/nixos/nvidia.nix`) is the
+fix, and it's three things at once: `NVreg_PreserveVideoMemoryAllocations=1`
+on the nvidia module, `nvidia-suspend.service` and `nvidia-hibernate.service`
+ordered *before* the systemd unit that does the sleeping so the save happens
+while there's still a machine to save from, and `nvidia-resume.service`
+ordered *after* both to put the memory back. All three are `nvidia-sleep.sh`;
+nixpkgs generates the units. After a rebuild:
+
+```bash
+systemctl list-unit-files 'nvidia-*'
+grep PreserveVideoMemoryAllocations /proc/driver/nvidia/params
+```
+
+`powerManagement.kernelSuspendNotifier` is pinned off there, and that line
+looks redundant but isn't. The driver has a second mechanism — it hooks the
+kernel's own PM notifier chain and does the save and restore itself, no
+systemd units involved — and nixpkgs turns that on **by default** for the open
+kernel modules on a driver this new. When it's on, none of the three services
+are generated, so a rebuild leaves `systemctl list-unit-files 'nvidia-*'` just
+as empty as it was and it looks like nothing changed. False keeps the systemd
+path, which is the older and far more travelled of the two; deleting the line
+is how to try the newer one, and it's worth trying if resume is still
+unreliable with the services in place.
+
+The saved video memory goes to a file under `/tmp`
+(`NVreg_TemporaryFilePath`), which on this machine is a directory on the root
+btrfs subvolume — real disk, which is what it needs to be. If `boot.tmp.useTmpfs`
+is ever switched on here, point that parameter somewhere on disk in the same
+breath, or the "save" becomes a copy from RAM to RAM: double the memory for a
+suspend, and hibernation stops working entirely.
+
+```nix
+hardware.nvidia.moduleParams.nvidia.NVreg_TemporaryFilePath = "/var/tmp";
+```
+
+**The RGB lighting.** Suspend cuts power to the controllers, and they only
+hold what was last written to them — USB ones are re-enumerated on the way
+back up and the ones on the board return to their firmware default, which is
+usually the rainbow. Nothing re-applies the profile, so the lighting is right
+until the first suspend and wrong from then until the next login.
+`modules/nixos/openrgb.nix` adds `openrgb-resume.service`, which re-applies
+`local.openrgb.profile` after every sleep (`local.openrgb.applyOnResume` to
+turn it off).
+
+It runs as `local.desktop.primaryUser` rather than root, because profiles are
+runtime state living in that account's `~/.config/OpenRGB` — root would find
+nothing there and say so. It waits five seconds first, because systemd calls
+the resume finished as soon as the kernel is back, which is well before USB
+has re-enumerated; a run started at that instant simply doesn't see the
+keyboard yet.
+
+The unit is shaped the way `systemd.special(7)` recommends for "run something
+on resume", and the way nixpkgs' own `powerManagement.resumeCommands` is: it's
+`WantedBy` and `Before` `sleep.target` — one target that covers suspend,
+hibernate, hybrid-sleep and suspend-then-hibernate — with the work in
+`ExecStop`, since systemd stops units in the reverse of the order it started
+them and "after `sleep.target` stops" is another way of saying "after the
+machine wakes up". So `systemctl status openrgb-resume` reads `active
+(exited)` whenever the machine is awake: that's the unit armed, not the unit
+run. What it did last time is in the journal.
+
+```bash
+journalctl -u openrgb-resume -b
+```
+
 ### Displays
 
 One file per host under `home/joshr/displays/`, kept separate so a monitor
@@ -974,26 +1055,45 @@ of your own session.
 
 ### RGB lighting
 
-The OpenRGB daemon is a system service (`modules/nixos/gaming.nix`); the niri
-session starts its tray applet at login and applies a profile:
+`modules/nixos/openrgb.nix`, imported by `gaming.nix`, so it lands on the two
+`gamestation` hosts and not the laptop. It runs the OpenRGB daemon, the niri
+session starts the tray applet at login, and both apply one profile:
 
 ```nix
-local.openrgb.profile = "main";   # ~/.config/OpenRGB/main.orp
+local.openrgb.profile = "Main";   # ~/.config/OpenRGB/Main.orp
 ```
 
-Profiles are made from OpenRGB's own UI ("Save Profile") and are runtime
-state, not something this repo writes — naming one that doesn't exist yet is
-harmless, OpenRGB says so and carries on. The applet is launched with
-`--startminimized`, which is load-bearing twice over: OpenRGB drops to CLI
-mode and *exits* as soon as it's given any option, so `--profile` on its own
-would set the lighting and quit with no tray icon. `--startminimized` implies
-`--gui` and keeps the window out of the way.
+That name is a filename and is case-sensitive — `Main` and `main` are two
+different profiles. Profiles are made from OpenRGB's own UI ("Save Profile")
+and are runtime state, not something this repo writes, so naming one that
+doesn't exist yet is harmless: the applet says "Profile failed to load" and
+carries on, and the resume service checks for the file and does nothing.
 
-`local.openrgb.monochromeIcon` (on by default) swaps the multicolour logo for
-a plain one. It reaches the **launcher** icon only: OpenRGB loads its tray
-icon from a pixmap compiled into the binary rather than looking it up in the
-icon theme, so nothing outside the package can change that one. Upstream has
-an open request for it (OpenRGB issue #2453).
+The applet is launched with `--startminimized`, which is load-bearing twice
+over: OpenRGB drops to CLI mode and *exits* as soon as it's given any option,
+so `--profile` on its own would set the lighting and quit with no tray icon.
+`--startminimized` implies `--gui` and keeps the window out of the way. (The
+resume service is the case that *wants* that CLI behaviour, and gets it by
+leaving the flag out.)
+
+Each argument is its own string in the config —
+`spawn-at-startup "…/openrgb" "--startminimized" "--profile" "Main"`. This is
+the one thing to get right here: `spawn-at-startup` is not a shell, niri execs
+the first string and hands it the rest, so the whole command line packed into
+one string is a program name with spaces in it. It fails with `ENOENT`,
+quietly, into niri's log — which is exactly what it did for a while, and why
+the lighting was only ever whatever the last thing to touch it had left.
+
+`local.openrgb.autostart` decides whether the applet starts at all, and
+defaults to whether the daemon is enabled: on at the desk, off on the laptop,
+where it would cost a tray icon, a Qt process and a failed profile load every
+session for nothing to talk to. The laptop has no `openrgb` on PATH either —
+the package comes with the daemon's module — so on that host it's
+`nix run nixpkgs#openrgb` for a one-off, or importing `gaming.nix` to have it
+properly.
+
+The lighting does not survive a suspend on its own; see "Coming back from
+suspend" above for the service that puts it back.
 
 ## Wallpapers
 

@@ -199,6 +199,7 @@ let
     #pulseaudio,
     #network,
     #privacy,
+    #custom-microphone-privacy,
     #battery,
     #bluetooth,
     #mpris,
@@ -229,9 +230,24 @@ let
     #battery:hover,
     #mpris:hover,
     #bluetooth:hover,
+    #custom-microphone-privacy:hover,
     #custom-idle-inhibitor:hover,
     #custom-lock:hover {
       background-color: alpha(@accent, 0.14);
+    }
+
+    /* Visible only while a non-Cava client is capturing. Orange means live;
+       clicking mutes the source device the active application actually uses. */
+    #custom-microphone-privacy {
+      font-size: 15px;
+    }
+
+    #custom-microphone-privacy.active {
+      color: #ff9800;
+    }
+
+    #custom-microphone-privacy.muted {
+      color: @fg-dim;
     }
 
     /* Dim when idling is normal, lit when the machine is being held awake —

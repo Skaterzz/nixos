@@ -70,6 +70,7 @@ in
         "bluetooth"
         "network"
         "privacy"
+        "custom/microphone-privacy"
         "battery"
         "custom/caps-lock"
         "custom/gamemode"

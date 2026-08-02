@@ -1,4 +1,4 @@
-{ config, pkgs, inputs, ... }:
+{ config, lib, pkgs, inputs, ... }:
 
 {
   # Everything here is desktop-agnostic. The desktop itself — ./plasma.nix or
@@ -19,11 +19,18 @@
   ];
 
   # The one place this profile names its user. Everything else that needs a
-  # path builds it from `config.home.homeDirectory`, so changing the name
-  # here is the whole change — there is no second copy of "joshr" spelled
-  # into a path anywhere under home/.
-  home.username = "joshr";
-  home.homeDirectory = "/home/${config.home.username}";
+  # path builds it from `config.home.homeDirectory` or `config.home.username`,
+  # so changing the name here is the whole change — there is no second copy of
+  # "joshr" spelled into a path anywhere under home/.
+  #
+  # `mkDefault` because this profile is worn by more than one account: the
+  # entrypoints in home/raiden/ import the ones next to this file and then say
+  # their own name, at ordinary priority, which is what wins here. Everything
+  # downstream — the home directory below, the Firefox profile directory, the
+  # private desktop-entry IDs, the OBS theme ID — is derived rather than
+  # written out, so that one line is the whole of the difference.
+  home.username = lib.mkDefault "joshr";
+  home.homeDirectory = lib.mkDefault "/home/${config.home.username}";
 
   # Do not bump this after the initial install; see the Home Manager manual.
   home.stateVersion = "26.05";

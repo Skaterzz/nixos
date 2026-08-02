@@ -61,6 +61,10 @@ the machine.
   - [When it goes wrong](#when-it-goes-wrong)
 - [Scheduled jobs](#scheduled-jobs)
   - [When not to use it](#when-not-to-use-it)
+- [The accounts](#the-accounts)
+  - [What "primary user" actually decides](#what-primary-user-actually-decides)
+  - [One profile, two accounts](#one-profile-two-accounts)
+  - [Adding a third](#adding-a-third)
 - [The root account](#the-root-account)
 - [Where things came from](#where-things-came-from)
 - [Before you build this](#before-you-build-this)
@@ -111,10 +115,10 @@ modules/nixos/
   boot.nix                         # bootloader: limine theming + other-OS detection
   options.nix                      # local.boot.*, local.power.*, local.sddm.*,
                                    #   local.openrgb.*, local.virtualisation.*
-  users.nix                        # the `joshr` and `root` accounts
+  users.nix                        # the `joshr`, `raiden` and `root` accounts
 home/common/
   options.nix                      # local.* options the entrypoints toggle
-  shell.nix                        # fish + starship, shared by joshr and root
+  shell.nix                        # fish + starship, shared by every account
   files/                           # starship.toml, smallfetch.jsonc
 home/joshr/
   gamestation.nix                  # host entrypoint: enables the 2nd-monitor panel
@@ -138,6 +142,11 @@ home/joshr/
     vscode.nix lock.nix            #   editor theming, idle handling
   plasma.nix                       # KDE Plasma settings/panels/shortcuts (plasma-manager)
   files/                           # DarkObsidianII.colors
+home/raiden/
+  home.nix                         # names the account, and nothing else
+  gamestation.nix laptop.nix       # host entrypoints, each importing joshr's
+  gamestation-niri.nix             #   counterpart verbatim
+  laptop-niri.nix server.nix
 home/root/
   home.nix                         # fish + starship only, no desktop
 templates/                         # `nix flake init -t` dev environments
@@ -2172,6 +2181,105 @@ with `Persistent = true` directly in the host config. Nothing stops the two
 coexisting. For output you actually want to read from a cron job, redirect it
 yourself: `... 2>&1 | systemd-cat -t backup`.
 
+## The accounts
+
+Three, on every host, all declared in `modules/nixos/users.nix` and all given
+a home-manager profile in `flake.nix`:
+
+| Account | Description | Profile | `wheel` |
+|---|---|---|---|
+| `joshr` | Josh Randall | `home/joshr/<host>.nix` | yes |
+| `raiden` | Samuel Hunt | `home/raiden/<host>.nix` → joshr's | no |
+| `root` | — | `home/root/home.nix` | — |
+
+Both interactive accounts get fish, `networkmanager`, `video` and `input`, plus
+`docker` and `libvirtd` on the hosts whose imports enable those daemons. Only
+`joshr` is in `wheel`, so `sudo nixos-rebuild` is joshr's; add `"wheel"` to
+`extraGroups` in `users.nix` to change that. Both are created with
+`initialPassword = "changeme"` — which applies at first creation only, so
+`passwd` after the first login is the whole of the fix.
+
+`mkHost` in `flake.nix` takes its users as an attrset:
+
+```nix
+gamestation = mkHost {
+  hostModule = ./hosts/gamestation/configuration.nix;
+  homeModules = {
+    joshr = ./home/joshr/gamestation.nix;
+    raiden = ./home/raiden/gamestation.nix;
+  };
+};
+```
+
+`root` is added to every host by `mkHost` itself rather than repeated in each
+call — it gets the same shell everywhere and nothing graphical follows it in,
+so there is nothing per-host to say about it.
+
+### What "primary user" actually decides
+
+`joshr` being the primary user is one option, `local.desktop.primaryUser`, and
+it is about the surfaces that exist outside any session: the SDDM/plasmalogin
+greeter and the limine boot menu take their theme and wallpaper from that
+account's `~/.local/state/niri-theme` and `~/.config`, and the OpenRGB
+after-resume service runs as it.
+
+Each of those is a singleton — one login screen, one boot menu, one set of
+lights — so they follow one named account rather than whoever logged in last.
+Everything else is per-account and per-session: `raiden` switching themes
+restyles `raiden`'s niri, kitty, waybar, Firefox and Dolphin, and leaves the
+greeter and the boot menu alone.
+
+### One profile, two accounts
+
+`home/raiden/` contains no configuration. Each entrypoint imports joshr's for
+the same host and `./home.nix`, which sets one thing:
+
+```nix
+# home/raiden/gamestation.nix
+{
+  imports = [
+    ./home.nix
+    ../joshr/gamestation.nix
+  ];
+}
+```
+
+So anything added to joshr's profile arrives in raiden's on the next rebuild,
+which is the point of importing rather than copying.
+
+That works because nothing under `home/joshr/` writes the name `joshr` into a
+path. `home.username` in `home/joshr/home.nix` (and `home/joshr/server.nix`)
+is a `lib.mkDefault`, raiden's `home.username` outranks it at ordinary
+priority, and everything downstream is derived from it:
+
+| Derived from the account name | Where |
+|---|---|
+| `~` and everything under it | `home.homeDirectory` |
+| `~/.mozilla/firefox/<name>` | `home/joshr/firefox.nix`, read back by `niri/firefox.nix` |
+| `<name>-gwenview.desktop` and friends | `home/joshr/desktop-apps.nix` |
+| `com.<name>.NiriSystem` | `home/joshr/obs.nix` |
+
+All four resolve to exactly what they were for `joshr`, so nothing of joshr's
+moved when raiden was added — no Firefox profile to migrate, no desktop
+entries to re-associate.
+
+One thing raiden does *not* get its own of: the git identity — joshr's name
+and address, from `home/common/git.nix` on the desktop hosts and from
+`home/joshr/server.nix` on the server. Commits from `raiden` carry it until
+it's overridden, and `home/raiden/home.nix` has the `lib.mkForce` to do that
+sitting commented out.
+
+### Adding a third
+
+1. An account in `modules/nixos/users.nix`. Copy the `raiden` block; the
+   `sessionGroups` list above it is the shared membership.
+2. A `home/<name>/` directory shaped like `home/raiden/` — a `home.nix` with
+   the username, and one entrypoint per host importing joshr's.
+3. The name and its entrypoint in each host's `homeModules` in `flake.nix`.
+
+Nothing else. In particular, don't change `local.desktop.primaryUser` unless
+you mean to hand the login screen and boot menu to the new account.
+
 ## The root account
 
 `root` uses fish as its login shell and gets the same starship prompt and eza
@@ -2349,6 +2457,10 @@ passwd
 That new password persists — `initialPassword` only applies at account
 creation, and editing it later does nothing.
 
+`raiden` is created with the same initial password and wants the same
+treatment. It isn't in `wheel`, so do it from that account's own session or
+`sudo passwd raiden` from joshr's — see [The accounts](#the-accounts).
+
 **8. Commit `flake.lock`.** The first build generates one, pinning every
 input to an exact revision. Commit it:
 
@@ -2508,7 +2620,9 @@ gamestation's and must be regenerated on the machine.
 1. `mkdir -p hosts/<newhost>`, write a `configuration.nix` importing the
    modules that apply, and generate its `hardware-configuration.nix`.
 2. Add a `<newhost> = mkHost { ... }` entry to `nixosConfigurations` in
-   `flake.nix`, pointing at that host module and a home entrypoint.
+   `flake.nix`, pointing at that host module and a `homeModules` attrset —
+   one entrypoint per account, `root` excepted. See
+   [The accounts](#the-accounts).
 3. Install with `--flake /mnt/etc/nixos#<newhost>`.
 
 

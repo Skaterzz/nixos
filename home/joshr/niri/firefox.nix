@@ -19,7 +19,11 @@ let
   # Both halves have to agree on the profile directory. Reading it out of the
   # firefox module rather than repeating the string means a rename is an
   # evaluation error here instead of a silently unthemed browser.
-  profilePath = config.programs.firefox.profiles.joshr.path;
+  #
+  # The attribute is `config.home.username` because that is what ../firefox.nix
+  # names the profile after — every account wearing this profile gets its own
+  # directory, and none of them has "joshr" written into it.
+  profilePath = config.programs.firefox.profiles.${config.home.username}.path;
   chromeDir = ".mozilla/firefox/${profilePath}/chrome";
 in
 {

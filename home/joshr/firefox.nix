@@ -1,4 +1,4 @@
-{ ... }:
+{ config, ... }:
 
 # Firefox, on every host. Installed and themed, but no longer the default —
 # see ./browser.nix, which hands that back to Vivaldi.
@@ -39,7 +39,12 @@
 let
   # Referenced by home/joshr/niri/firefox.nix to find the profile directory,
   # so the two can't drift apart.
-  profileName = "joshr";
+  #
+  # From `config.home.username` rather than written out, because this file is
+  # shared with the accounts in home/raiden/ and the name becomes a directory:
+  # ~/.mozilla/firefox/<profileName>. It resolves to "joshr" here exactly as
+  # the literal did, so there is no profile to migrate.
+  profileName = config.home.username;
 in
 {
   programs.firefox = {

@@ -38,15 +38,28 @@ generation stays in the boot menu.
 [The server](MANUAL.md#the-server) ·
 [Adding another host](MANUAL.md#adding-another-host)
 
+## Accounts
+
+`joshr` (primary), `raiden` and `root`, on every host.
+
+`raiden` runs joshr's profile unchanged — the entrypoints in `home/raiden/`
+import the ones in `home/joshr/` and say nothing but their own name. Primary
+means the machine-wide surfaces: the login screen and the boot menu wear
+joshr's theme and wallpaper, and administering the box is joshr's, since
+`raiden` isn't in `wheel`.
+[The accounts](MANUAL.md#the-accounts) ·
+[The root account](MANUAL.md#the-root-account)
+
 ## Layout
 
 ```
 flake.nix          # inputs; the five nixosConfigurations; dev-shell templates
 hosts/<host>/      # per machine: configuration.nix + hardware scan
 modules/nixos/     # the system side, imported per host
-home/common/       # home-manager bits shared by joshr and root
+home/common/       # home-manager bits shared by every account
 home/joshr/        # the user profile; one entrypoint file per host
 home/joshr/niri/   # the niri desktop: compositor, bar, themes, scripts
+home/raiden/       # a second account wearing the same profile
 templates/         # `nix flake init -t` dev environments
 ```
 

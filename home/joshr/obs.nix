@@ -1,10 +1,15 @@
-{ pkgs, ... }:
+{ config, pkgs, ... }:
 
 # OBS follows the active niri/KDE Qt palette through OBS's bundled System
 # theme. A small child theme keeps that palette but replaces System's
 # hard-coded dark toolbar/settings/source icons with OBS's own light assets.
 let
-  obsThemeId = "com.joshr.NiriSystem";
+  # Written into the .ovt below and into ~/.config/obs-studio/user.ini by the
+  # wrapper, so the two only agree because they come from one binding. Named
+  # after the account for the same reason the Firefox profile and the private
+  # desktop entries are — this file is shared with home/raiden/. "joshr" here,
+  # unchanged.
+  obsThemeId = "com.${config.home.username}.NiriSystem";
 
   obsThemed = pkgs.writeShellApplication {
     name = "obs-themed";

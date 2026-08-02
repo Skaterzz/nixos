@@ -108,8 +108,13 @@
     {
       nixosConfigurations =
         let
+          # `homeModules` is the host's home-manager users, as
+          # `username -> entrypoint`. root is added to every host below rather
+          # than named in each call: it gets the same fish + starship setup
+          # everywhere, minus everything graphical, so there is nothing
+          # per-host to say about it.
           mkHost =
-            { hostModule, homeModule }:
+            { hostModule, homeModules }:
             nixpkgs.lib.nixosSystem {
               inherit system;
               specialArgs = { inherit inputs; };
@@ -130,10 +135,13 @@
                     plasma-manager.homeModules.plasma-manager
                     spicetify-nix.homeManagerModules.spicetify
                   ];
-                  home-manager.users.joshr = import homeModule;
-                  # root gets the same fish + starship setup, minus everything
-                  # graphical. Same on every host, so it isn't parameterised.
-                  home-manager.users.root = import ./home/root/home.nix;
+                  # Each account has to exist on the NixOS side as well —
+                  # home-manager reads its home directory from
+                  # `users.users.<name>` — which is modules/nixos/users.nix,
+                  # imported by every host.
+                  home-manager.users = nixpkgs.lib.mapAttrs (_name: import) (
+                    { root = ./home/root/home.nix; } // homeModules
+                  );
                 }
               ];
             };
@@ -142,12 +150,18 @@
           # --- Plasma sessions -------------------------------------------
           gamestation = mkHost {
             hostModule = ./hosts/gamestation/configuration.nix;
-            homeModule = ./home/joshr/gamestation.nix;
+            homeModules = {
+              joshr = ./home/joshr/gamestation.nix;
+              raiden = ./home/raiden/gamestation.nix;
+            };
           };
 
           laptop = mkHost {
             hostModule = ./hosts/laptop/configuration.nix;
-            homeModule = ./home/joshr/laptop.nix;
+            homeModules = {
+              joshr = ./home/joshr/laptop.nix;
+              raiden = ./home/raiden/laptop.nix;
+            };
           };
 
           # --- niri sessions ---------------------------------------------
@@ -159,12 +173,18 @@
           #   sudo nixos-rebuild switch --flake .#gamestation
           gamestation-niri = mkHost {
             hostModule = ./hosts/gamestation-niri/configuration.nix;
-            homeModule = ./home/joshr/gamestation-niri.nix;
+            homeModules = {
+              joshr = ./home/joshr/gamestation-niri.nix;
+              raiden = ./home/raiden/gamestation-niri.nix;
+            };
           };
 
           laptop-niri = mkHost {
             hostModule = ./hosts/laptop-niri/configuration.nix;
-            homeModule = ./home/joshr/laptop-niri.nix;
+            homeModules = {
+              joshr = ./home/joshr/laptop-niri.nix;
+              raiden = ./home/raiden/laptop-niri.nix;
+            };
           };
 
           # --- headless --------------------------------------------------
@@ -172,7 +192,10 @@
           # section; see modules/nixos/cron.nix.
           server = mkHost {
             hostModule = ./hosts/server/configuration.nix;
-            homeModule = ./home/joshr/server.nix;
+            homeModules = {
+              joshr = ./home/joshr/server.nix;
+              raiden = ./home/raiden/server.nix;
+            };
           };
         };
 

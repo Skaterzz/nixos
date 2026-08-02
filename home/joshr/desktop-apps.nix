@@ -1,4 +1,4 @@
-{ lib, pkgs, ... }:
+{ config, lib, pkgs, ... }:
 
 # Graphical applications used by the gamestation-niri Home Manager profile.
 #
@@ -49,10 +49,18 @@ let
     "audio/x-opus+ogg"
   ];
 
+  # Prefix for this profile's private desktop entries — see xdg.desktopEntries
+  # below. Each one is written to ~/.local/share/applications/<id>.desktop, so
+  # the id is a filename: taking it from `config.home.username` rather than
+  # writing "joshr" keeps it the account's own on every profile that imports
+  # this file, home/raiden/ included. It resolves to "joshr" here, so the
+  # entries and the mimeapps.list pointing at them are unchanged.
+  entryPrefix = config.home.username;
+
   mediaDefaults =
-    lib.genAttrs imageMimes (_: "joshr-gwenview.desktop")
-    // lib.genAttrs videoMimes (_: "joshr-haruna.desktop")
-    // lib.genAttrs audioMimes (_: "joshr-elisa.desktop");
+    lib.genAttrs imageMimes (_: "${entryPrefix}-gwenview.desktop")
+    // lib.genAttrs videoMimes (_: "${entryPrefix}-haruna.desktop")
+    // lib.genAttrs audioMimes (_: "${entryPrefix}-elisa.desktop");
 
   # KService requires a valid XDG menu before it will index desktop entries.
   # Plasma normally provides plasma-applications.menu and sets
@@ -133,7 +141,7 @@ in
   # Use private entry IDs rather than overriding KDE's upstream files. This
   # avoids D-Bus activation metadata and launches the exact Nix-store binary.
   xdg.desktopEntries = {
-    "joshr-gwenview" = {
+    "${entryPrefix}-gwenview" = {
       name = "Gwenview";
       genericName = "Image Viewer";
       comment = "Open images with Gwenview";
@@ -148,7 +156,7 @@ in
       settings.DBusActivatable = "false";
     };
 
-    "joshr-haruna" = {
+    "${entryPrefix}-haruna" = {
       name = "Haruna";
       genericName = "Video Player";
       comment = "Open videos with Haruna";
@@ -164,7 +172,7 @@ in
       settings.DBusActivatable = "false";
     };
 
-    "joshr-elisa" = {
+    "${entryPrefix}-elisa" = {
       name = "Elisa";
       genericName = "Music Player";
       comment = "Open audio with Elisa";

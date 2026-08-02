@@ -1,4 +1,4 @@
-{ config, ... }:
+{ config, lib, ... }:
 
 # joshr's home profile on the server.
 #
@@ -16,8 +16,10 @@
     ../common/shell.nix
   ];
 
-  home.username = "joshr";
-  home.homeDirectory = "/home/${config.home.username}";
+  # `mkDefault` for the same reason as in ./home.nix: home/raiden/server.nix
+  # imports this file and names itself.
+  home.username = lib.mkDefault "joshr";
+  home.homeDirectory = lib.mkDefault "/home/${config.home.username}";
 
   # Do not bump this after the initial install; see the Home Manager manual.
   home.stateVersion = "24.11";

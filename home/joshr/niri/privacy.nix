@@ -1,4 +1,4 @@
-{ lib, ... }:
+{ ... }:
 
 # Waybar's native privacy module watches PipeWire for active screen and
 # microphone capture. Each item is hidden by Waybar itself while idle, so the
@@ -10,12 +10,6 @@
 # this one remains a fixed red recording dot under every niri colour scheme.
 {
   programs.waybar.settings.main = {
-    # Keep the indicator in the right-hand cluster without replacing the
-    # module list owned by waybar.nix. mkBefore makes this the first item in
-    # that cluster; it still disappears entirely whenever both capture types
-    # are inactive.
-    modules-right = lib.mkBefore [ "privacy" ];
-
     privacy = {
       icon-spacing = 0;
       icon-size = 14;
@@ -28,16 +22,24 @@
           tooltip = true;
           tooltip-icon-size = 24;
         }
-        #{
-         # type = "audio-in";
-         # icon-name = "waybar-recording";
-         # tooltip = true;
-          #tooltip-icon-size = 24;
-        #}
+        {
+          type = "audio-in";
+          icon-name = "waybar-recording";
+          tooltip = true;
+          tooltip-icon-size = 24;
+        }
       ];
 
-      # Do not count PipeWire monitor sources as microphone recording.
+      # Monitor-source capture is normally desktop audio rather than a real
+      # microphone. Cava is ignored explicitly as well, matching Waybar's
+      # documented privacy-module filtering example.
       ignore-monitor = true;
+      ignore = [
+        {
+          type = "audio-in";
+          name = "cava";
+        }
+      ];
     };
   };
 

@@ -69,6 +69,7 @@ in
         "pulseaudio"
         "bluetooth"
         "network"
+        "privacy"
         "battery"
         "custom/caps-lock"
         "custom/gamemode"

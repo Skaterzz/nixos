@@ -198,6 +198,7 @@ let
     #backlight,
     #pulseaudio,
     #network,
+    #privacy,
     #battery,
     #bluetooth,
     #mpris,

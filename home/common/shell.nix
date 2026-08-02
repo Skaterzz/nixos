@@ -113,6 +113,13 @@ in
       # recovery path for a bad switch (see "Rebuilding after changes" in
       # MANUAL.md), so `nix-clean all` is deliberately something you have to ask
       # for by name rather than the default.
+      nixos-cd = {
+        description = "sudo and cd to /etc/nixos";
+        body = ''
+        sudo -i
+        cd /etc/nixos
+        ''
+      };
       nix-clean = {
         description = "delete nix generations older than <age>, default 7d ('all' for every old one)";
         body = ''

@@ -18,7 +18,7 @@
 # import, modules/nixos/virtualization.nix, so a development host doesn't
 # have to carry libvirtd and a GUI to get containers.
 #
-# See "Development environments" in the README for the per-project workflow
+# See "Development environments" in MANUAL.md for the per-project workflow
 # this exists to support.
 let
   # One command to turn an empty directory into a working dev environment:

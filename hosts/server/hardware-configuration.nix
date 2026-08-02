@@ -8,7 +8,7 @@
 # produces a system that cannot find its root filesystem.
 #
 # Same situation as hosts/gamestation/ and hosts/laptop/ — see "Regenerating
-# hardware-configuration.nix" in the README.
+# hardware-configuration.nix" in MANUAL.md.
 { config, lib, pkgs, modulesPath, ... }:
 
 {

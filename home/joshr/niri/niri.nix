@@ -542,4 +542,51 @@ ${workspaceBlocks}
         Mod+Shift+P { power-off-monitors; }
     }
   '';
+
+  # OpenRGB's own "Start At Login", switched back off.
+  #
+  # OpenRGB has a "Start At Login" checkbox of its own (Settings → General).
+  # Ticking it writes ~/.config/autostart/OpenRGB.desktop — an ordinary XDG
+  # autostart entry, carrying the same --startminimized/--profile arguments
+  # the spawn above passes. niri's session runs those entries: niri.service
+  # pulls in xdg-desktop-autostart.target, which is the same reason
+  # networkmanagerapplet still appeared after its spawn was removed (see the
+  # note in waybar.nix). So with that box ticked the applet starts twice —
+  # once from this file, once from that entry.
+  #
+  # It is an easy box to have ticked. It is the only way to autostart the
+  # applet in the Plasma session on this machine, and it was the only way that
+  # worked in this one too for as long as the spawn above was packed into a
+  # single string and died with ENOENT. Fixing the spawn is what turned one
+  # applet into two; the entry had been carrying it alone until then.
+  #
+  # OpenRGB does nothing to stop the second instance: there is no singleton
+  # lock, both processes start, and the first one to finish detection takes
+  # the hardware. The second is left with an empty device list. The symptom is
+  # therefore two tray icons, one of which controls nothing — not flickering
+  # lighting, which is what you would expect if they were both driving it.
+  #
+  # Masked with a Hidden=true stub, which is the same trick ./default.nix uses
+  # on blueman. `force` because the target is a file OpenRGB writes for
+  # itself, and home-manager refuses to replace one of those unless told to.
+  #
+  # Gated on the same option as the spawn, so this only claims the file on the
+  # hosts where this file is what starts the applet. On the laptop, and in the
+  # Plasma session, an autostart entry is the user's own business.
+  #
+  # One consequence: OpenRGB's checkbox now reads "on" permanently, because it
+  # decides by asking whether the file exists and it does — it just says
+  # Hidden=true. Unticking it deletes the stub and the next home-manager
+  # activation writes it back. Nothing starts twice either way, which is the
+  # point.
+  xdg.configFile."autostart/OpenRGB.desktop" =
+    lib.mkIf (osConfig.local.openrgb.autostart or false) {
+      force = true;
+      text = ''
+        [Desktop Entry]
+        Type=Application
+        Name=OpenRGB
+        Hidden=true
+      '';
+    };
 }

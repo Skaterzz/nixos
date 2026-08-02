@@ -1150,6 +1150,46 @@ the package comes with the daemon's module — so on that host it's
 `nix run nixpkgs#openrgb` for a one-off, or importing `gaming.nix` to have it
 properly.
 
+#### Two applets at login
+
+Counting two `openrgb` processes is normal. One is the daemon —
+`openrgb --server`, running as root since boot — and the other is the tray
+applet in your session. The applet does not fight the daemon for the
+hardware: given a server already listening on localhost it connects to it as
+a client rather than detecting anything itself, which is what
+`--noautoconnect` exists to switch off.
+
+Two *tray icons* is the bug, and it is almost always OpenRGB's own "Start At
+Login" checkbox (Settings → General). That writes
+`~/.config/autostart/OpenRGB.desktop`, and niri's session runs XDG autostart
+entries — `niri.service` pulls in `xdg-desktop-autostart.target` — so the
+applet starts once from `niri/config.kdl` and once from that entry. OpenRGB
+has no singleton lock and will happily run both; the first to finish
+detection takes the hardware and the second comes up with an empty device
+list, so the giveaway is one tray icon that controls nothing rather than
+lighting that flickers.
+
+That box is easy to have ticked, because it is the only way to autostart the
+applet in the Plasma session on the same machine and the same `$HOME`, and it
+was the only thing that worked in the niri session too for as long as
+`spawn-at-startup` was packed into a single string and failing with `ENOENT`.
+Repairing the spawn is what turned one applet into two.
+
+`home/joshr/niri/niri.nix` now masks the entry with a `Hidden=true` stub — the
+same treatment `niri/default.nix` gives blueman — gated on
+`local.openrgb.autostart`, so it only claims the file where the repo is what
+starts the applet. Plasma and the laptop are left alone. The side effect is
+that OpenRGB's checkbox reads "on" forever, since it only asks whether the
+file exists; unticking it deletes the stub and the next home-manager
+activation writes it back.
+
+To confirm which of the two you have before changing anything:
+
+```bash
+ls -l ~/.config/autostart/OpenRGB.desktop   # the duplicate, if it exists
+pgrep -af openrgb                           # daemon + applet is expected
+```
+
 The lighting does not survive a suspend on its own; see "Coming back from
 suspend" above for the service that puts it back.
 

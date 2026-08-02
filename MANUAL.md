@@ -2471,7 +2471,7 @@ later:
 
 ```bash
 sudo nix-shell -p git --run \
-  'git clone https://github.com/joshrandall8478/fine-ill-try-nix /mnt/etc/nixos'
+  'git clone https://github.com/joshrandall8478/nixos /mnt/etc/nixos'
 ```
 
 **4. Generate the hardware config into the repo.**

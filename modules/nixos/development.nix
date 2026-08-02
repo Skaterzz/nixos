@@ -24,11 +24,11 @@ let
   # One command to turn an empty directory into a working dev environment:
   # copies a template from this flake and marks the .envrc trusted.
   #
-  # The templates come from this system's own copy of the flake — the one it
-  # was built from, already in the store — rather than from GitHub. Nothing to
-  # fetch, so it works offline, and it can't hand out a template that
-  # disagrees with the registry pin below. DEV_TEMPLATES_FLAKE overrides it
-  # with any flake ref if you want someone else's.
+  # The templates come from this repo, so `dev-init` copies whatever
+  # templates/ currently holds rather than the copy frozen into whichever
+  # system generation happens to be booted. It had been pointing at a repo
+  # under a name this one no longer goes by. DEV_TEMPLATES_FLAKE overrides it
+  # with any flake ref.
   #
   # `nix` and `direnv` come from the ambient PATH rather than runtimeInputs on
   # purpose — nix is the system daemon's client, and pinning a second copy
@@ -40,7 +40,7 @@ let
     runtimeInputs = [ pkgs.coreutils ];
     text = ''
       templates="generic python node rust go"
-      flakeRef="''${DEV_TEMPLATES_FLAKE:-${inputs.self}}"
+      flakeRef="''${DEV_TEMPLATES_FLAKE:-github:joshrandall8478/nixos}"
       template="''${1:-generic}"
 
       case " $templates " in

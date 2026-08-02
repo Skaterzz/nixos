@@ -223,7 +223,7 @@ ${workspaceBlocks}
 
     // OpenRGB's tray applet, on the hosts that have RGB hardware. Built in
     // this file's `let` block, along with the reasoning.
-    ${openrgbStartup}
+    // ${openrgbStartup}
 
     // nm-applet is deliberately not started. Its tray icon duplicates the
     // waybar `network` module, and that module's click already opens

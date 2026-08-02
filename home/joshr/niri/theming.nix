@@ -120,6 +120,16 @@ let
       padding: 0 6px;
     }
 
+    /* The left group's three modules keep the gap they had before the bar's
+       `spacing` was cut to 4 for the right-hand cluster's sake. Spacing is one
+       number for the whole bar, so 1px either side here puts the left group
+       back at the 6px it was drawn for. */
+    #custom-user,
+    #workspaces,
+    #window {
+      margin: 0 1px;
+    }
+
     /* Username, first slot on the left. Wears the accent for the same reason
        the clock does — it is a label, not a control, so it reads as chrome
        rather than as something to click. */
@@ -177,7 +187,15 @@ let
       font-weight: 700;
     }
 
+    /* The right-hand cluster. Tighter than it was: 8px of padding rather than
+       10, and no horizontal margin at all, which leaves the bar's own 4px
+       `spacing` as the entire gap between two pills — 4px where it used to be
+       8, and 20px of whitespace between neighbouring glyphs where it used to
+       be 28. Twelve slots at their widest is a lot of bar to hold, and the
+       hover backgrounds still read as separate at 4px. The 4px top and bottom
+       stay: that is what insets the pills inside the group's 34px. */
     #tray,
+    #backlight,
     #pulseaudio,
     #network,
     #battery,
@@ -188,8 +206,8 @@ let
     #custom-idle-inhibitor,
     #custom-lock,
     #custom-session {
-      padding: 0 10px;
-      margin: 4px 1px;
+      padding: 0 8px;
+      margin: 4px 0;
       border-radius: 8px;
       color: @fg;
     }
@@ -204,6 +222,7 @@ let
       border-radius: 8px;
     }
 
+    #backlight:hover,
     #pulseaudio:hover,
     #network:hover,
     #battery:hover,

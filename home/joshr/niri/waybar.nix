@@ -4,7 +4,7 @@
 #
 #   left    workspaces + focused window title
 #   centre  clock and date
-#   right   tray, nowplaying, audio, network, battery, session menu
+#   right   tray, nowplaying, audio, network, battery, caps lock, session menu
 #
 # Theming: waybar is started with `-s <active theme>/waybar.css` and the
 # switcher restarts it, so a theme change swaps the whole stylesheet. The
@@ -57,6 +57,7 @@ in
         "bluetooth"
         "network"
         "battery"
+        "keyboard-state"
         "custom/idle-inhibitor"
         "custom/lock"
         "custom/session"
@@ -273,6 +274,41 @@ in
         format-plugged = "󰚥  {capacity}%";
         format-icons = [ "󰁺" "󰁼" "󰁾" "󰂀" "󰂂" ];
         tooltip-format = "{timeTo}";
+      };
+
+      # Caps lock, between the battery and the idle inhibitor — beside the
+      # other module on the bar that reports a mode you can leave on without
+      # noticing.
+      #
+      # waybar's own module rather than a script: it reads the keyboard's LED
+      # through libevdev and redraws on the event, so the glyph turns over with
+      # the keypress instead of up to a poll interval later. That wants read
+      # access to /dev/input/event*, which joshr has through the `input` group
+      # (modules/nixos/users.nix); without it the module throws as it is built
+      # and waybar carries on — a missing slot, not a missing bar. Unrelated to
+      # the caps lock OSD osd.nix deliberately doesn't run: that one is a
+      # *system* service reading every input device, this is the session's bar
+      # reading its own keyboard.
+      #
+      # `{icon}` alone, not the default `{name} {icon}` — "Caps" next to a caps
+      # lock glyph is the word twice over, and the slot is meant to be small.
+      # num lock and scroll lock stay off (the module's default), so the box
+      # holds exactly one label.
+      #
+      # It keeps that slot when the lock is off rather than vanishing the way
+      # custom/cava does: a GTK stylesheet has no `display: none`, so "hidden"
+      # can only mean a transparent label still holding its space, and hiding
+      # it for real would shove the modules either side sideways on every
+      # press. Dim-when-off, lit-when-on instead — the same bargain the idle
+      # inhibitor makes, and the glyph changes shape too so the state does not
+      # ride on the warn colour alone.
+      "keyboard-state" = {
+        capslock = true;
+        format = "{icon}";
+        format-icons = {
+          locked = "󰪛";
+          unlocked = "󰌎";
+        };
       };
 
       # Sleep inhibitor. Same script as the Mod+Shift+I bind, so clicking and

@@ -182,6 +182,7 @@ let
     #network,
     #battery,
     #bluetooth,
+    #keyboard-state,
     #custom-idle-inhibitor,
     #custom-lock,
     #custom-session {
@@ -219,6 +220,25 @@ let
     }
 
     #custom-idle-inhibitor.activated {
+      color: @warn;
+    }
+
+    /* Caps lock, one slot to the left, and read the same way: dim while the
+       lock is off, warn-coloured while it's on. The colour is not the only
+       signal — the module swaps the glyph too (see waybar.nix) — so the state
+       still carries at a glance without relying on the theme's warn colour
+       being distinct from its dimmed foreground.
+
+       Selectors go through `label` rather than sitting on `#keyboard-state`:
+       the module is a box holding one label per lock, and `.locked` is set on
+       the label, not on the box. No hover rule, unlike its neighbours — this
+       one is an indicator with nothing to click. */
+    #keyboard-state label {
+      color: @fg-dim;
+      font-size: 15px;
+    }
+
+    #keyboard-state label.locked {
       color: @warn;
     }
 

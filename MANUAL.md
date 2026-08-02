@@ -187,8 +187,9 @@ home/joshr/niri/
 
 Left is the username, workspaces and the focused window title, centre is the
 clock and date, right is the tray, media controls, volume, network, battery,
-the idle inhibitor, then **lock** and **power** as a matched pair at the far
-end. Each group is its own rounded floating pill rather than one long bar.
+caps lock, the idle inhibitor, then **lock** and **power** as a matched pair at
+the far end. Each group is its own rounded floating pill rather than one long
+bar.
 
 **The username** is the first slot, in the accent colour — the same treatment
 the clock gets, because both are labels rather than controls. It's static
@@ -201,6 +202,24 @@ Lock and power are styled identically and differ only on hover — the power
 button goes red, because it's the one that can end the session. The lock
 button runs the same `lock-now` as `Mod+L` and the session menu's "Lock"
 entry, so all three take the active theme's colours.
+
+**Caps lock** is one glyph between the battery and the idle inhibitor — dim
+while the lock is off, the theme's warn colour while it's on. The glyph changes
+shape as well as colour, so the state still reads in a palette where warn and
+the dimmed foreground sit close together. It keeps its slot either way rather
+than appearing only when the lock is on, which would shove the modules beside
+it sideways on every press.
+
+It's waybar's own `keyboard-state` module, not a script: it reads the
+keyboard's LED through libevdev and redraws on the event, so the glyph turns
+over with the keypress rather than up to a poll interval later. That needs read
+access to `/dev/input/event*`, which comes from `joshr` being in the `input`
+group (`modules/nixos/users.nix`). Take that membership away and the module
+throws while it's being built and waybar simply leaves the slot out — a missing
+glyph, not a missing bar. This is unrelated to the caps lock OSD that swayosd
+deliberately doesn't run (see "The on-screen display"): that one is a system
+service reading every input device, where this is the session's own bar reading
+its own keyboard.
 
 **The visualiser** is eight bars of cava just left of the track name, in the
 theme's dimmed accent. It is only there while something is actually making

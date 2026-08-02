@@ -105,6 +105,8 @@ in
     kdePackages.kservice
 
     kdePackages.kimageformats
+
+    qjackctl
   ];
 
  home.activation.modifyNextcloudConfig = lib.hm.dag.entryAfter ["writeBoundary"] ''

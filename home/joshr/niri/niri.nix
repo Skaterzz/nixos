@@ -254,6 +254,12 @@ ${workspaceBlocks}
          open-floating true
          default-floating-position x=16 y=16 relative-to="bottom-right"
          open-focused false
+    }
+
+    // qjackctl
+    window-rule {
+        match title="^\\(default\\) Active — QjackCtl$" 
+        open-floating true
     }	
 
     // Rounded corners everywhere, matching waybar and wofi.

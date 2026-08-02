@@ -49,6 +49,7 @@ the machine.
   - [The one-command path](#the-one-command-path)
   - [The manual path](#the-manual-path)
   - [Day to day](#day-to-day)
+  - [Why a project shell is instant](#why-a-project-shell-is-instant)
   - [Secrets](#secrets)
   - [A project that isn't yours](#a-project-that-isnt-yours)
   - [VS Code](#vs-code)
@@ -1836,6 +1837,11 @@ What the module turns on:
   output); `trusted-users = [ "root" "@wheel" ]`, without which `cachix use`
   can't write a substituter; and `log-lines = 25`, because ten lines of a
   failed builder's output usually isn't the part that says what went wrong.
+- **A pinned `nixpkgs` in the flake registry**, set to the rev this system is
+  built from. Every template says `inputs.nixpkgs.url = "nixpkgs"` rather than
+  naming a URL, so a new project's shell resolves to store paths the machine
+  already has. It's what `nix run nixpkgs#...` means here too. See [Why a
+  project shell is instant](#why-a-project-shell-is-instant).
 - Language-agnostic tools: `nil`, `nixfmt`, `nix-output-monitor`,
   `nix-tree`, `cachix`, `just`, `jq`, `yq-go`, `ripgrep`, `fd`, `lazygit`,
   `gnumake`. Nothing language-specific — a compiler or an interpreter goes in
@@ -1864,7 +1870,8 @@ Two files. `flake.nix`:
 
 ```nix
 {
-  inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+  # Resolved through the flake registry — see below.
+  inputs.nixpkgs.url = "nixpkgs";
 
   outputs = { nixpkgs, ... }:
     let
@@ -1872,7 +1879,7 @@ Two files. `flake.nix`:
       pkgs = nixpkgs.legacyPackages.${system};
     in {
       devShells.${system}.default = pkgs.mkShell {
-        packages = with pkgs; [ python312 postgresql ];
+        packages = with pkgs; [ python313 postgresql ];
 
         # Exported on entry, gone on exit.
         env.DATABASE_URL = "postgres://localhost/dev";
@@ -1911,6 +1918,62 @@ Anything the project writes at runtime — a venv, `node_modules`, `GOPATH` —
 stays inside the project directory. The templates set that up and ignore the
 paths in `.gitignore`, because the Nix store is read-only and the alternative
 is a tool failing halfway through an install with a confusing error.
+
+### Why a project shell is instant
+
+Two things keep `direnv allow` down to a couple of seconds, and both are easy
+to undo by accident.
+
+**The shell resolves to a nixpkgs the machine already has.** The templates say
+`inputs.nixpkgs.url = "nixpkgs"` — an indirect ref, which `development.nix`
+pins in the flake registry to the rev this system is built from. Name a URL
+there instead and the project locks against whatever `nixos-unstable` was that
+afternoon: nothing is *wrong* with the result, but every path the shell needs
+becomes a fresh download of a bit-for-bit alternative to something already in
+`/nix/store`. Pinned, `nix flake update` in a project re-resolves against the
+system's current lock, so the shells move when the machines do — which is the
+reason the templates live in this repo at all.
+
+**Python libraries come from a package set nixpkgs actually builds.** This is
+the one that bites. nixpkgs exposes a package set per interpreter but only
+marks some of them `recurseIntoAttrs` in `all-packages.nix`:
+
+```nix
+python311Packages = python311.pkgs;                   # evaluated, never built
+python312Packages = python312.pkgs;                   # evaluated, never built
+python313Packages = recurseIntoAttrs python313.pkgs;  # built by Hydra
+python314Packages = recurseIntoAttrs python314.pkgs;  # built by Hydra
+python3Packages   = dontRecurseIntoAttrs python314Packages;
+```
+
+Hydra enumerates the recursed sets and builds them, and cache.nixos.org holds
+what Hydra builds. The others evaluate perfectly well and are simply never
+built, so every derivation in them is compiled locally — test suites included
+— each time the lock moves. The list changes: 3.11 fell off in December 2024,
+3.12 in November 2025.
+
+The **interpreters** are all built regardless. `pkgs.python312` is a
+substituted binary like anything else, so choosing a minor version is free.
+It's asking an unbuilt *set* for a library that isn't.
+
+Which is exactly what the python template used to do. It read
+`python312.pkgs.python-lsp-server` from the moment 3.12 stopped being built,
+and python-lsp-server's check inputs are numpy, pandas and matplotlib plus its
+whole optional-linter set — so a first `cd` into a project compiled all of
+that before returning a prompt, and did it again after every `nix flake
+update`. It now takes pylsp from `python3Packages`, which is always the
+default and always built, and leaves the project's interpreter a free choice:
+jedi resolves completions from `$VIRTUAL_ENV`, so a language server running on
+3.14 reads a 3.12 venv correctly.
+
+When a shell is unexpectedly slow, this says what it's about to do:
+
+```bash
+nix build --dry-run .#devShells.x86_64-linux.default
+```
+
+Paths under "will be fetched" are a download. Anything under "will be built"
+that isn't your own package is a set that nobody cached.
 
 ### Secrets
 
@@ -2408,7 +2471,7 @@ later:
 
 ```bash
 sudo nix-shell -p git --run \
-  'git clone https://github.com/joshrandall8478/fine-ill-try-nix /mnt/etc/nixos'
+  'git clone https://github.com/joshrandall8478/nixos /mnt/etc/nixos'
 ```
 
 **4. Generate the hardware config into the repo.**

@@ -1,4 +1,4 @@
-{ lib, pkgs, ... }:
+{ inputs, lib, pkgs, ... }:
 
 # Everything needed to develop on a machine, in one importable lump: direnv,
 # containers, and the nix settings that make per-project shells behave.
@@ -24,6 +24,12 @@ let
   # One command to turn an empty directory into a working dev environment:
   # copies a template from this flake and marks the .envrc trusted.
   #
+  # The templates come from this repo, so `dev-init` copies whatever
+  # templates/ currently holds rather than the copy frozen into whichever
+  # system generation happens to be booted. It had been pointing at a repo
+  # under a name this one no longer goes by. DEV_TEMPLATES_FLAKE overrides it
+  # with any flake ref.
+  #
   # `nix` and `direnv` come from the ambient PATH rather than runtimeInputs on
   # purpose — nix is the system daemon's client, and pinning a second copy
   # into this script's closure would be a different nix from the one doing the
@@ -34,7 +40,7 @@ let
     runtimeInputs = [ pkgs.coreutils ];
     text = ''
       templates="generic python node rust go"
-      flakeRef="''${DEV_TEMPLATES_FLAKE:-github:joshrandall8478/fine-ill-try-nix}"
+      flakeRef="''${DEV_TEMPLATES_FLAKE:-github:joshrandall8478/nixos}"
       template="''${1:-generic}"
 
       case " $templates " in
@@ -101,6 +107,36 @@ in
     # Show more of a failed builder's output than the default ten lines. Most
     # useful failure messages in a dev shell are longer than that.
     log-lines = 25;
+  };
+
+  # --- the flake registry -----------------------------------------------
+  # What `nixpkgs` means as a bare flake ref on this machine: the exact rev
+  # this system is built from, rather than whatever nixos-unstable happens to
+  # be at the moment something asks. That covers `nix run nixpkgs#...`,
+  # `nix shell nixpkgs#...`, and the `inputs.nixpkgs.url = "nixpkgs"` that
+  # every template in templates/ now uses.
+  #
+  # The templates are the reason it's here. Spelled as a URL, the first
+  # `direnv allow` in a new project locks against a *different* nixpkgs than
+  # the machine, and every store path the shell needs — stdenv, glibc, the
+  # interpreter — is a fresh download despite an equivalent copy already
+  # sitting in /nix/store. Pinned, the paths coincide and there is nothing to
+  # fetch. It's also what makes the sentence in flake.nix about the templates
+  # true: the machines and the shells they build move on one
+  # `nix flake update`, because both read the same lock.
+  #
+  # Written as a github ref carrying the locked rev rather than as
+  # `flake = inputs.nixpkgs`, which would resolve to a store path. Project
+  # lock files record whatever this resolves to and outlive any one system
+  # generation; a store path is not something the weekly nix-collect-garbage
+  # in base.nix is obliged to keep, and a project whose lock names a
+  # collected path can't be evaluated at all. A rev can always be fetched
+  # again.
+  nix.registry.nixpkgs.to = {
+    type = "github";
+    owner = "NixOS";
+    repo = "nixpkgs";
+    inherit (inputs.nixpkgs) rev;
   };
 
   # --- direnv -----------------------------------------------------------

@@ -69,6 +69,25 @@
   # nothing to drive here until now.
   local.backlight.ddcci.enable = true;
 
+  # Single GPU passthrough. There is one card in this box, so lending it to a
+  # guest means taking it off the host first: starting one of the domains
+  # named below stops the display manager and with it this session, and
+  # shutting the guest down brings the greeter back. See
+  # modules/nixos/gpu-passthrough.nix for what happens in between, and
+  # "Single GPU passthrough" in MANUAL.md for the setting-up.
+  #
+  # The IOMMU half of the prerequisite is already here — `amd_iommu=on
+  # iommu=pt` in ../gamestation/kernel-params.nix, which both desk hosts
+  # import.
+  #
+  # `vms` is empty until you name a domain, and a rebuild warns that the hook
+  # can therefore never fire. Fill it in with what `virsh list --all` prints
+  # for the guest that gets the card, e.g. `vms = [ "win11" ];`.
+  local.virtualisation.singleGpuPassthrough = {
+    enable = true;
+    vms = [ ];
+  };
+
   # Themed login screen: one sddm-astronaut build per palette, following the
   # desktop's theme and wallpaper.
   #

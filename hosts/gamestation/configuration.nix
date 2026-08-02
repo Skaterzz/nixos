@@ -25,6 +25,20 @@
     # This is where Docker now lives — the old virtualisation.nix was folded
     # into it — so leaving it off means no containers on this host either.
     ../../modules/nixos/development.nix
+
+    # NOT imported: ../../modules/nixos/virtualization.nix
+    #
+    # QEMU/KVM guests live on the niri variant of this box, which is where
+    # single GPU passthrough is turned on too. To have both here as well, add
+    # that import and the option it carries:
+    #
+    #     local.virtualisation.singleGpuPassthrough = {
+    #       enable = true;
+    #       vms = [ "<domain name>" ];
+    #     };
+    #
+    # Everything else it needs is already on this host: the IOMMU flags in
+    # ./kernel-params.nix, and one display manager for the hook to stop.
   ];
 
   networking.hostName = "dialga";

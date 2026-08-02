@@ -16,6 +16,12 @@
 # `config.virtualisation.libvirtd.enable` rather than naming the group
 # outright, because naming a group nothing declares fails activation.
 {
+  # Single GPU passthrough rides along, switched off. It is a libvirt hook and
+  # nothing else, so it has no meaning without libvirtd and no cost until
+  # `local.virtualisation.singleGpuPassthrough.enable` is set — which is why
+  # it comes in here rather than being a third import for a host to remember.
+  imports = [ ./gpu-passthrough.nix ];
+
   virtualisation.libvirtd = {
     enable = true;
 

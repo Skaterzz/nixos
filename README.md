@@ -122,5 +122,6 @@ walks the whole thing from a live ISO.
   [the root account](MANUAL.md#the-root-account)
 - **Working in it** —
   [development environments](MANUAL.md#development-environments) ·
+  [single GPU passthrough](MANUAL.md#single-gpu-passthrough) ·
   [updating the dotfiles assets](MANUAL.md#updating-the-dotfiles-derived-assets) ·
   [where things came from](MANUAL.md#where-things-came-from)

@@ -52,6 +52,13 @@ the machine.
   - [Secrets](#secrets)
   - [A project that isn't yours](#a-project-that-isnt-yours)
   - [VS Code](#vs-code)
+- [Single GPU passthrough](#single-gpu-passthrough)
+  - [What it costs](#what-it-costs)
+  - [Turning it on](#turning-it-on)
+  - [The guest itself](#the-guest-itself)
+  - [What happens when the guest starts](#what-happens-when-the-guest-starts)
+  - [And when it stops](#and-when-it-stops)
+  - [When it goes wrong](#when-it-goes-wrong)
 - [Scheduled jobs](#scheduled-jobs)
   - [When not to use it](#when-not-to-use-it)
 - [The root account](#the-root-account)
@@ -88,6 +95,8 @@ modules/nixos/
   development.nix                 # direnv, Docker, nix settings — commented out
                                   #   per host, see below
   virtualization.nix              # libvirtd/QEMU/virt-manager — imported per host
+  gpu-passthrough.nix             # single GPU passthrough: the libvirt hook that
+                                  #   lends the only card to a guest and takes it back
   default-apps.nix                # /etc/xdg/mimeapps.list — file associations,
                                   #   overridable from a settings panel
   cron.nix                        # local.cron.jobs -> the system crontab
@@ -101,7 +110,7 @@ modules/nixos/
   power.nix                        # no idle suspend while on mains power
   boot.nix                         # bootloader: limine theming + other-OS detection
   options.nix                      # local.boot.*, local.power.*, local.sddm.*,
-                                   #   local.openrgb.*
+                                   #   local.openrgb.*, local.virtualisation.*
   users.nix                        # the `joshr` and `root` accounts
 home/common/
   options.nix                      # local.* options the entrypoints toggle
@@ -1853,6 +1862,175 @@ direnv has already loaded is the quick way to tell the two apart.
 from `development.nix` rather than downloading its own — so on a host with
 that module still commented out, neither name resolves and both settings are
 inert.
+
+## Single GPU passthrough
+
+Give the desk's graphics card to a virtual machine for as long as that machine
+is running, and take it back when it shuts down. `gamestation-niri` has it on;
+`modules/nixos/gpu-passthrough.nix` is the whole of it.
+
+The usual sort of VFIO passthrough is a two-card arrangement: the host uses
+one, the guest gets the other, and the guest's card is bound to `vfio-pci` in
+the initrd before anything else can claim it. There is one card in this box.
+The host is *using* it — greeter, compositor, framebuffer console — so before a
+guest can have it, every one of those has to let go, and afterwards every one
+of them has to come back. libvirt has no idea how to do that, which is why
+there is a hook.
+
+### What it costs
+
+**Starting one of these guests logs you out.** The display manager is stopped,
+the session goes with it, the screen is dark for a few seconds and then the
+guest is driving the monitor. Shutting the guest down brings the greeter back
+and you log in again.
+
+That is not a rough edge to be filed off later. One card cannot be in two
+operating systems at once, and every implementation of this — scripts, hooks,
+someone typing `systemctl stop display-manager` by hand — ends at the same
+place. What the module buys is that it happens in the right order, that it is
+undone in the right order, and that a failure half way through puts the desktop
+back rather than leaving a black screen.
+
+Anything you want to keep running belongs on the *host's* other tty or on
+another machine. An SSH session survives the whole thing; `base.nix` has sshd
+on with password auth off, so put a key in place first if there isn't one.
+
+### Turning it on
+
+```nix
+# hosts/gamestation-niri/configuration.nix
+    ../../modules/nixos/virtualization.nix        # libvirtd, which the hook needs
+
+  local.virtualisation.singleGpuPassthrough = {
+    enable = true;
+    vms = [ "win11" ];    # `virsh list --all` prints these names
+  };
+```
+
+The module rides along with `virtualization.nix` rather than being a third
+import to remember — it is a libvirt hook and nothing else, so it has no
+meaning without libvirtd and costs nothing until `enable` is set.
+
+`vms` is the list of libvirt domains allowed to take the card. Everything not
+named there starts and stops as an ordinary VM, and the hook returns
+immediately. It is a list rather than "any domain with a `<hostdev>`" because
+being wrong is asymmetric: a guest treated as a passthrough guest when it isn't
+takes the desktop down every time it boots, while a passthrough guest that
+isn't listed merely comes up without a display, with the session still there to
+fix it in. A name that matches no domain is inert, so renaming a VM makes
+passthrough *stop* rather than start happening to something else.
+
+An empty list is a warning at rebuild time, not an error. So is a kernel
+command line with neither `amd_iommu=on` nor `intel_iommu=on` — VFIO needs an
+IOMMU, and on this box `hosts/gamestation/kernel-params.nix` has had
+`amd_iommu=on iommu=pt` for exactly this reason since before there was anything
+to use it. It stays a warning because a recent kernel may have the IOMMU on
+already, because the firmware does.
+
+The other three options are for when the defaults don't fit:
+
+| | |
+|---|---|
+| `pciDevices` | The card's PCI functions, `0000:0b:00.0` style. Empty — the default — reads them out of the guest's own `<hostdev>` entries on stdin, so the card is written down once, in the VM, rather than twice. Set it when the guest's device list mixes the GPU with something the hook should leave alone. |
+| `hostDriverModules` | What to unload before the guest starts, most dependent module first; they go back in the reverse order. Defaults to the NVIDIA stack when `services.xserver.videoDrivers` says `nvidia`, otherwise `amdgpu`. |
+| `stopServices` | Extra units holding the card — a local model runner, a transcoder, a container started with the GPU passed in. `display-manager.service` is always handled and doesn't belong here. Only units that were running get stopped, and only those get started again. |
+
+### The guest itself
+
+Nothing here creates a VM. Make it in virt-manager as usual, then **Add
+Hardware → PCI Host Device** for every function of the card — the video one and
+its HDMI/DP audio at least, and everything else in the same IOMMU group,
+because a group travels together:
+
+```bash
+lspci -nnk                                   # addresses, and who has them now
+find /sys/kernel/iommu_groups -type l        # what shares a group with what
+```
+
+virt-manager writes those as `<hostdev managed='yes'>`, which means libvirt
+does the vfio-pci binding itself. That works: by the time libvirt gets there
+the hook has already taken the host driver off the card. The hook binds them
+too when it can name them, which is belt and braces rather than a requirement.
+
+`virtualization.nix` already turns on the two things a Windows guest asks for
+beyond this — OVMF for UEFI and swtpm for the TPM 2.0 device.
+
+### What happens when the guest starts
+
+libvirt runs every executable in `/var/lib/libvirt/hooks/qemu.d/` around a
+domain's lifecycle, with the domain name, the operation and the domain XML on
+stdin. The hook acts on two of them and ignores the rest. `prepare/begin` is
+before libvirt has allocated anything for the guest — the last moment the host
+can be told to drop the card cleanly — and in order it:
+
+1. Stops `display-manager.service`, and anything in `stopServices`.
+2. Unbinds the framebuffer console (`/sys/class/vtconsole/vtcon*`), which holds
+   the card without being a service at all.
+3. Unbinds whatever drew the boot splash — `efi-framebuffer` on the old path,
+   `simple-framebuffer` on anything recent enough to be using simpledrm.
+4. Unloads the GPU driver, retrying while it is busy. `systemctl stop` returns
+   when the *unit* is gone, but a compositor's last processes can hold a
+   `/dev/nvidia*` open for a moment after that, and the module won't come out
+   while they do.
+5. Loads `vfio-pci` and binds the card's functions to it through
+   `driver_override`, so the re-probe can only land on vfio-pci and the host
+   driver can't race for the card it has just let go of.
+
+If any of that fails, the hook puts the host back and *then* reports the
+failure. libvirt turns a non-zero hook into a refused domain start, which is
+the right outcome once the desktop is back: a VM that won't start is a problem
+you can look at, and a machine with no display manager and no GPU driver is
+not.
+
+### And when it stops
+
+`release/end` fires after the domain is fully torn down and libvirt has already
+reattached whatever it detached itself, so the card is genuinely free. The hook
+unbinds it from vfio-pci, clears the driver override, unloads the vfio modules,
+loads the GPU driver back in the reverse of the order it came out, rebinds the
+console, and starts the display manager last — the greeter wants a card that is
+already back.
+
+It restores exactly what the other half stopped and unbound, which it wrote
+down in `/run/single-gpu-passthrough.state`. That is deliberate: a unit that
+was already off before the guest started stays off. `/run` is tmpfs, so a
+reboot with a guest running leaves no stale file to act on, and if the file is
+missing the hook falls back to restoring the console and the display manager —
+the things whose absence leaves no way back in.
+
+### When it goes wrong
+
+```bash
+journalctl -t single-gpu-passthrough -f    # what the hook did, step by step
+journalctl -u libvirtd -f                  # what libvirt made of it
+```
+
+The hook is also on `PATH` as `single-gpu-passthrough`, taking the same
+arguments libvirt gives it. That is the way out when a guest has died in a way
+that never produced a `release/end` and the machine is sitting there with no
+desktop — from a TTY, or over SSH from another machine:
+
+```bash
+sudo single-gpu-passthrough <domain> release end < /dev/null
+```
+
+Ctrl+Alt+F2 gets a TTY right up until step 2 above; after that, SSH is the way
+in.
+
+Two failures worth naming:
+
+- **"could not unload the host GPU driver"**, and the desktop comes straight
+  back. Something still has the card open. `sudo fuser -v /dev/nvidia*` or
+  `lsof /dev/dri/*` names it; if it's a service, put it in `stopServices`.
+- **The guest starts but has no display**, and the host is dark. The card went
+  to vfio-pci but the guest didn't get it, or didn't drive it. Check that every
+  function of the card — and everything else in its IOMMU group — is attached
+  to the domain, then look at the guest's own console over SPICE.
+
+A rebuild alone doesn't install a changed hook. The libvirtd module symlinks
+the hooks into `/var/lib/libvirt/hooks/qemu.d/` from its `preStart`, so it
+takes a `sudo systemctl restart libvirtd` (or a reboot) before the new one is
+the one that runs.
 
 ## Scheduled jobs
 

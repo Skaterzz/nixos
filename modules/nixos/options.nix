@@ -365,4 +365,134 @@
       greeter; the niri session stays Wayland regardless.
     '';
   };
+
+  # Single GPU passthrough — the machine's only graphics card, lent to a guest
+  # and taken back afterwards. The libvirt hook that does the lending is
+  # modules/nixos/gpu-passthrough.nix, which is where the mechanics are
+  # written down; these are the knobs.
+  options.local.virtualisation.singleGpuPassthrough.enable = lib.mkOption {
+    type = lib.types.bool;
+    default = false;
+    description = ''
+      Install the libvirt hook that hands this machine's only GPU to a guest
+      while it runs, and puts the host back together when it stops.
+
+      Ordinary VFIO passthrough gives a *second* card to a VM: the host never
+      wants it, so it is bound to vfio-pci in the initrd and nothing else has
+      to happen. With one card the host is using it — greeter, compositor,
+      framebuffer console — and all of that has to let go first. So starting
+      one of these guests **logs you out**, and the screen stays dark until
+      the guest drives the monitor itself. Shutting the guest down brings the
+      greeter back. That is inherent to one card and two operating systems,
+      not a rough edge of the implementation.
+
+      On its own this does nothing: the hook only fires for the domains named
+      in `local.virtualisation.singleGpuPassthrough.vms`, and a rebuild warns
+      if that list is empty. It also needs libvirtd — import
+      modules/nixos/virtualization.nix on the host — and an IOMMU, which on
+      the desk is `amd_iommu=on iommu=pt` in
+      hosts/gamestation/kernel-params.nix.
+    '';
+  };
+
+  options.local.virtualisation.singleGpuPassthrough.vms = lib.mkOption {
+    type = lib.types.listOf lib.types.str;
+    default = [ ];
+    example = [ "win11" ];
+    description = ''
+      Which guests may take the GPU, by libvirt domain name — the names
+      `virsh list --all` prints, which are also what virt-manager shows in its
+      list. Anything not named here starts and stops as an ordinary VM and the
+      hook returns immediately.
+
+      This is a list rather than "every domain with a `<hostdev>`" because the
+      cost of being wrong is asymmetric. A guest that shouldn't have the card
+      but is treated as though it should takes the desktop down with it on
+      every boot of that VM; a guest that should have it and isn't listed just
+      fails to get a display, with the session still there to fix it in.
+
+      A name that doesn't match any domain is harmless — no domain, no hook —
+      so renaming a VM in virt-manager makes passthrough stop happening rather
+      than start happening to the wrong guest.
+    '';
+  };
+
+  options.local.virtualisation.singleGpuPassthrough.pciDevices = lib.mkOption {
+    type = lib.types.listOf lib.types.str;
+    default = [ ];
+    example = [
+      "0000:0b:00.0"
+      "0000:0b:00.1"
+    ];
+    description = ''
+      PCI functions to bind to vfio-pci, in the kernel's
+      `domain:bus:slot.function` form. Empty — the default — reads them out of
+      the domain XML libvirt hands the hook on stdin, so the card is written
+      down once, in the VM, instead of twice.
+
+      Set it when the automatic reading is wrong or not wanted: a guest whose
+      `<hostdev>` list mixes the GPU with a USB controller you'd rather the
+      hook left alone, or a card whose audio function has to move even though
+      the guest doesn't ask for it.
+
+      `lspci -nnk` names them; a GPU is normally at least two — the video
+      function and its HDMI/DP audio — and everything in one IOMMU group has
+      to travel together. `find /sys/kernel/iommu_groups -type l` prints the
+      groups.
+    '';
+  };
+
+  options.local.virtualisation.singleGpuPassthrough.hostDriverModules = lib.mkOption {
+    type = lib.types.listOf lib.types.str;
+    default =
+      if lib.elem "nvidia" config.services.xserver.videoDrivers then
+        [
+          "nvidia_drm"
+          "nvidia_modeset"
+          "nvidia_uvm"
+          "nvidia"
+        ]
+      else
+        [ "amdgpu" ];
+    defaultText = lib.literalExpression ''
+      the NVIDIA stack when services.xserver.videoDrivers contains "nvidia",
+      otherwise [ "amdgpu" ]
+    '';
+    description = ''
+      Kernel modules to unload before the guest starts, in the order they come
+      out. They go back in the reverse order afterwards.
+
+      Order is the whole content of this option. `nvidia` will not unload
+      while `nvidia_drm` is loaded on top of it, so the list runs from the
+      most dependent module to the least — and reversing it on the way back
+      means loading the bottom of the stack first, which is also what a bare
+      `modprobe nvidia_drm` would pull in anyway.
+
+      Getting this wrong looks like a guest that refuses to start with the
+      hook logging "could not unload the host GPU driver", and the desktop
+      coming straight back — the hook undoes its own work before failing.
+    '';
+  };
+
+  options.local.virtualisation.singleGpuPassthrough.stopServices = lib.mkOption {
+    type = lib.types.listOf lib.types.str;
+    default = [ ];
+    example = [ "ollama.service" ];
+    description = ''
+      Extra systemd units to stop before the GPU is taken, and start again
+      after it comes back. `display-manager.service` is always handled and
+      doesn't belong here.
+
+      This is for the things that hold the card without being the desktop: a
+      local model runner, a transcoding daemon, a container that was started
+      with the GPU passed in. Anything with an open handle to /dev/nvidia* or
+      /dev/dri/* keeps the driver loaded, and the hook's five attempts to
+      unload it will all fail — with the useful consequence that the VM
+      refuses to start rather than the machine ending up in a state where
+      neither side has a display.
+
+      Only units that were actually running get stopped, and only those get
+      started again, so naming a unit that is off costs nothing.
+    '';
+  };
 }

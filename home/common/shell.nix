@@ -118,7 +118,7 @@ in
         body = ''
         sudo -i
         cd /etc/nixos
-        ''
+        '';
       };
       nix-clean = {
         description = "delete nix generations older than <age>, default 7d ('all' for every old one)";

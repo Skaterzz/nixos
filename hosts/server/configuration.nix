@@ -45,8 +45,8 @@
   # Cron
   # ---------------------------------------------------------------------
   #
-  # See modules/nixos/cron.nix for the option, and "Scheduled jobs" in the
-  # README for the reasoning. Three things worth remembering before adding to
+  # See modules/nixos/cron.nix for the option, and "Scheduled jobs" in
+  # MANUAL.md for the reasoning. Three things worth remembering before adding to
   # the list:
   #
   #   * Bare command names work. nixpkgs' cron module puts all of

@@ -181,7 +181,7 @@
       #   nix flake init -t github:joshrandall8478/fine-ill-try-nix#python
       #
       # or `dev-init python`, which does that and sets up direnv in one go.
-      # See "Development environments" in the README.
+      # See "Development environments" in MANUAL.md.
       #
       # They live here rather than in a separate repo so that the machines
       # and the shells they build are updated by the same `nix flake update`.

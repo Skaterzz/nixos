@@ -1,4 +1,4 @@
-{ config, lib, pkgs, niriTheming, niriScripts, niriClipboard, niriEmoji, ... }:
+{ config, lib, pkgs, osConfig ? { }, niriTheming, niriScripts, niriClipboard, niriEmoji, ... }:
 
 # niri's own config. There is no home-manager module for niri, so this is
 # written out as a KDL file.
@@ -61,22 +61,37 @@ let
 
   # OpenRGB's tray applet, applying the configured profile at login.
   #
-  # `--startminimized` is doing two jobs. OpenRGB drops to CLI mode and exits
-  # as soon as it is given any option — `--profile` on its own would apply the
-  # lighting and quit, leaving no tray icon — and this both forces the GUI back
-  # on (it implies `--gui`) and keeps that GUI out of the way. Passing
-  # `--profile` alone, or omitting it, are both wrong for "apply the profile
-  # and sit in the tray".
+  # Both halves of this come from the NixOS side through `osConfig` —
+  # home-manager's handle on the system config, which exists because
+  # home-manager is a NixOS module here (flake.nix). The `or` fallbacks are
+  # for the case where it isn't; the options themselves are declared in
+  # modules/nixos/options.nix, which every host reaches.
   #
-  # Switched off at the moment: the whole binding is commented out below
-  # rather than deleted, so re-enabling it is uncommenting two lines. The
-  # empty string is what keeps `${openrgbStartup}` in the config template a
-  # valid reference while that is the case — with the binding commented out
-  # and nothing in its place, evaluating this file fails outright with
-  # "undefined variable 'openrgbStartup'".
-  openrgbStartup = "";
-  #openrgbStartup = lib.optionalString config.local.openrgb.autostart ''
-    #spawn-at-startup "${pkgs.openrgb}/bin/openrgb" "--startminimized" "--profile" "${config.local.openrgb.profile}"'';
+  # `local.openrgb.autostart` follows `services.hardware.openrgb.enable`, so
+  # this is a machine that has RGB hardware someone configured. On the laptop
+  # it is off and this whole block is an empty string.
+  #
+  # `local.openrgb.profile` is shared with modules/nixos/openrgb.nix, which
+  # re-applies the same profile after every resume. One name in one place: the
+  # two disagreeing is the sort of bug nobody notices until a suspend.
+  #
+  # `--startminimized` is load-bearing twice over. OpenRGB drops to CLI mode
+  # and *exits* as soon as it is given any option — `--profile` on its own
+  # would apply the lighting and quit, leaving no tray icon — and this both
+  # forces the GUI back on (it implies `--gui`) and keeps that GUI out of the
+  # way. The resume service is the case that *wants* the CLI behaviour, and it
+  # gets it by leaving this out.
+  #
+  # One string per argument, which is the detail this got wrong for a while.
+  # `spawn-at-startup` is not a shell: niri execs the first string and hands it
+  # the rest, so a whole command line in a single string is a program name with
+  # spaces in it. That fails with ENOENT — silently, into niri's log — and the
+  # login-time apply never happened at all. `spawn-sh-at-startup` is the node
+  # that takes a command line; every other spawn in this file uses the
+  # argument-per-string form, so this does too.
+  openrgbProfile = osConfig.local.openrgb.profile or "Main";
+  openrgbStartup = lib.optionalString (osConfig.local.openrgb.autostart or false) ''
+    spawn-at-startup "${bin pkgs.openrgb-with-all-plugins}" "--startminimized" "--profile" "${openrgbProfile}"'';
 in
 {
   xdg.configFile."niri/config.kdl".text = ''
@@ -205,7 +220,10 @@ ${workspaceBlocks}
     // waybar runs as a systemd user service (see waybar.nix) so the theme
     // switcher can restart it; starting it here as well would give two bars.
     spawn-at-startup "${bin niriScripts.wallpaperRestore}"
-    spawn-at-startup "${bin pkgs.openrgb-with-all-plugins} --startminimized --profile Main"
+
+    // OpenRGB's tray applet, on the hosts that have RGB hardware. Built in
+    // this file's `let` block, along with the reasoning.
+    ${openrgbStartup}
 
     // nm-applet is deliberately not started. Its tray icon duplicates the
     // waybar `network` module, and that module's click already opens

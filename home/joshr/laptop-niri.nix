@@ -16,12 +16,17 @@
     ./office.nix
   ];
 
-  # No OpenRGB tray applet at login here. The option defaults to true for the
-  # desk, which has RGB hardware worth driving; on the laptop the applet has
-  # nothing to talk to but still costs a tray icon, a Qt process and a failed
-  # profile load every session.
+  # No OpenRGB tray applet at login here, and nothing to switch off to get
+  # that: `local.openrgb.autostart` defaults to whether the OpenRGB daemon is
+  # enabled, and the daemon comes with modules/nixos/gaming.nix, which
+  # hosts/laptop-niri doesn't import. The desk has RGB hardware worth driving;
+  # here the applet would have nothing to talk to and would still cost a tray
+  # icon, a Qt process and a failed profile load every session.
   #
-  # This only stops the *applet* autostarting. `openrgb` is still installed
-  # (../home.nix) and the daemon is still enabled by modules/nixos/gaming.nix,
-  # so launching it by hand on a docked keyboard or mouse still works.
+  # Nothing OpenRGB-shaped is installed here at all, in fact: the package comes
+  # from the daemon's own module (`services.hardware.openrgb` puts it in
+  # environment.systemPackages), so no daemon means no `openrgb` on PATH
+  # either. If a docked keyboard or mouse ever needs it, `nix run nixpkgs#openrgb`
+  # is a one-off, and importing modules/nixos/gaming.nix on this host is the
+  # permanent version.
 }

@@ -75,7 +75,7 @@
   # This was black on the primary display for a while. The cause looks to have
   # been the theme pointing Background at a wallpaper file that doesn't exist
   # until the switcher has run, and feeding that to a blur shader — see "The
-  # login screen" in the README. If it comes back black, set this to "stock"
+  # login screen" in MANUAL.md. If it comes back black, set this to "stock"
   # and rebuild; a TTY (Ctrl+Alt+F2) still works, as does the previous
   # generation in the boot menu.
   local.sddm.theme = "astronaut";

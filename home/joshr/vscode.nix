@@ -23,8 +23,8 @@ let
     "icrawl.discord-vscode"
     # Nix language support, and the bridge that lets the editor see a
     # project's direnv shell — without it every import in a flake-managed
-    # project reads as unresolved. See "Development environments" in the
-    # README.
+    # project reads as unresolved. See "Development environments" in
+    # MANUAL.md.
     "jnoortheen.nix-ide"
     "lakshits11.monokai-pirokai"
     "mathematic.vscode-latex"

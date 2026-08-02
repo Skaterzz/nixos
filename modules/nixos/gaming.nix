@@ -1,13 +1,18 @@
 { config, lib, pkgs, ... }:
 
 {
-  # MangoHud itself is configured per-user in home/joshr/home.nix
-  # (home-manager's programs.mangohud, not a NixOS-level option).
-  services.hardware.openrgb = {
-	enable = true;
-	package = pkgs.openrgb-with-all-plugins;
-        motherboard = "amd";
-};
+  # OpenRGB: the daemon, and re-applying the profile after a suspend.
+  #
+  # It lived here as four lines and moved out when the resume half was added.
+  # Still imported from this file rather than per host, so the hosts that had
+  # RGB before still have it and nothing had to be edited to keep it. Its
+  # `local.openrgb.*` options are in modules/nixos/options.nix.
+  imports = [ ./openrgb.nix ];
+
+  # MangoHud isn't here at all: it's configured per-user in
+  # home/joshr/home.nix, through home-manager's programs.mangohud rather than
+  # a NixOS-level option.
+
   programs.steam = {
     enable = true;
     remotePlay.openFirewall = true;

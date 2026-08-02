@@ -33,7 +33,8 @@
 # Adding a theme is adding one attrset here. Nothing else needs touching.
 {
   # Applied on a fresh install, and the palette SDDM is built with unless
-  # overridden. See README for how the login screen follows runtime switches.
+  # overridden. See MANUAL.md for how the login screen follows runtime
+  # switches.
   default = "matrix";
 
   themes = {

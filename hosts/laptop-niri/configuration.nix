@@ -44,8 +44,8 @@
   networking.hostName = "wooper";
 
   # Themed login screen, same as the desk. See
-  # hosts/gamestation-niri/configuration.nix and "The login screen" in the
-  # README for the black-greeter history behind this being an option at all.
+  # hosts/gamestation-niri/configuration.nix and "The login screen" in
+  # MANUAL.md for the black-greeter history behind this being an option at all.
   # Set to "stock" for SDDM's built-in greeter if it ever misbehaves here.
   local.sddm.theme = "astronaut";
 

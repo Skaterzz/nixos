@@ -110,8 +110,8 @@ in
       #
       # Nothing here touches the current generation: --delete-older-than and
       # -d both keep it. What they do cost is rollback — the boot menu is the
-      # recovery path for a bad switch (see "Rebuilding after changes" in the
-      # README), so `nix-clean all` is deliberately something you have to ask
+      # recovery path for a bad switch (see "Rebuilding after changes" in
+      # MANUAL.md), so `nix-clean all` is deliberately something you have to ask
       # for by name rather than the default.
       nix-clean = {
         description = "delete nix generations older than <age>, default 7d ('all' for every old one)";

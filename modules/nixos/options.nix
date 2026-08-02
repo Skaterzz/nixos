@@ -1,4 +1,4 @@
-{ lib, ... }:
+{ config, lib, ... }:
 
 # System-level `local.*` options.
 #
@@ -174,6 +174,73 @@
       /sys/class/power_supply. A machine with no battery at all is always
       on mains, so the inhibitor simply stays up on the desk and the
       server.
+    '';
+  };
+
+  # RGB lighting. The daemon and the resume hook are modules/nixos/openrgb.nix;
+  # the session-side half — the tray applet niri starts at login — reads the
+  # profile name from here through `osConfig`, so the two can't drift.
+  options.local.openrgb.profile = lib.mkOption {
+    type = lib.types.str;
+    default = "Main";
+    example = "Off";
+    description = ''
+      Name of the OpenRGB profile the session applies at login and the
+      machine re-applies after resume, without the `.orp` extension.
+
+      Profiles are made from OpenRGB's own UI ("Save Profile") and live in
+      ~/.config/OpenRGB, under the account named by
+      `local.desktop.primaryUser`. They are runtime state, not something this
+      repo writes — which also means the name is a filename and is
+      case-sensitive: "Main" and "main" are two different profiles, and
+      OpenRGB will tell you it failed to load the one that doesn't exist.
+
+      Naming a profile that hasn't been saved yet is harmless. The login
+      spawn prints "Profile failed to load" and still leaves you a tray icon;
+      the resume service checks for the file first and does nothing.
+    '';
+  };
+
+  options.local.openrgb.autostart = lib.mkOption {
+    type = lib.types.bool;
+    default = config.services.hardware.openrgb.enable;
+    defaultText = lib.literalExpression "config.services.hardware.openrgb.enable";
+    description = ''
+      Start OpenRGB's tray applet with the niri session and apply
+      `local.openrgb.profile`. Read by home/joshr/niri/niri.nix through
+      `osConfig`; Plasma has its own autostart handling and ignores this.
+
+      The default follows the daemon, which is only enabled on the hosts that
+      import modules/nixos/gaming.nix. That is the desk, which has RGB
+      hardware worth driving, and not the laptop, where the applet would cost
+      a tray icon, a Qt process and a failed profile load every session for
+      nothing to talk to.
+
+      Off only stops the applet starting itself. Where the daemon is enabled
+      it keeps running and `openrgb` stays on PATH, so launching it by hand —
+      for a keyboard or mouse plugged into a dock, say — still works. Where
+      the daemon isn't enabled, which is the usual reason this is off, the
+      package isn't installed either: it arrives with the daemon's module.
+    '';
+  };
+
+  options.local.openrgb.applyOnResume = lib.mkOption {
+    type = lib.types.bool;
+    default = true;
+    description = ''
+      Re-apply `local.openrgb.profile` after the machine wakes from suspend or
+      hibernate. See modules/nixos/openrgb.nix.
+
+      On by default because the lighting does not survive a sleep on its own.
+      RGB controllers hold whatever was last written to them and no further:
+      suspend cuts their power, USB ones are re-enumerated on the way back and
+      the ones on the board come back on their firmware default, so a machine
+      that has slept once is wearing the factory rainbow until the next login
+      applies the profile again.
+
+      Turning this off leaves that behaviour — it doesn't restore anything
+      else. The only reason to is if something else on the machine has taken
+      over the lighting and you'd rather this didn't argue with it.
     '';
   };
 

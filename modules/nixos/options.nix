@@ -493,6 +493,320 @@
 
       Only units that were actually running get stopped, and only those get
       started again, so naming a unit that is off costs nothing.
+
+      modules/nixos/ai.nix adds its own units to this list when it is enabled,
+      so the local model server doesn't have to be written down here as well.
+    '';
+  };
+
+  # Local AI. The model runner, a chat window for it and an agent, all on
+  # loopback — modules/nixos/ai.nix is where the mechanics are written down
+  # and these are the knobs. "Local AI" in MANUAL.md is the prose version.
+  options.local.ai.enable = lib.mkOption {
+    type = lib.types.bool;
+    default = false;
+    description = ''
+      Run large language models on this machine.
+
+      This is the switch the three sub-sections below follow. On its own it
+      brings up ollama and Open WebUI — a model server on 127.0.0.1:11434 and
+      a browser chat window on 127.0.0.1:8080, neither of which talks to
+      anything off this box. The agent (`local.ai.openclaw`) is the one part
+      that does *not* follow it, and has to be turned on by name.
+
+      Off by default because it is not free to have: models are gigabytes on
+      disk, and on an NVIDIA machine the first rebuild after this compiles
+      ollama against CUDA locally, because cache.nixos.org doesn't carry that
+      build. See `local.ai.ollama.acceleration`.
+    '';
+  };
+
+  options.local.ai.ollama.enable = lib.mkOption {
+    type = lib.types.bool;
+    default = config.local.ai.enable;
+    defaultText = lib.literalExpression "config.local.ai.enable";
+    description = ''
+      Run ollama, the model server everything else here points at.
+
+      It listens on 127.0.0.1 only. `ollama` is also on PATH and talks to the
+      running server over that socket, so `ollama run <model>` in a terminal
+      and `ollama pull` both work without this module having to grant anything
+      — they are HTTP clients, not a second copy of the server.
+
+      Turn it off to keep Open WebUI or the agent while pointing them at a
+      model server somewhere else; the wiring this module does for them is
+      then yours to write.
+    '';
+  };
+
+  options.local.ai.ollama.acceleration = lib.mkOption {
+    type = lib.types.enum [
+      "auto"
+      "cuda"
+      "rocm"
+      "vulkan"
+      "cpu"
+    ];
+    default = "auto";
+    description = ''
+      Which ollama build to install, and therefore what does the arithmetic.
+
+      "auto" reads `services.xserver.videoDrivers`: nvidia gives `ollama-cuda`,
+      amdgpu gives `ollama-rocm`, and anything else gives `ollama-cpu`. A
+      machine that has already named its driver once doesn't have to name it
+      again here.
+
+      **The accelerated builds are not in the binary cache.** Hydra doesn't
+      build against unfree CUDA or against ROCm's closure, so the first
+      rebuild after enabling this compiles ollama on this machine — tens of
+      minutes, once, and again after a nixpkgs bump that moves it. That is the
+      cost of the default, not a fault in it: on the desk's card the
+      difference between "cuda" and "cpu" is roughly the difference between a
+      conversation and a progress bar.
+
+      "cpu" is the honest way to try the rest of this module in the meantime;
+      it builds from cache and small models are usable, if slow. "vulkan" is
+      the escape hatch for a GPU neither of the vendor stacks likes.
+    '';
+  };
+
+  options.local.ai.ollama.port = lib.mkOption {
+    type = lib.types.port;
+    default = 11434;
+    description = ''
+      Where ollama listens, on 127.0.0.1.
+
+      Worth knowing before changing it: OpenClaw's bundled Ollama provider
+      only *discovers* a server on the default 11434. Move the port with
+      `local.ai.openclaw` enabled and a rebuild warns, with the two commands
+      that teach the agent the new address.
+    '';
+  };
+
+  options.local.ai.ollama.models = lib.mkOption {
+    type = lib.types.listOf lib.types.str;
+    default = [ ];
+    example = [
+      "qwen3"
+      "qwen3:32b"
+      "nomic-embed-text"
+    ];
+    description = ''
+      Models to pull once ollama is up, by their name in
+      <https://ollama.com/library>. A bare name is that model's default tag,
+      which is usually its smallest sensible size; `name:tag` picks one.
+
+      This is a *download* list, not a build input. `ollama-model-loader.service`
+      fetches them in the background after the server starts, so a rebuild
+      doesn't wait on gigabytes and a machine that is offline at the time
+      retries with a backoff rather than failing the activation. The weights
+      never enter the Nix store — they live under /var/lib/ollama and are not
+      what `nix-collect-garbage` collects.
+
+      An empty list is a working server with nothing in it, which is a fine
+      place to start: `ollama pull <model>` from a terminal does the same
+      thing imperatively, and the ones worth keeping can be written down here
+      afterwards.
+
+      If the agent is going to use one of these, it needs a model that
+      supports *tool calling* and has a context window of at least 16K —
+      OpenClaw checks for both, and a model that can only chat will look
+      broken rather than limited. The qwen and llama families advertise tools;
+      several otherwise excellent small models do not.
+    '';
+  };
+
+  options.local.ai.ollama.pruneUndeclaredModels = lib.mkOption {
+    type = lib.types.bool;
+    default = false;
+    description = ''
+      Delete any model that isn't in `local.ai.ollama.models`, on every start
+      of the loader service.
+
+      Off by default because the models directory is state, not a build
+      product, and the usual way to meet a model is to pull it by hand and
+      decide afterwards. Turning this on makes the list above authoritative —
+      useful when disk is tight and the answer to "what is in here?" should be
+      readable from this file, expensive when the answer costs a re-download.
+    '';
+  };
+
+  options.local.ai.webui.enable = lib.mkOption {
+    type = lib.types.bool;
+    default = config.local.ai.enable;
+    defaultText = lib.literalExpression "config.local.ai.enable";
+    description = ''
+      Run Open WebUI, a browser chat window for the local models, on
+      127.0.0.1.
+
+      It is pointed at ollama automatically when that is enabled. The first
+      visit asks for an account; that account is local to this machine, lives
+      in a SQLite file under /var/lib/open-webui, and is what keeps a stray
+      browser tab from talking to the models. `WEBUI_AUTH = "False"` in
+      `extraEnvironment` removes it if the prompt is more ceremony than a
+      single-user desktop wants.
+    '';
+  };
+
+  options.local.ai.webui.port = lib.mkOption {
+    type = lib.types.port;
+    default = 8080;
+    description = ''
+      Where Open WebUI listens, on 127.0.0.1. 8080 is a popular port; move it
+      if something else on this machine wants it.
+    '';
+  };
+
+  options.local.ai.webui.extraEnvironment = lib.mkOption {
+    type = lib.types.attrsOf lib.types.str;
+    default = { };
+    example = {
+      WEBUI_AUTH = "False";
+      ENABLE_WEB_SEARCH = "True";
+    };
+    description = ''
+      Extra environment for Open WebUI, merged over what this module sets and
+      winning where the two collide. The full list of names is at
+      <https://docs.openwebui.com/getting-started/env-configuration>.
+
+      What this module sets, and would therefore be overriding: telemetry off
+      (three variables), `ENABLE_OPENAI_API = "False"`, and `OLLAMA_BASE_URL`
+      pointing at the local server.
+
+      Secrets don't belong here — this ends up in the unit file, which is
+      world-readable in the store. `services.open-webui.environmentFile` takes
+      a path for those.
+    '';
+  };
+
+  options.local.ai.openclaw.enable = lib.mkOption {
+    type = lib.types.bool;
+    default = false;
+    description = ''
+      Run the OpenClaw gateway: an agent that holds sessions, tools and chat
+      channels, with a control UI on http://127.0.0.1:18789.
+
+      **This one does not follow `local.ai.enable`, and the reason is worth
+      reading.** A model server answers questions. An agent acts: it reads and
+      writes files, runs commands, and does so on the basis of text that
+      arrived from somewhere else — a message, a web page, a document it was
+      handed. There is no reliable way to keep instructions in that text from
+      being followed. nixpkgs states this in the package itself, as a
+      `knownVulnerabilities` entry, which means a plain rebuild *refuses to
+      install it*; modules/nixos/ai.nix disarms that check by name for this
+      one package, so switching this on is the moment that decision gets made.
+
+      What limits the damage here is the account boundary and nothing else.
+      The gateway runs as `local.ai.openclaw.user` — not as root, not as a
+      daemon user with a sandbox, because the assistant's whole purpose is
+      that account's files and tools. Assume anything that user can do, this
+      can be talked into doing.
+
+      It listens on loopback and this module opens no firewall port. Reaching
+      it from a phone is a `tailscale serve` decision to make deliberately,
+      after reading <https://docs.openclaw.ai/gateway/security>.
+    '';
+  };
+
+  options.local.ai.openclaw.user = lib.mkOption {
+    type = lib.types.str;
+    default = config.local.desktop.primaryUser;
+    defaultText = lib.literalExpression "config.local.desktop.primaryUser";
+    description = ''
+      Whose assistant it is. The gateway runs in this account's systemd user
+      manager, and keeps its config, token, workspace and session history in
+      that account's ~/.openclaw.
+
+      One account, not a list: the config, the chat channels and the memory
+      are all singular, and two people sharing them would be sharing an inbox
+      rather than each having an assistant. A second person wants a second
+      gateway on a second port, which this option doesn't express — the unit
+      in modules/nixos/ai.nix would have to be written per user for that.
+
+      A rebuild fails if the name isn't an account on this machine; the unit
+      is generated for every user manager on the box and selected with
+      systemd's `ConditionUser=`, so a name with no home directory would
+      simply never start and never say why.
+    '';
+  };
+
+  options.local.ai.openclaw.port = lib.mkOption {
+    type = lib.types.port;
+    default = 18789;
+    description = ''
+      Where the gateway listens, on 127.0.0.1 — the WebSocket and the control
+      UI share the one port.
+
+      Passed on the command line rather than written into OpenClaw's config
+      file, so this option stays authoritative. The config file is seeded once
+      and then belongs to OpenClaw (see `local.ai.openclaw.model`); a port
+      living in there would be a copy that quietly stopped matching.
+    '';
+  };
+
+  options.local.ai.openclaw.model = lib.mkOption {
+    type = lib.types.nullOr lib.types.str;
+    default = null;
+    example = "ollama/qwen3";
+    description = ''
+      The model the agent thinks with, as `provider/model`. `ollama/<name>`
+      is the local server; the name has to be one ollama actually has, so it
+      belongs in `local.ai.ollama.models` too.
+
+      **Read once, at first start, and never again.** OpenClaw owns
+      ~/.openclaw/openclaw.json — its control UI writes to that file, its CLI
+      writes to that file, and the gateway reloads it while running — so this
+      module seeds the file when it is missing and then keeps its hands off.
+      Changing this option later is a no-op. The way to change the model on a
+      machine that has already started once is:
+
+          openclaw models set ollama/<model>
+
+      null leaves the model out of the seed entirely, which is the right
+      choice if `openclaw onboard` is going to be run by hand: it picks a
+      provider and a model interactively and writes them itself.
+    '';
+  };
+
+  options.local.ai.openclaw.linger = lib.mkOption {
+    type = lib.types.bool;
+    default = false;
+    description = ''
+      Keep the gateway running when nobody is logged in.
+
+      Off by default, which means the assistant is up while its account has a
+      session and gone otherwise. That is the honest shape for something on a
+      desktop: it is there when you are.
+
+      On means `loginctl enable-linger` for that account — the user manager
+      starts at boot and survives logout, so a message sent from a phone at
+      midday reaches a machine nobody has touched. It also means an agent with
+      a shell running unattended, which is a different risk than one running
+      behind an unlocked session. Worth it for a machine you actually message;
+      not worth it for one you sit at.
+    '';
+  };
+
+  options.local.ai.openclaw.environmentFile = lib.mkOption {
+    type = lib.types.nullOr lib.types.path;
+    default = null;
+    example = "/var/lib/secrets/openclaw.env";
+    description = ''
+      A systemd `EnvironmentFile` for the gateway — provider API keys for
+      anything that isn't the local model server, in `NAME=value` lines.
+
+      This is for a file something *else* manages: a secrets tool, a path
+      outside the home directory, something restored from a backup. A missing
+      file is not an error, so it can be named before it exists.
+
+      The other place credentials can go is ~/.openclaw/gateway.env, which the
+      service creates on first start to hold the generated gateway token and
+      then sources on every start. Anything added to that file by hand is
+      picked up the same way. Use whichever suits: this option when the file
+      belongs to the system, that file when it belongs to the person.
+
+      Either way it is a path, read at start — nothing is copied into the Nix
+      store, and neither file's contents appear in the unit.
     '';
   };
 }

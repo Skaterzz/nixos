@@ -60,6 +60,14 @@ the machine.
   - [What happens when the guest starts](#what-happens-when-the-guest-starts)
   - [And when it stops](#and-when-it-stops)
   - [When it goes wrong](#when-it-goes-wrong)
+- [Local AI](#local-ai)
+  - [Turning it on](#turning-it-on-1)
+  - [The first rebuild is a long one](#the-first-rebuild-is-a-long-one)
+  - [Models](#models)
+  - [Open WebUI](#open-webui)
+  - [OpenClaw, and what it costs](#openclaw-and-what-it-costs)
+  - [Sharing the card with a VM](#sharing-the-card-with-a-vm)
+  - [When it goes wrong](#when-it-goes-wrong-1)
 - [Scheduled jobs](#scheduled-jobs)
   - [When not to use it](#when-not-to-use-it)
 - [The accounts](#the-accounts)
@@ -102,6 +110,8 @@ modules/nixos/
   virtualization.nix              # libvirtd/QEMU/virt-manager — imported per host
   gpu-passthrough.nix             # single GPU passthrough: the libvirt hook that
                                   #   lends the only card to a guest and takes it back
+  ai.nix                          # local models: ollama on the GPU, Open WebUI,
+                                  #   and the OpenClaw agent — imported per host
   default-apps.nix                # /etc/xdg/mimeapps.list — file associations,
                                   #   overridable from a settings panel
   cron.nix                        # local.cron.jobs -> the system crontab
@@ -115,7 +125,8 @@ modules/nixos/
   power.nix                        # no idle suspend while on mains power
   boot.nix                         # bootloader: limine theming + other-OS detection
   options.nix                      # local.boot.*, local.power.*, local.sddm.*,
-                                   #   local.openrgb.*, local.virtualisation.*
+                                   #   local.openrgb.*, local.virtualisation.*,
+                                   #   local.ai.*
   users.nix                        # the `joshr`, `raiden` and `root` accounts
 home/common/
   options.nix                      # local.* options the entrypoints toggle
@@ -2188,6 +2199,260 @@ A rebuild alone doesn't install a changed hook. The libvirtd module symlinks
 the hooks into `/var/lib/libvirt/hooks/qemu.d/` from its `preStart`, so it
 takes a `sudo systemctl restart libvirtd` (or a reboot) before the new one is
 the one that runs.
+
+## Local AI
+
+Models that run on this machine's own card. `modules/nixos/ai.nix`, imported
+by `gamestation-niri` and nowhere else — the laptop has no discrete GPU and
+the server has neither a GPU nor anyone sitting at it.
+
+Three programs, three jobs:
+
+| | What it is | Where |
+|---|---|---|
+| **ollama** | the model server: holds the weights, answers HTTP | `127.0.0.1:11434` |
+| **Open WebUI** | a browser chat window, pointed at ollama | `127.0.0.1:8080` |
+| **OpenClaw** | an agent — sessions, tools, chat channels — with a control UI | `127.0.0.1:18789` |
+
+All three are on loopback and **nothing here opens a firewall port**. Reaching
+any of them from a phone is a `tailscale serve` decision to make on purpose;
+`services.tailscale` is already up from `base.nix`, so the tailnet is there
+when you want it, and none of these is on it until you say so.
+
+### Turning it on
+
+```nix
+# hosts/gamestation-niri/configuration.nix
+local.ai = {
+  enable = true;
+
+  ollama.models = [
+    "qwen3"
+    "nomic-embed-text"
+  ];
+
+  openclaw = {
+    enable = true;
+    model = "ollama/qwen3";
+    linger = false;
+  };
+};
+```
+
+`local.ai.enable` brings up the model server and the chat window. It does
+*not* bring up the agent — `local.ai.openclaw.enable` is separate, and the
+reason is [further down](#openclaw-and-what-it-costs). Every option is in
+`modules/nixos/options.nix` with its reasoning attached.
+
+### The first rebuild is a long one
+
+`local.ai.ollama.acceleration` defaults to `"auto"`, which reads
+`services.xserver.videoDrivers`: nvidia here, so `ollama-cuda`.
+
+**cache.nixos.org does not have that build.** Hydra doesn't build against
+unfree CUDA, so the first rebuild after enabling this compiles ollama on the
+machine. Tens of minutes, once, and again after a nixpkgs bump moves it.
+
+That is the cost of the right default rather than a fault in it — on this
+card, "cuda" versus "cpu" is roughly the difference between a conversation and
+a progress bar. Two ways round it if the wait isn't acceptable today:
+
+```nix
+local.ai.ollama.acceleration = "cpu";   # builds from cache, small models are usable
+```
+
+or point the daemon at the cuda-maintainers cachix and let someone else have
+done the build.
+
+### Models
+
+`local.ai.ollama.models` is a **download** list, not a build input. Names come
+from [ollama.com/library](https://ollama.com/library); a bare name means that
+model's default tag, `name:tag` picks a size.
+
+```
+ollama list                  # what's actually on disk
+ollama pull deepseek-r1      # try one without editing the config
+ollama run qwen3             # a terminal chat, straight against the server
+```
+
+`ollama-model-loader.service` fetches them in the background once the server
+is up, so a rebuild never waits on gigabytes, and a machine that was offline
+at the time retries with a backoff instead of failing activation. The weights
+live under `/var/lib/ollama` and never enter the store — which also means the
+weekly `nix-collect-garbage` has no opinion about them, and neither does a
+rollback.
+
+Pulling by hand and writing down the keepers afterwards is the intended
+rhythm. `local.ai.ollama.pruneUndeclaredModels = true` reverses that and makes
+the list authoritative, deleting anything not named in it.
+
+**If the agent is going to use a model, it needs tool calling and at least a
+16K context window.** OpenClaw checks for both and quietly won't offer a model
+that lacks them, which reads as "the agent is broken" rather than "that model
+can only chat". `qwen3` is in the list above for exactly this reason; several
+otherwise excellent small models advertise no tools at all.
+`nomic-embed-text` is a different kind of thing — it's what Open WebUI uses to
+index documents you upload, not something you talk to.
+
+### Open WebUI
+
+`http://127.0.0.1:8080`. The first visit asks you to create an account; it is
+local to this machine, lives in a SQLite file under `/var/lib/open-webui`, and
+is what stops a stray browser tab talking to the models. If that ceremony
+isn't wanted on a single-user desktop:
+
+```nix
+local.ai.webui.extraEnvironment.WEBUI_AUTH = "False";
+```
+
+The module turns telemetry off, points the UI at the local ollama, and sets
+`ENABLE_OPENAI_API = "False"` — with no key on this box, leaving that on costs
+a connection attempt to `api.openai.com` at every start and a spinner on the
+model list. `extraEnvironment` merges over all of that and wins, so adding a
+key later is two lines. Secrets don't go there —
+`services.open-webui.environmentFile` takes a path for those.
+
+### OpenClaw, and what it costs
+
+OpenClaw is not a chat window. It's a gateway: sessions, tools, chat channels
+(WhatsApp, Telegram, Discord and a dozen more), with a control UI on
+`http://127.0.0.1:18789`.
+
+That is also the problem, and it is worth stating plainly rather than in a
+footnote. **nixpkgs ships this package with a `knownVulnerabilities` entry**,
+so a plain rebuild refuses to install it:
+
+```
+error: Refusing to evaluate package 'openclaw-2026.6.33' … because it is marked as insecure
+  - Project uses LLMs to parse untrusted content, making it vulnerable to
+    prompt injection, while having full access to system by default.
+```
+
+That is accurate. An agent acts on text that arrived from somewhere else — a
+message, a fetched web page, a document — and there is no reliable way to stop
+instructions inside that text from being followed. `ai.nix` disarms the check
+for this one package by name:
+
+```nix
+nixpkgs.config.allowInsecurePredicate = pkg: lib.getName pkg == "openclaw";
+```
+
+By name rather than by nixpkgs' suggested `permittedInsecurePackages = [
+"openclaw-2026.6.33" ]`, so a `nix flake update` doesn't break the next
+rebuild with an error about a version number nobody chose. It does replace
+nixpkgs' default predicate, which is the one that reads
+`permittedInsecurePackages` — nothing else here uses that list, but if
+something ever does, that line is where it has to be taught about it.
+
+So `local.ai.openclaw.enable` is deliberately not wired to `local.ai.enable`.
+Turning it on is where the decision gets made, and what limits the blast
+radius afterwards is the account boundary and nothing else:
+
+- It runs as a **systemd user service** for one account —
+  `local.ai.openclaw.user`, defaulting to `local.desktop.primaryUser`.
+- It is **not sandboxed**, on purpose. `DynamicUser`, `ProtectHome` and the
+  rest would each remove a capability the program exists to have. Assume
+  anything that user can do, this can be talked into doing. On this machine
+  that user isn't root.
+- NixOS has one `systemd --user` generation for the whole box, so the unit is
+  defined for every account and `ConditionUser=` selects the right one.
+  Everyone else's user manager skips it with a journal line and no failure.
+- `local.ai.openclaw.linger = false` means it's up while that account has a
+  session and gone otherwise, which is the honest shape for something on a
+  desk. Turn it on for a machine you message while nobody's sitting at it —
+  and notice that this means an agent with a shell running unattended.
+
+#### First start
+
+Two things have to exist before the gateway will run, and neither can come out
+of the Nix store, so the unit's `ExecStart` is a small wrapper that makes them:
+
+1. **A token.** The gateway requires authentication. One is generated on first
+   start into `~/.openclaw/gateway.env`, mode 600, and read back on every
+   start after that. Nothing secret ends up in a world-readable store path.
+2. **A config file.** Seeded at `~/.openclaw/openclaw.json` if it's missing —
+   the token reference and, if `local.ai.openclaw.model` is set, the primary
+   model. That's all: OpenClaw validates its config strictly, and an unknown
+   key doesn't warn, it stops the gateway booting.
+
+**The seed is written once and never again**, because OpenClaw owns that file
+afterwards — its control UI writes to it, `openclaw config set` writes to it,
+and the gateway hot-reloads it while running. Upstream explicitly says not to
+make it a symlink, which rules out the usual Nix approach. The practical
+consequence:
+
+> Changing `local.ai.openclaw.model` after the machine has started once does
+> **nothing**. Use `openclaw models set ollama/<model>`.
+
+The port is the exception — it's passed on the command line, so
+`local.ai.openclaw.port` stays authoritative and can't drift.
+
+`~/.openclaw/gateway.env` is also the place to put provider credentials by
+hand — `OPENAI_API_KEY`, `ANTHROPIC_API_KEY` — for anything that isn't the
+local server. It's sourced, so comments and bare `NAME=value` both work.
+`local.ai.openclaw.environmentFile` is the other half of that: a path to a
+file something *else* manages, outside the home directory. A missing file
+there isn't an error, so it can be named before it exists.
+
+#### Talking to the local models
+
+The unit sets `OLLAMA_API_KEY=ollama-local`, which is upstream's marker for
+"this host needs no real credential" and what opts the bundled Ollama provider
+in. There is no account behind that string and it is not a secret.
+
+```
+openclaw models list          # what it can see
+openclaw models set ollama/qwen3
+openclaw onboard              # the interactive setup, if you'd rather
+openclaw doctor               # what it thinks is wrong
+```
+
+Discovery only looks at the default `11434`. Moving `local.ai.ollama.port`
+with the agent enabled makes a rebuild warn and hands you the two `openclaw
+config set` lines that teach it the new address.
+
+### Sharing the card with a VM
+
+`gamestation-niri` also runs [single GPU passthrough](#single-gpu-passthrough),
+and a loaded model pins the NVIDIA driver in memory. The hook can't unload a
+driver something else is holding, so its five attempts fail and the guest
+refuses to start.
+
+`ai.nix` adds `ollama.service` and `open-webui.service` to that hook's
+`stopServices` list itself, which is the case that option's `example` was
+written for. Nothing to configure — start the VM, the model server stops with
+the display manager, and both come back when the guest does. The two modules
+are otherwise independent; either works without the other.
+
+### When it goes wrong
+
+```bash
+systemctl status ollama open-webui        # the two system services
+journalctl -u ollama -f
+
+systemctl --user status openclaw          # the agent, as its own user
+journalctl --user -u openclaw -f
+openclaw doctor
+
+curl http://127.0.0.1:11434/api/tags      # is the model server answering?
+nvidia-smi                                # is anything on the card?
+```
+
+A few failures that look like something else:
+
+- **The gateway won't start and only `openclaw doctor` works.** Config
+  validation failed. OpenClaw refuses to boot on an unknown key or a bad
+  value, and says which one.
+- **`systemctl --user status openclaw` says the condition failed.** That's a
+  different account than `local.ai.openclaw.user`. Working as intended — the
+  unit exists for every user manager on the machine.
+- **The agent sees no models.** Either ollama has none yet (`ollama list`), or
+  the ones it has don't do tool calling, or the port was moved. The rebuild
+  warns about the last of those.
+- **A rebuild refuses to evaluate `openclaw`.** The predicate above is in the
+  `local.ai.openclaw.enable` branch, so it only applies when the agent is on.
+  Installing the package some other way needs its own answer.
 
 ## Scheduled jobs
 

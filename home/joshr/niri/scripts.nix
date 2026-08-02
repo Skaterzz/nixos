@@ -1,6 +1,7 @@
 {
   config,
   lib,
+  osConfig,
   pkgs,
   niriTheming,
   ...
@@ -18,6 +19,24 @@ let
     stateDir
     activeDir
     ;
+
+  # Resolve the greeting from the declarative NixOS user description while
+  # the configuration is built. Runtime lock invocations no longer depend on
+  # NSS/getent being available or returning a complete GECOS field.
+  userDescription =
+    lib.attrByPath
+      [ config.home.username "description" ]
+      config.home.username
+      osConfig.users.users;
+
+  userDescriptionWords =
+    lib.filter (word: word != "") (lib.splitString " " userDescription);
+
+  firstName =
+    if userDescriptionWords == [ ] then
+      config.home.username
+    else
+      builtins.head userDescriptionWords;
 
   wallpaperDir = "${config.home.homeDirectory}/.local/share/wallpapers";
 
@@ -864,27 +883,14 @@ lockNowPlaying = pkgs.writeShellApplication {
     mkdir -p "$runtime_dir"
     umask 077
 
-    # Resolve the account through NSS, read its full-name/GECOS field, and
-    # take the first whitespace-delimited word. This works for local users
-    # and NSS-backed users instead of reading /etc/passwd directly.
-    user="''${USER:-$(id -un)}"
-
-    first_name="$(
-      getent passwd "$user" 2>/dev/null |
-        awk -F: '
-          {
-            split($5, gecos, ",")
-            gsub(/^[[:space:]]+|[[:space:]]+$/, "", gecos[1])
-            split(gecos[1], words, /[[:space:]]+/)
-            print words[1]
-            exit
-          }
-        ' || true
-    )"
+    # The first name is baked into this script from
+    # users.users.<name>.description during Nix evaluation. Every route to the
+    # lock screen therefore generates the same greeting.
+    first_name=${lib.escapeShellArg firstName}
 
     # Remove characters that could break the generated Hyprlang line.
     first_name="$(printf %s "$first_name" | tr -d '\r\n{}"#')"
-    [ -n "$first_name" ] || first_name="$user"
+    [ -n "$first_name" ] || first_name=${lib.escapeShellArg config.home.username}
 
     # Hyprlock gets a fixed, punctuation-free path. The selected wallpaper
     # itself may contain spaces or characters meaningful to Hyprlang.

@@ -4,8 +4,8 @@
 #
 #   left    workspaces + focused window title
 #   centre  clock and date
-#   right   tray, nowplaying, audio, network, battery, caps lock and gamemode
-#           (each only while it's on), session menu
+#   right   tray, nowplaying, brightness, audio, network, battery, caps lock
+#           and gamemode (each only while it's on), session menu
 #
 # Theming: waybar is started with `-s <active theme>/waybar.css` and the
 # switcher restarts it, so a theme change swaps the whole stylesheet. The
@@ -39,7 +39,18 @@ in
       layer = "top";
       position = "top";
       height = 34;
-      spacing = 6;
+
+      # Gap waybar puts between every module in a group. Halved from 6 to
+      # bring the right-hand cluster together — twelve slots at their widest,
+      # and the gaps were doing more to separate them than the pills needed.
+      #
+      # It is one number for all three groups; there is no per-group spacing.
+      # So the left group carries a 1px horizontal margin per module in the
+      # stylesheet to make up the difference and stay exactly as it was, and
+      # the right group's own margin is gone entirely (see theming.nix). The
+      # centre is a single module and has no gaps to set.
+      spacing = 4;
+
       margin-top = 6;
       margin-left = 10;
       margin-right = 10;
@@ -54,6 +65,7 @@ in
         cavaEntry
         "mpris"
         "tray"
+        "backlight"
         "pulseaudio"
         "bluetooth"
         "network"
@@ -225,6 +237,62 @@ in
          "nm-applet"
          "blueman-applet"
         ];
+      };
+
+      # Display brightness, immediately left of the volume — the two controls
+      # on the bar that are a level rather than a state, side by side.
+      #
+      # Scrolling goes through the same `brightness` script the
+      # XF86MonBrightness keys use, for the reason that script exists at all:
+      # `brightnessctl` with no `--device` moves the *first* backlight device
+      # and leaves the rest alone, which is invisible on the laptop's single
+      # internal panel and plainly wrong on the desk, where ddcci-backlight
+      # registers one device per monitor (modules/nixos/ddcci.nix). Driving
+      # the module's own stepping would have reintroduced exactly that bug on
+      # the machine with two displays.
+      #
+      # Setting `on-scroll-up`/`on-scroll-down` replaces the built-in stepping
+      # rather than adding to it: the backlight module hands scrolling off to
+      # the generic handler as soon as either one is a string, the same shape
+      # as `pulseaudio` below. So there is deliberately no `scroll-step` here
+      # — it would look like it set the step, and the step is the 5 inside the
+      # script.
+      #
+      # That 5 is also why nothing is passed to override it, where the volume
+      # module's scroll passes an explicit 1. A notch moving less than a key
+      # is the right instinct for a sink that answers instantly; a DDC/CI
+      # write is a ~100ms round trip per display, and the script drops
+      # overlapping runs rather than queueing them, so finer steps would only
+      # mean more of a scroll landing on a held lock and being thrown away.
+      #
+      # Still waybar's built-in module and not a custom one, because the
+      # reading has to be right no matter what moved the level — this scroll,
+      # a media key, the pre-lock dim in lock.nix. All of those write the
+      # device through sysfs, which is what the built-in module is watching;
+      # it repaints on the change rather than on a timer. A custom module
+      # would have to poll, and a `brightness` helper that signalled waybar
+      # instead would still miss everything that didn't go through it.
+      #
+      # `{percent}` is the first device's level, which is the same thing the
+      # OSD reports and the same convention for the same reason: on the laptop
+      # it is the only device, and on the desk every display has just taken
+      # the same step. They can drift — see "Brightness" in MANUAL.md.
+      #
+      # No click action. Volume has one because mute is a real toggle;
+      # brightness has no equivalent, and a click that jumped to some fixed
+      # level would be a worse thing to hit by accident than nothing at all.
+      #
+      # Both niri hosts have a backlight device — the laptop's panel, and one
+      # per monitor on the desk once ddcci is loaded. On a host with none the
+      # module draws no text but still holds its padding, unlike the custom
+      # modules further right that waybar hides outright. That is the desk
+      # before the reboot ddcci needs, and it corrects itself.
+      backlight = {
+        format = "{icon}  {percent}%";
+        format-icons = [ "󰃞" "󰃟" "󰃠" ];
+        tooltip-format = "Brightness {percent}%";
+        on-scroll-up = "${lib.getExe niriScripts.brightness} up";
+        on-scroll-down = "${lib.getExe niriScripts.brightness} down";
       };
 
       # Click and scroll both go through the same `volume` script the media

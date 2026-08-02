@@ -186,10 +186,17 @@ home/joshr/niri/
 ### The bar
 
 Left is the username, workspaces and the focused window title, centre is the
-clock and date, right is the tray, media controls, volume, network, battery,
-caps lock and gamemode while each is on, the idle inhibitor, then **lock** and
-**power** as a matched pair at the far end. Each group is its own rounded
-floating pill rather than one long bar.
+clock and date, right is the tray, media controls, brightness, volume,
+network, battery, caps lock and gamemode while each is on, the idle inhibitor,
+then **lock** and **power** as a matched pair at the far end. Each group is
+its own rounded floating pill rather than one long bar.
+
+The right-hand group is deliberately tight — the modules carry no horizontal
+margin of their own, so the bar's 4px `spacing` is the entire gap between two
+pills. There is a wrinkle worth knowing before changing it: **`spacing` is one
+number for the whole bar**, with no per-group setting, so cutting it to bring
+the right-hand cluster together also cut the left. The left group's three
+modules carry 1px either side in the stylesheet to put that back.
 
 **The username** is the first slot, in the accent colour — the same treatment
 the clock gets, because both are labels rather than controls. It's static
@@ -202,6 +209,32 @@ Lock and power are styled identically and differ only on hover — the power
 button goes red, because it's the one that can end the session. The lock
 button runs the same `lock-now` as `Mod+L` and the session menu's "Lock"
 entry, so all three take the active theme's colours.
+
+**Brightness** sits immediately left of the volume, the two controls on the
+bar that are a level rather than a state. Scroll it to adjust; there is no
+click action, because brightness has no equivalent of mute and a click that
+jumped to a fixed level is a worse thing to hit by accident than nothing.
+
+The scroll runs the same `brightness` helper as the keys rather than waybar's
+own stepping, for the reason that helper exists: the built-in stepping is
+`brightnessctl` with no `--device`, which moves the first backlight device and
+leaves the rest — invisible with one internal panel, wrong on the desk with
+one device per monitor. Setting `on-scroll-up`/`on-scroll-down` replaces the
+module's stepping rather than adding to it, so `scroll-step` would do nothing
+and isn't there; the step is the 5 inside the script. Unlike the volume
+module, nothing overrides it down to 1 — DDC/CI writes are slow and the script
+drops overlapping runs, so a finer step would mostly land on a held lock.
+
+It is waybar's built-in `backlight` module even so, because the number has to
+be right whatever moved the level — the scroll, a media key, the pre-lock dim
+in `lock.nix`. Those all write the device through sysfs, which is what the
+module watches, so it repaints on the change instead of on a timer. What it
+shows is the *first* device's level, the same convention the OSD uses and for
+the same reason. See "Brightness" below.
+
+On a host with no backlight device at all it draws no text but still holds its
+padding — it isn't one of the custom modules waybar hides outright. That's the
+desk before the reboot `ddcci` needs, and it sorts itself out.
 
 **Caps lock** is one glyph between the battery and the idle inhibitor, in the
 theme's warn colour, and it is on the bar *only* while caps lock is on. The
@@ -275,9 +308,8 @@ it's cava or the widget at fault if the bar stays empty. See `cavaBar` in
 Volume and brightness raise a pop-up — icon, bar and the number, low and
 centred on every output, in the active theme's colours. niri has none of its
 own, being a compositor and nothing else, so before this the keys were silent:
-the level moved and the only way to see where it had landed was waybar, which
-shows volume but not brightness, and only on the display you happen to be
-looking at.
+the level moved and the only way to see where it had landed was waybar — a
+number in a corner of one display, which you have to already be looking at.
 
 **swayosd** draws it. `swayosd-server` is a user service (`osd.nix`); a
 one-shot `swayosd-client` asks it to draw over the session bus. The mute keys
@@ -917,7 +949,9 @@ Two things worth knowing:
 - **The keys drive every display**, which is why they call that helper and
   not `brightnessctl` directly. `brightnessctl` with no `--device` adjusts
   the *first* device it finds — invisible with one internal panel, wrong
-  with one device per monitor.
+  with one device per monitor. The bar's brightness module scrolls through
+  the same helper for the same reason, so the keys and the scroll can't
+  drift apart. See "The bar".
 
 The OSD that comes up with the keys reports the *first* device's level, read
 back after the write. On the laptop that is the only device there is, and on

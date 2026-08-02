@@ -182,6 +182,7 @@ let
     #network,
     #battery,
     #bluetooth,
+    #mpris,
     #keyboard-state,
     #custom-idle-inhibitor,
     #custom-lock,
@@ -205,6 +206,7 @@ let
     #pulseaudio:hover,
     #network:hover,
     #battery:hover,
+    #mpris:hover,
     #bluetooth:hover,
     #custom-idle-inhibitor:hover,
     #custom-lock:hover {

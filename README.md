@@ -1,11 +1,13 @@
 # nixos-config
 
-A NixOS flake for `joshr`'s gaming + development workstation: KDE Plasma 6 on
+A NixOS flake for `joshr`'s gaming + development workstation: KDE Plasma 6 or Niri on
 Wayland, NVIDIA, Steam/ProtonUp-Qt/MangoHud, Docker + Docker Compose,
 Flatpak, and a home-manager profile (with
 [plasma-manager](https://github.com/nix-community/plasma-manager)) ported
 from the [joshrandall8478/dotfiles](https://github.com/joshrandall8478/dotfiles)
 chezmoi repo.
+
+![alt text](assets/desktop.png)
 
 ## What's here
 
@@ -72,15 +74,14 @@ templates/                         # `nix flake init -t` dev environments
   generic/ python/ node/ rust/ go/
 ```
 
-## niri (experimental alternative to Plasma)
+## niri (alternative to Plasma)
 
 There are niri variants of both machines. They're separate hosts rather than
 a switch inside the existing ones, because Plasma here uses
-plasma-login-manager and niri uses SDDM — NixOS won't enable two display
-managers at once.
+plasma-login-manager and niri uses SDDM.
 
 ```bash
-sudo nixos-rebuild switch --flake .#gamestation-niri   # try niri
+sudo nixos-rebuild switch --flake .#gamestation-niri   # use niri
 sudo nixos-rebuild switch --flake .#gamestation        # back to Plasma
 ```
 
@@ -2049,51 +2050,6 @@ gamestation's and must be regenerated on the machine.
    `flake.nix`, pointing at that host module and a home entrypoint.
 3. Install with `--flake /mnt/etc/nixos#<newhost>`.
 
-## I couldn't fully validate this here
-
-This was written in a sandboxed environment without network access to
-nixos.org/the Nix binary cache, so **`nix flake check` has not been run**.
-Everything was hand-reviewed against the actual plasma-manager and
-home-manager module sources (fetched via `raw.githubusercontent.com`) rather
-than from memory, but please run `nix flake check` before your first
-`nixos-rebuild switch`, and expect to iterate on:
-
-- `hardware-configuration.nix` (definitely needs regenerating, see above)
-- exact widget/option names in `plasma.nix` if plasma-manager's schema has
-  moved since this was written
-- the NVIDIA `open` kernel module flag for your specific GPU
-- the Firefox `userChrome.css` variable names in `theming.nix`, which are
-  Firefox internals rather than API — a surface that comes out stock-coloured
-  instead of themed means one of them was renamed, not that anything is
-  broken. See "The browser".
-- the VS Code theme extension. The mechanism is the same one home-manager's
-  own `programs.vscode.…extensions` uses — a symlink under
-  `~/.vscode/extensions` — so it should be picked up on the next start, but
-  if `workbench.colorTheme = "Niri"` falls back to the default dark theme,
-  `code --list-extensions` will say whether it was scanned.
-- the emoji picker, on three counts. The font was inspected rather than
-  rendered — its `name` table really does say `Fluent Emoji Color` and it
-  really does carry CBDT, COLRv1 and OT-SVG tables, but nothing here ever drew
-  a glyph with it, so if emoji come out as tofu boxes check `fc-match emoji`
-  first. The typing half depends on `wtype`, which needs the virtual-keyboard
-  protocol niri implements; if emoji land on the clipboard but never appear in
-  the window, that's the half that failed, and the 150 ms pause in
-  `emoji-type` is the number to raise. And wofi is being handed roughly 3,800
-  rows, an order of magnitude more than the clipboard picker's 300 — it should
-  be fine, but it was never timed.
-- the OSD's stylesheet. The GTK4 node names and the two style-provider
-  priorities were read off swayosd 0.3.1's own `style.scss` and `main.rs`, and
-  the icon names off the gresource manifest it compiles into the binary, but
-  nothing here ever drew the window. A pop-up in stock grey means the sheet
-  didn't load — `systemctl --user status swayosd` prints "Loaded user defined
-  CSS file" when it did, and a parse error when it didn't. `osd progress
-  display-brightness-symbolic 50` draws one on demand without touching
-  anything.
-- limine's `uuid(…)` volume specifier, used for entries found on a disk other
-  than the one NixOS boots from. Entries on this machine's own ESP use
-  `boot():` and don't depend on it. `sudo systemctl start limine-theme-sync`
-  and read `/boot/limine/limine.conf` to see what was written before you
-  trust the menu.
 
 ## Updating the dotfiles-derived assets
 

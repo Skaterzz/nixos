@@ -258,7 +258,7 @@ ${workspaceBlocks}
 
     // qjackctl
     window-rule {
-        match title="^\\(default\\) Active — QjackCtl$" 
+        match app-id="QjackCtl"
         open-floating true
     }	
 

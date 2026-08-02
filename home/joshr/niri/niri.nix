@@ -89,9 +89,6 @@ let
   # login-time apply never happened at all. `spawn-sh-at-startup` is the node
   # that takes a command line; every other spawn in this file uses the
   # argument-per-string form, so this does too.
-  openrgbProfile = osConfig.local.openrgb.profile or "Main";
-  openrgbStartup = lib.optionalString (osConfig.local.openrgb.autostart or false) ''
-    spawn-at-startup "${bin pkgs.openrgb-with-all-plugins}" "--startminimized" "--profile" "${openrgbProfile}"'';
 in
 {
   xdg.configFile."niri/config.kdl".text = ''
@@ -220,10 +217,6 @@ ${workspaceBlocks}
     // waybar runs as a systemd user service (see waybar.nix) so the theme
     // switcher can restart it; starting it here as well would give two bars.
     spawn-at-startup "${bin niriScripts.wallpaperRestore}"
-
-    // OpenRGB's tray applet, on the hosts that have RGB hardware. Built in
-    // this file's `let` block, along with the reasoning.
-    // ${openrgbStartup}
 
     // nm-applet is deliberately not started. Its tray icon duplicates the
     // waybar `network` module, and that module's click already opens

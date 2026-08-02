@@ -286,7 +286,7 @@ in
 
       # Lock, immediately to the left of the power button.
       #
-      # Same `lock-session` the Mod+L bind and the session menu's "Lock" entry
+      # Same `lock-now` the Mod+L bind and the session menu's "Lock" entry
       # run, so all three routes take the theme's colours and can't drift
       # apart. The power button next door opens a menu that also offers Lock;
       # this is the one-click version of the thing you do most often, which is
@@ -295,7 +295,7 @@ in
         format = "󰌾";
         tooltip = true;
         tooltip-format = "Lock the session";
-        on-click = lib.getExe niriScripts.lockSession;
+        on-click = lib.getExe niriScripts.lockNow;
       };
 
       "custom/session" = {

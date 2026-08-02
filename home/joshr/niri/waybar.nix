@@ -133,9 +133,9 @@ in
           {position} / {length}
         '';
 
-        title-len = 20;
-        artist-len = 20;
-        album-len = 20;
+        title-len = 15;
+        artist-len = 15;
+        album-len = 15;
         dynamic-len = 30;
 
         dynamic-order = [
@@ -257,8 +257,9 @@ in
 
       bluetooth = {
         format = "󰂯 {status}";
-        format-connected = "󰂯 {device_alias}";
-        format-connected-battery = "󰂯 {device_alias} {device_battery_percentage}%";
+        format-connected = "󰂯 connected";
+        format-connected-battery = "󰂯 connected {device_battery_percentage}%";
+	tooltip-format-connected = "{device_alias}";
         on-click = "${pkgs.blueman}/bin/blueman-manager";
       };
 

@@ -124,7 +124,7 @@ in
       "github.copilot.nextEditSuggestions.enabled" = true;
       "markdown-preview-enhanced.chromePath" = "${config.home.homeDirectory}/.local/bin/chromium";
       "powermode.enabled" = true;
-      "files.autoSave" = "afterDelay";
+      "files.autoSave" = false;
       "workbench.secondarySideBar.defaultVisibility" = "hidden";
       "claudeCode.preferredLocation" = "panel";
     };

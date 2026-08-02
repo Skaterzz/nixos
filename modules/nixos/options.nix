@@ -88,6 +88,14 @@
     '';
   };
 
+  options.local.waybar.cavaInBar = lib.mkOption {
+    type = lib.types.bool;
+    default = false;
+    description = ''
+      Enable cava in waybar in niri
+    '';
+  };
+
   options.local.boot.scanAllEsps = lib.mkOption {
     type = lib.types.bool;
     default = true;

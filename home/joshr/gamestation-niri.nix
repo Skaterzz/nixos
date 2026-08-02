@@ -19,4 +19,6 @@
     ./obs.nix
     ./content-creation.nix
   ];
+
+  local.waybar.cavaInBar = true;
 }

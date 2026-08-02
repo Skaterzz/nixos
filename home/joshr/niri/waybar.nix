@@ -12,6 +12,12 @@
 # would write it to a store path that can't change at runtime.
 let
   inherit (niriTheming) activeDir;
+
+  cavaEntry =
+    if config.local.waybar.cavaInBar then
+      "custom/cava"
+    else
+      "";
 in
 {
   programs.waybar = {
@@ -44,7 +50,7 @@ in
       ];
       modules-center = [ "clock" ];
       modules-right = [
-        "custom/cava"
+        cavaEntry
         "mpris"
         "tray"
         "pulseaudio"

@@ -4,7 +4,8 @@
 #
 #   left    workspaces + focused window title
 #   centre  clock and date
-#   right   tray, nowplaying, audio, network, battery, caps lock, session menu
+#   right   tray, nowplaying, audio, network, battery, caps lock (only when
+#           it's on), session menu
 #
 # Theming: waybar is started with `-s <active theme>/waybar.css` and the
 # switcher restarts it, so a theme change swaps the whole stylesheet. The
@@ -57,7 +58,7 @@ in
         "bluetooth"
         "network"
         "battery"
-        "keyboard-state"
+        "custom/caps-lock"
         "custom/idle-inhibitor"
         "custom/lock"
         "custom/session"
@@ -276,39 +277,36 @@ in
         tooltip-format = "{timeTo}";
       };
 
-      # Caps lock, between the battery and the idle inhibitor — beside the
-      # other module on the bar that reports a mode you can leave on without
-      # noticing.
+      # Caps lock, between the battery and the idle inhibitor — and only while
+      # the lock is actually on. The rest of the time the script prints an
+      # empty line, waybar hides the module, and the bar is exactly what it
+      # was before: no glyph, no gap, nothing held open.
       #
-      # waybar's own module rather than a script: it reads the keyboard's LED
-      # through libevdev and redraws on the event, so the glyph turns over with
-      # the keypress instead of up to a poll interval later. That wants read
-      # access to /dev/input/event*, which joshr has through the `input` group
-      # (modules/nixos/users.nix); without it the module throws as it is built
-      # and waybar carries on — a missing slot, not a missing bar. Unrelated to
-      # the caps lock OSD osd.nix deliberately doesn't run: that one is a
-      # *system* service reading every input device, this is the session's bar
-      # reading its own keyboard.
+      # Same shape as custom/cava above, for the same reason. Continuous and
+      # deliberately no `interval`: the script watches the keyboard's caps LED
+      # and prints a line when it changes, so the glyph appears with the
+      # keypress. `restart-interval` is the resilience — if the keyboard it is
+      # watching goes away, the script exits and gets started again, which is
+      # also how one plugged in later is picked up.
       #
-      # `{icon}` alone, not the default `{name} {icon}` — "Caps" next to a caps
-      # lock glyph is the word twice over, and the slot is meant to be small.
-      # num lock and scroll lock stay off (the module's default), so the box
-      # holds exactly one label.
+      # This is not waybar's built-in `keyboard-state`, which reads the same
+      # LED through libevdev and would need no script at all. It always draws
+      # its label — "Caps" and a glyph, or with `{icon}` alone still an empty
+      # label sitting in the layout — and a GTK stylesheet has no
+      # `display: none` to take that out. Only a module waybar itself hides
+      # costs nothing when it is off. See capsLockWatch in scripts.nix.
       #
-      # It keeps that slot when the lock is off rather than vanishing the way
-      # custom/cava does: a GTK stylesheet has no `display: none`, so "hidden"
-      # can only mean a transparent label still holding its space, and hiding
-      # it for real would shove the modules either side sideways on every
-      # press. Dim-when-off, lit-when-on instead — the same bargain the idle
-      # inhibitor makes, and the glyph changes shape too so the state does not
-      # ride on the warn colour alone.
-      "keyboard-state" = {
-        capslock = true;
-        format = "{icon}";
-        format-icons = {
-          locked = "󰪛";
-          unlocked = "󰌎";
-        };
+      # Nor is it the caps lock OSD osd.nix deliberately doesn't run: that one
+      # is a *system* service reading every input device to draw a pop-up. This
+      # is the session's own bar, reading the keyboard the session is using.
+      #
+      # No tooltip. A glyph that is only ever on screen while caps lock is on
+      # has already said the only thing it knows.
+      "custom/caps-lock" = {
+        format = "{}";
+        exec = lib.getExe niriScripts.capsLock;
+        restart-interval = 5;
+        tooltip = false;
       };
 
       # Sleep inhibitor. Same script as the Mod+Shift+I bind, so clicking and

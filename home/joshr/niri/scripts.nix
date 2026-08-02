@@ -757,7 +757,26 @@ lockNowPlaying = pkgs.writeShellApplication {
       "$display"
   '';
 };
- lockSession = pkgs.writeShellApplication {
+
+  # Switch the current seat to SDDM without unlocking or ending this session.
+  #
+  # Kept below `switch-user` as a low-level primitive: the normal desktop
+  # action locks first, while Hyprlock can call this directly because the
+  # session is already locked.
+  switchToGreeter = pkgs.writeShellApplication {
+    name = "switch-to-greeter";
+    runtimeInputs = [ pkgs.dbus ];
+    text = ''
+      seat="''${XDG_SEAT_PATH:-/org/freedesktop/DisplayManager/Seat0}"
+
+      exec dbus-send --system --print-reply \
+        --dest=org.freedesktop.DisplayManager \
+        "$seat" \
+        org.freedesktop.DisplayManager.Seat.SwitchToGreeter
+    '';
+  };
+
+  lockSession = pkgs.writeShellApplication {
   name = "lock-session";
 
   runtimeInputs = [
@@ -881,7 +900,9 @@ lockNowPlaying = pkgs.writeShellApplication {
 
     cat > "$config" <<EOF
     general {
-        hide_cursor = true
+        # The switch-user control below is clickable, so keep the pointer
+        # visible instead of making users hunt for it by echolocation.
+        hide_cursor = false
         ignore_empty_input = true
         immediate_render = true
         text_trim = true
@@ -997,6 +1018,21 @@ lockNowPlaying = pkgs.writeShellApplication {
         position = 0, 72
         halign = center
         valign = bottom
+    }
+
+    # Return to SDDM while this user's session remains locked on its VT.
+    label {
+        monitor =
+        text = 󰍃  Switch user
+        color = rgba(''${LOCK_FG}cc)
+        font_size = 17
+        font_family = FiraCode Nerd Font
+
+        position = 0, 18
+        halign = center
+        valign = bottom
+
+        onclick = ${lib.getExe switchToGreeter}
     }
     EOF
 
@@ -1226,22 +1262,14 @@ lockNowPlaying = pkgs.writeShellApplication {
   # without this, switching back would land straight in an unlocked desktop.
   switchUser = pkgs.writeShellApplication {
     name = "switch-user";
-    runtimeInputs = with pkgs; [
-      dbus
-      lockNow
-    ];
+    runtimeInputs = [ lockNow ];
     text = ''
-      seat="''${XDG_SEAT_PATH:-/org/freedesktop/DisplayManager/Seat0}"
-
       # lock-now returns once the locker is up rather than when it ends, and
       # carries the settle that the hand-rolled `lock-session & sleep 0.3`
       # here used to do by hand.
       lock-now
 
-      dbus-send --system --print-reply \
-        --dest=org.freedesktop.DisplayManager \
-        "$seat" \
-        org.freedesktop.DisplayManager.Seat.SwitchToGreeter
+      exec ${lib.getExe switchToGreeter}
     '';
   };
 

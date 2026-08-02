@@ -354,8 +354,13 @@ ${workspaceBlocks}
         Mod+Escape hotkey-overlay-title="Blank monitors" { power-off-monitors; }
 
         Mod+Shift+Escape hotkey-overlay-title="Session menu" { spawn "${bin niriScripts.sessionMenu}"; }
-        Mod+Shift+E { quit; }
-        Ctrl+Alt+Delete { quit; }
+        Ctrl+Alt+Delete hotkey-overlay-title="Session menu" { spawn "${bin niriScripts.sessionMenu}"; }
+
+        // Niri permits its built-in `quit` action through a session lock.
+        // Spawn actions are blocked while locked unless they explicitly opt
+        // into `allow-when-locked`, so route both quit shortcuts through IPC.
+        Mod+Shift+E { spawn "${bin pkgs.niri}" "msg" "action" "quit"; } 
+
         Mod+Shift+I hotkey-overlay-title="Stay awake (toggle)" { spawn "${bin niriScripts.idleInhibit}" "toggle"; }
 
         // --- theming ---------------------------------------------------

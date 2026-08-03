@@ -1228,6 +1228,95 @@ lockNowPlaying = pkgs.writeShellApplication {
     '';
   };
 
+  # Dismiss the lock screen without asking for the password.
+  #
+  # Wired to swayidle's `unlock` event (lock.nix), which is logind's Unlock
+  # signal on this session. The only thing that sends it here is SDDM: with
+  # Users.ReuseSession (modules/nixos/niri.nix) a login for someone who is
+  # already logged in calls UnlockSession and then ActivateSession on the
+  # session they left behind, rather than starting a second one. Without this
+  # you land back on your own lock screen having just typed your password into
+  # the greeter, and type it again.
+  #
+  # It is not a hole in the lock. logind takes Unlock only from the session's
+  # own user or from root — the polkit check names the session owner as the
+  # user who may skip it — so the two ways to reach this are code already
+  # running as you, and SDDM's daemon, which sends it having just put you
+  # through PAM.
+  #
+  # SIGUSR1 is hyprlock's own unlock path (`enqueueUnlock`), the same one a
+  # correct password takes, so the Wayland session lock is released properly.
+  # Killing the locker would not unlock anything: under ext-session-lock a
+  # locker that dies without releasing the lock leaves the compositor locked
+  # with nothing left to type into, which is the protocol working as designed
+  # rather than a bug to work around.
+  #
+  # Nothing here for swaylock, which `lock-session` only runs when hyprlock
+  # failed to start. It has no unlock signal, so a session sitting on the
+  # fallback locker still wants the password — the right direction for a
+  # fallback to fail in.
+  unlockSession = pkgs.writeShellApplication {
+    name = "unlock-session";
+    runtimeInputs = with pkgs; [
+      procps
+      coreutils
+    ];
+    text = ''
+      if ! pkill -USR1 -x -u "$(id -u)" hyprlock; then
+        echo "unlock-session: no hyprlock running; nothing to unlock" >&2
+      fi
+    '';
+  };
+
+  # Run a command only while this session is the one on the screen.
+  #
+  #     when-active brightness dim 20
+  #
+  # More than one person can be logged in at once — `switch-user` hands the
+  # seat to the greeter and deliberately leaves the old session running — and
+  # every one of those sessions has its own swayidle counting. niri does not
+  # stop the idle clock for a session that has been switched away from:
+  # pausing a session suspends libinput and DRM and nothing else, so the
+  # compositor simply sees no input, decides you are idle, and the timers in
+  # lock.nix fire in a session nobody is looking at.
+  #
+  # Locking such a session is right. Dimming and blanking it are not, because
+  # neither one is confined to the session that asked for it: brightness goes
+  # out over DDC/CI to the monitor itself (modules/nixos/ddcci.nix), which is
+  # one piece of hardware shared by everyone on the seat. Left ungated, a
+  # background session's four-minute dim lands on the screen of whoever is
+  # actually using the machine, four minutes after they sat down.
+  #
+  # `show-session auto` is how swayidle itself finds the session it listens to
+  # for logind's Lock and Unlock signals. logind resolves "auto" as the
+  # caller's own session, falling back to the user's display session, and that
+  # fallback is what makes it work from a `systemd --user` service — there is
+  # no XDG_SESSION_ID in that environment and the unit's cgroup sits outside
+  # any login session, so asking about "this process's session" gets nowhere.
+  #
+  # A question that can't be answered runs the command. Sessions on no seat at
+  # all — a VM, a headless box, an ssh login — report themselves active, and
+  # anything that leaves this empty (no logind, no session) is a machine where
+  # there is nobody else to interrupt in the first place.
+  whenActive = pkgs.writeShellApplication {
+    name = "when-active";
+    runtimeInputs = [ pkgs.systemd ];
+    text = ''
+      if [ "$#" -eq 0 ]; then
+        echo "usage: when-active <command> [args...]" >&2
+        exit 2
+      fi
+
+      active="$(loginctl show-session auto --property=Active --value 2>/dev/null || true)"
+
+      if [ "$active" = "no" ]; then
+        exit 0
+      fi
+
+      exec "$@"
+    '';
+  };
+
   # Sleep inhibitor. One entry point for the keybind and the waybar module,
   # so the two can't disagree about the state.
   #
@@ -1890,8 +1979,10 @@ in
     lockSession
     lockNow
     lockBlank
+    unlockSession
     switchUser
     sessionMenu
+    whenActive
     idleInhibit
     osd
     volume
@@ -1914,8 +2005,10 @@ in
       lockSession
       lockNow
       lockBlank
+      unlockSession
       switchUser
       sessionMenu
+      whenActive
       idleInhibit
       osd
       volume

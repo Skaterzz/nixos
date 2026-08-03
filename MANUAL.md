@@ -550,7 +550,7 @@ the greeter and boot menu on the default palette.
 | `Mod+L` / `Mod+Shift+Escape` | lock, session menu |
 | `Mod+Shift+L` | lock **and** blank the monitors, in one key |
 | `Mod+Escape` | blank the monitors — works on the lock screen too |
-| `Mod+Shift+I` | stay awake (toggle the sleep inhibitor) |
+| `Mod+Shift+I` | stay awake — toggle the idle inhibitor |
 | `Mod+Shift+T` / `Mod+Ctrl+T` | random theme, pick theme |
 | `Mod+Shift+W` / `Mod+Ctrl+W` | random wallpaper, pick wallpaper |
 | volume / brightness keys | change it and show an OSD — see "The on-screen display" |
@@ -710,6 +710,13 @@ This isn't waybar's built-in `idle_inhibitor` module. That one takes a Wayland
 idle-inhibit lock on waybar's own surface — a perfectly good mechanism, but it
 can only be toggled by clicking, with no IPC for a keybind to use, and it
 wouldn't stop logind suspending the machine.
+
+The inhibitor is per session, and half of what it holds is not. Your own dim,
+lock and blank stop, and *the machine* stops sleeping — that half is logind's
+and applies to everyone — but another logged-in user's timers keep running in
+their own session, where they can lock that session and nothing more. See
+[Idle actions stop at the session
+boundary](#idle-actions-stop-at-the-session-boundary).
 
 ### No automatic sleep on mains power
 
@@ -1269,6 +1276,100 @@ is no "only while locked" flag to scope it with.
 The system module adds `security.pam.services.swaylock` — without that PAM
 entry swaylock accepts your password and then rejects it, which locks you out
 of your own session.
+
+#### Idle actions stop at the session boundary
+
+More than one person can be logged in at once. `switch-user` hands the seat to
+the greeter and deliberately leaves the session it came from running, so every
+account that has logged in since boot still has a niri, a swayidle and a full
+set of idle timers of its own, ticking.
+
+niri does not stop that clock for a session that has been switched away from.
+Pausing a session suspends its libinput and DRM devices and nothing else, so
+the compositor simply stops seeing input, concludes after four minutes that you
+are idle, and runs the timers in `lock.nix` in a session nobody is looking at.
+Locking there is correct — nobody is sitting in front of it. Dimming and
+blanking are not, because neither one stays inside the session that asked for
+it: the dim is a DDC/CI write to the monitor itself
+([`modules/nixos/ddcci.nix`](modules/nixos/ddcci.nix)), which is one piece of
+hardware shared by the whole seat. The symptom is the screen going dark on
+whoever is actually using the machine, four minutes after they sat down, driven
+by the timers of somebody who walked away an hour ago.
+
+So the timers that touch the screen run through `when-active`, and the one that
+touches only its own session does not:
+
+| timeout | action | gated |
+| --- | --- | --- |
+| 240s | dim to 20%, restore on activity | yes |
+| 300s | lock | **no** — it locks its own session and reaches nothing else |
+| 600s | blank the outputs | yes |
+
+`when-active` asks logind whether this session is the one on the screen —
+`loginctl show-session auto --property=Active` — and runs the command only if
+it is. `auto` is how swayidle itself finds the session it listens to for Lock
+and Unlock: logind resolves it as the caller's own session and falls back to
+the user's display session, and that fallback is what makes the question
+answerable from a `systemd --user` service, where there is no
+`XDG_SESSION_ID` and the unit's cgroup sits outside every login session.
+
+A question that can't be answered runs the command anyway. A session on no seat
+at all — a VM, a headless box — reports itself active, and a machine with no
+logind to ask is one with nobody else to interrupt.
+
+The blank is gated for a second reason on top of that one: a paused niri has
+handed its DRM devices back and cannot power an output off while it is in the
+background, so all an ungated blank could do is queue the monitors up to come
+back dark on the way in.
+
+One consequence worth knowing: while the greeter is on screen with no session
+behind it, nothing dims or blanks the monitors, because there is no active
+session to do it. That screen belongs to SDDM at that point, not to us.
+
+#### Coming back through the greeter only asks once
+
+`switch-user` locks the session and hands the seat to SDDM. Logging back in as
+yourself used to cost two passwords: one at the greeter, and one at the lock
+screen still standing in the session you left.
+
+It now costs one. SDDM looks for a session of its own for that user in state
+`online` — exactly what `switch-user` leaves behind — and answers a successful
+authentication with logind's `UnlockSession` followed by `ActivateSession`,
+instead of starting a second session beside the first. That is
+`Users.ReuseSession`, set explicitly in
+[`modules/nixos/niri.nix`](modules/nixos/niri.nix): it is SDDM's own default,
+but this configuration now depends on the behaviour rather than inheriting it.
+swayidle turns the `Unlock` half into `unlock-session`, which sends hyprlock
+`SIGUSR1`.
+
+Three things make that a shortcut rather than a hole in the lock:
+
+- logind accepts `Unlock` only from the session's own user or from root — the
+  polkit check names the session owner as the user who may skip it. So the
+  senders are code already running as you, and SDDM's daemon, which sends it
+  having just put you through PAM.
+- `SIGUSR1` is hyprlock's own unlock path (`enqueueUnlock`), the same one a
+  correct password takes, so the Wayland session lock is released properly.
+  Killing the locker would not unlock anything: under `ext-session-lock`, a
+  locker that dies without releasing the lock leaves the compositor locked with
+  nothing left to type into. That is the protocol working as designed.
+- Nothing else here sends `Unlock`. `loginctl unlock-session` by hand does the
+  same thing, which is rather the point of hanging this off logind's signal
+  instead of inventing a private one.
+
+The swaylock fallback has no unlock signal, so a session that came up on it —
+which only happens when hyprlock failed to start — still asks for the password
+at the lock screen. That is the right direction for a fallback to fail in.
+
+The listener is swayidle, so it is also gone while the idle inhibitor is on:
+that stops swayidle outright (see [Staying awake](#staying-awake)), and
+switching away and back with `Mod+Shift+I` held on asks for the password again.
+Old behaviour rather than a new failure, and not worth a second long-running
+D-Bus listener to close.
+
+Without `ReuseSession` the second login would start a *new* session instead:
+two niris, two swayidles and two of everything the session launches, for one
+person, with the first one still locked behind them.
 
 ### RGB lighting
 

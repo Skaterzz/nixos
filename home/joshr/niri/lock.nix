@@ -40,6 +40,15 @@ let
   # own after five minutes away, and the case it has to handle is the timer
   # firing as you sit back down. Two seconds covers that and nothing longer.
   idleLock = "${lock} --grace 2";
+
+  # Prefix for the timers that touch the screen rather than the session — see
+  # the comment on whenActive in scripts.nix. Short version: several people can
+  # be logged in at once, each session runs its own swayidle, and niri keeps
+  # the idle clock running in a session that has been switched away from. The
+  # brightness and DPMS commands below reach hardware the whole seat shares, so
+  # a background session running them dims and blanks the screen of whoever is
+  # actually at the machine.
+  whenActive = lib.getExe niriScripts.whenActive;
 in
 {
   services.swayidle = {
@@ -69,6 +78,29 @@ in
       # Handles `loginctl lock-session` from elsewhere. Someone asked for the
       # lock, so no grace either.
       lock = lock;
+
+      # And the other half of that pair: logind's Unlock signal takes the lock
+      # screen away again.
+      #
+      # This is what stops switch-user asking for the password twice. SDDM
+      # reuses a session rather than starting a second one for a user who is
+      # already logged in (Users.ReuseSession, modules/nixos/niri.nix), and the
+      # way it does that is UnlockSession followed by ActivateSession — so
+      # authenticating at the greeter already *is* the authentication for the
+      # session it drops you back into, and without something listening for
+      # the unlock you would arrive at your own lock screen and type the same
+      # password again.
+      #
+      # Only the session's own user and root can send it (see unlock-session),
+      # and the sender here is SDDM having just been through PAM.
+      #
+      # Listening for it here does mean the listener goes away while the idle
+      # inhibitor is on, since that stops swayidle outright — switch away and
+      # back with `Mod+Shift+I` held on and the lock screen asks for the
+      # password, exactly as it did before any of this. That is the old
+      # behaviour rather than a new failure, and it is not worth a second
+      # long-running D-Bus listener of our own to close.
+      unlock = lib.getExe niriScripts.unlockSession;
     };
 
     timeouts = [
@@ -79,12 +111,23 @@ in
       # first. On the desk that's one device per monitor — before ddcci
       # existed there were none at all, so this dim was silently a no-op
       # there and the screen went straight from full brightness to locked.
+      #
+      # Through `when-active` because a monitor's brightness belongs to the
+      # seat, not to the session that set it: on the desk this is a DDC/CI
+      # write to the panel itself, and it would land on the screen of whoever
+      # is using the machine, from the session of somebody who isn't.
       {
         timeout = 240;
-        command = "${lib.getExe niriScripts.brightness} dim 20";
-        resumeCommand = "${lib.getExe niriScripts.brightness} restore";
+        command = "${whenActive} ${lib.getExe niriScripts.brightness} dim 20";
+        resumeCommand = "${whenActive} ${lib.getExe niriScripts.brightness} restore";
       }
       # Then lock. The one lock that keeps a grace period — see idleLock.
+      #
+      # Not gated on the session being active, unlike its neighbours here. A
+      # session that has been switched away from is one nobody is sitting in
+      # front of, which is the case the idle lock exists for; it draws its lock
+      # screen on its own session and nothing about that reaches the display
+      # someone else is using.
       {
         timeout = 300;
         command = idleLock;
@@ -92,9 +135,14 @@ in
       # Then blank the outputs. niri handles DPMS via its own IPC, and
       # `power-off-monitors` is on its whitelist of actions that still run
       # while the session is locked, so this fires through the lock above.
+      #
+      # Gated for the same reason as the dim, with one addition: a paused niri
+      # has handed its DRM devices back, so this can't blank anything while the
+      # session is in the background anyway — it would only queue the outputs
+      # up to come back dark on the way in.
       {
         timeout = 600;
-        command = "${pkgs.niri}/bin/niri msg action power-off-monitors";
+        command = "${whenActive} ${pkgs.niri}/bin/niri msg action power-off-monitors";
       }
     ];
   };

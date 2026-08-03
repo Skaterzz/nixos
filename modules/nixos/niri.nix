@@ -327,6 +327,27 @@ in
       CursorTheme = "Bibata-Modern-Ice";
       CursorSize = 24;
     };
+
+    # Log someone who is already logged in back into the session they left,
+    # instead of starting a second one beside it.
+    #
+    # This is what makes `switch-user` a round trip. SDDM looks for a session
+    # of its own for that user in state "online" — exactly what switch-user
+    # leaves behind — and answers a successful authentication with
+    # UnlockSession followed by ActivateSession on it. Without it you get two
+    # niri sessions for one person, each with its own compositor, its own
+    # swayidle and its own copy of everything the session starts, and the
+    # first one still locked behind them.
+    #
+    # The UnlockSession half is load-bearing on the session side: swayidle's
+    # `unlock` event (home/joshr/niri/lock.nix) takes the lock screen down
+    # when it arrives, so the password typed at the greeter is the only one
+    # asked for. Nothing else on these machines sends that signal.
+    #
+    # Set explicitly rather than left to SDDM's default — it defaults to true
+    # upstream, but the behaviour is now something this configuration depends
+    # on rather than something it happens to inherit.
+    settings.Users.ReuseSession = true;
   }
   // lib.optionalAttrs useAstronaut {
     theme = defaultSddmTheme;

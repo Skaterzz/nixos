@@ -48,7 +48,7 @@ let
 in
 {
   home.packages = [
-    pkgs.obs-studio
+    (pkgs.obs-studio.override { cudaSupport = true; })
     obsThemed
   ];
 

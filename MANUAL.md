@@ -1153,6 +1153,33 @@ an honest guess, generous for what it covers, and only matters to the two
 callers that touch the screen immediately afterwards: `lock-blank` powering the
 monitors off and `switch-user` handing the seat to the greeter.
 
+#### Only the idle lock has a grace period
+
+A grace period is a window, counted from the moment the lock screen appears,
+during which any input dismisses it with no password. Hyprlock and swaylock
+both take one as `--grace`, and `lock-session` passes its own `--grace` through
+to whichever it ends up running.
+
+`lock-session` defaults to `--grace 0`, so every route to the lock demands a
+password immediately: `Mod+L`, `Mod+Shift+L`, the bar's lock button, the
+session menu, `switch-user`, `before-sleep`, and the `lock` event that
+`loginctl lock-session` triggers. All of those are locks somebody asked for,
+and on those a grace window is a hole rather than a convenience — waking the
+screen to confirm that it actually locked is itself input, so the check that
+you locked would unlock it.
+
+The 5-minute idle timeout in `lock.nix` is the single exception, and it passes
+`--grace 2`. Nobody asked for that lock; it fired on its own while you were
+away, and the case worth covering is the timer going off just as you sit back
+down. Two seconds covers that and nothing longer. It is also the one lock
+where the grace window costs nothing you had: the machine was already sitting
+unlocked and unattended for the five minutes leading up to it.
+
+Note that `before-sleep` deliberately sits on the strict side of that line even
+though a suspend can itself be idle-triggered. Resuming from suspend is exactly
+the moment a free keypress would get spent, and the lid closing is usually a
+deliberate act.
+
 The lock script passes `--color` as well as `--screenshots`, and that is
 load-bearing rather than decorative. `--color` is the flat colour swaylock
 paints underneath the screenshot, so it is what you see when there is no
@@ -1209,12 +1236,9 @@ how swayidle's blank reaches it. Setting that property here would actually be
 a config *error*: niri only accepts it on `spawn` binds.
 
 **`Mod+Shift+L` locks and blanks together**, which is the "I'm walking away"
-version of pressing `Mod+L` and then `Mod+Escape`. It differs from `Mod+L` in
-one more way: it passes `--grace 0`. Hyprlock's grace period is a window in
-which any input dismisses the lock with no password, and two seconds of that
-is right for an idle lock — the timer fired as you sat back down — but wrong
-for a deliberate one, where waking the screen to check that it locked would be
-enough to unlock it again.
+version of pressing `Mod+L` and then `Mod+Escape`. Like `Mod+L`, it locks with
+no grace period at all — see [Only the idle lock has a grace
+period](#only-the-idle-lock-has-a-grace-period).
 
 It's `Mod+Escape` and not bare `Escape` because niri intercepts a bound key
 unconditionally — it matches binds before it looks at the lock state, and

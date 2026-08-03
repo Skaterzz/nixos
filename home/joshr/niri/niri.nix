@@ -324,9 +324,9 @@ ${workspaceBlocks}
         // Lock *and* turn the displays off, in one key.
         //
         // Mod+L then Mod+Escape does the same thing in two presses; this is
-        // the "I'm walking away" version, and it skips the two-second grace
-        // that Mod+L keeps — see lockBlank in scripts.nix for why a
-        // deliberate lock wants no grace and an idle one does.
+        // the "I'm walking away" version. Both lock with no grace period —
+        // that is the default for every deliberate lock now, and only the
+        // idle timer in lock.nix asks for one.
         //
         // Any input powers the monitors back on and lands on the lock screen,
         // the same as the 600s idle blank in lock.nix.

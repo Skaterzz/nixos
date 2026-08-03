@@ -27,6 +27,19 @@ let
   # can't suspend ahead of the locker) without keeping what it cost. See the
   # comment on lockNow in scripts.nix.
   lock = lib.getExe niriScripts.lockNow;
+
+  # The idle lock, and the only lock on the machine with a grace period.
+  #
+  # `lock-session` defaults to `--grace 0`: every other route to the lock is
+  # something you asked for — a keybind, the bar, the session menu, a suspend,
+  # `loginctl lock-session` — and on those a window in which any keypress
+  # dismisses the lock without a password is a hole, not a convenience, since
+  # waking the screen to confirm it locked would walk straight through it.
+  #
+  # This one is different because nobody asked for it. The timer fires on its
+  # own after five minutes away, and the case it has to handle is the timer
+  # firing as you sit back down. Two seconds covers that and nothing longer.
+  idleLock = "${lock} --grace 2";
 in
 {
   services.swayidle = {
@@ -42,9 +55,19 @@ in
     # entries for the same event were never meaningful.
     events = {
       # Lock before the machine suspends, so it never resumes unlocked.
-      before-sleep = lock;
+      #
+      # `--grace 0` explicitly, rather than leaning on the `lock-session`
+      # default, because this is the route where a grace window would be
+      # worst: it is spent at resume, when the keypress or lid-open that wakes
+      # the machine is itself the input that would dismiss the lock. A suspend
+      # can be idle-triggered, but the lock it leaves behind is not an idle
+      # lock — nobody is sitting in front of it, and the lid was usually
+      # closed deliberately. Pinning it here keeps that true if the default
+      # ever moves.
+      before-sleep = "${lock} --grace 0";
 
-      # Handles `loginctl lock-session` from elsewhere.
+      # Handles `loginctl lock-session` from elsewhere. Someone asked for the
+      # lock, so no grace either.
       lock = lock;
     };
 
@@ -61,10 +84,10 @@ in
         command = "${lib.getExe niriScripts.brightness} dim 20";
         resumeCommand = "${lib.getExe niriScripts.brightness} restore";
       }
-      # Then lock.
+      # Then lock. The one lock that keeps a grace period — see idleLock.
       {
         timeout = 300;
-        command = lock;
+        command = idleLock;
       }
       # Then blank the outputs. niri handles DPMS via its own IPC, and
       # `power-off-monitors` is on its whitelist of actions that still run

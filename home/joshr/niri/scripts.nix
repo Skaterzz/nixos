@@ -822,14 +822,21 @@ lockNowPlaying = pkgs.writeShellApplication {
     # call it directly — see `lock-now` below, which is what swayidle, the
     # keybinds and the bar all go through.
 
-    grace=2
+    grace=0
 
     while [ "$#" -gt 0 ]; do
       case "$1" in
         # Seconds during which any input dismisses the lock without a
-        # password. Two is comfortable for an idle lock — you walked back to
-        # the desk as it fired — and wrong for a deliberate one, so
-        # `lock-blank` passes 0.
+        # password. Zero by default, because every deliberate route to the
+        # lock — the keybinds, the bar, the session menu, switch-user,
+        # before-sleep, `loginctl lock-session` — means "lock it", and on
+        # those a grace window is one in which the very act of waking the
+        # screen to check that it locked would unlock it again.
+        #
+        # The one caller that wants a nonzero value is the idle timer in
+        # lock.nix, which passes `--grace 2`: there the lock fired on its own
+        # while you were away from the desk, and the two seconds cover walking
+        # back into it as it fires.
         --grace)
           grace="''${2:-}"
           case "$grace" in
@@ -1201,10 +1208,11 @@ lockNowPlaying = pkgs.writeShellApplication {
   # monitors back on and lands on the lock screen, exactly as the 600s idle
   # blank does.
   #
-  # `--grace 0` because this key means "I am leaving". The two-second grace an
-  # idle lock gets is there for the case where the timer fires as you sit back
-  # down; on a deliberate lock it is a window in which the very act of waking
-  # the screen to check that it locked would unlock it again.
+  # `--grace 0` is the default `lock-session` already uses, and is passed here
+  # explicitly because this key is the clearest case for it: it means "I am
+  # leaving", and it blanks the screen, so the very act of waking the display
+  # to check that it locked would fall inside any grace window. Only the idle
+  # timer in lock.nix asks for a nonzero grace.
   lockBlank = pkgs.writeShellApplication {
     name = "lock-blank";
     runtimeInputs = with pkgs; [

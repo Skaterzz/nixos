@@ -122,6 +122,8 @@
     # it has earned its disk space. `ollama list` says what is actually down.
     ollama.models = [
       "qwen3"
+      #"qwen3-coder"
+      #"qwen3-coder-next"
       "nomic-embed-text"
     ];
 
@@ -137,7 +139,7 @@
       # Gone when nobody is logged in. Turn this on for an assistant that can
       # be messaged while the desk is empty — and see the option's note about
       # what an unattended agent means before doing so.
-      linger = false;
+      linger = true;
     };
   };
 

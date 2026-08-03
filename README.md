@@ -15,7 +15,7 @@ is the map.
 
 ## Hosts
 
-Five configurations across three machines. The desk and the laptop each have a
+Six configurations across four machines. The desk and the laptop each have a
 Plasma variant and a niri one — separate hosts rather than a switch, because
 the two use different display managers and NixOS won't enable both.
 
@@ -26,6 +26,7 @@ the two use different display managers and NixOS won't enable both.
 | `laptop` | portable: no NVIDIA, single display | Plasma 6 |
 | `laptop-niri` | same box | niri |
 | `server` | headless | none |
+| `server-nvidia` | headless, with a GPU: NVENC unlocked | none |
 
 ```bash
 sudo nixos-rebuild switch --flake .#gamestation-niri   # use niri
@@ -36,6 +37,7 @@ Switching either way is just a rebuild. Nothing is destroyed and the previous
 generation stays in the boot menu.
 [What actually differs](MANUAL.md#what-actually-differs) ·
 [The server](MANUAL.md#the-server) ·
+[The NVIDIA server](MANUAL.md#the-nvidia-server) ·
 [Adding another host](MANUAL.md#adding-another-host)
 
 ## Accounts
@@ -53,7 +55,7 @@ joshr's theme and wallpaper, and administering the box is joshr's, since
 ## Layout
 
 ```
-flake.nix          # inputs; the five nixosConfigurations; dev-shell templates
+flake.nix          # inputs; the six nixosConfigurations; dev-shell templates
 hosts/<host>/      # per machine: configuration.nix + hardware scan
 modules/nixos/     # the system side, imported per host
 home/common/       # home-manager bits shared by every account
@@ -96,7 +98,8 @@ This is one person's machine, not a distribution. On any other hardware:
    disk UUIDs. It will not boot your machine —
    [regenerate it](MANUAL.md#regenerating-hardware-configurationnix).
 2. **`open = true`** in `modules/nixos/nvidia.nix` needs a Turing (RTX 20xx)
-   card or newer.
+   card or newer — as does its default on `server-nvidia`, which is
+   `local.nvidia.open` and is the thing to turn off on a Pascal card.
 3. **Panel layout** in `home/joshr/plasma.nix` assumes this monitor
    arrangement — the `screen = N` numbers are worth a look.
 4. **Git identity** in `home/joshr/home.nix` is joshr's.
@@ -136,6 +139,7 @@ walks the whole thing from a live ISO.
 - **Working in it** —
   [development environments](MANUAL.md#development-environments) ·
   [local AI](MANUAL.md#local-ai) ·
+  [the NVIDIA server](MANUAL.md#the-nvidia-server) ·
   [single GPU passthrough](MANUAL.md#single-gpu-passthrough) ·
   [updating the dotfiles assets](MANUAL.md#updating-the-dotfiles-derived-assets) ·
   [where things came from](MANUAL.md#where-things-came-from)

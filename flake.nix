@@ -25,6 +25,23 @@
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
+    # keylase/nvidia-patch as a nixpkgs overlay: takes the concurrent-NVENC
+    # session cap and the Quadro-only NvFBC check off a GeForce driver.
+    #
+    # Used by one host — `server-nvidia` below, through
+    # modules/nixos/nvidia-server.nix, which is where what it does and what
+    # it costs is written down. The overlay is applied inside that module
+    # rather than here, so it reaches the hosts that import it and no others.
+    #
+    # `follows` because the overlay is a function of whatever pkgs it is
+    # applied to; the flake's own nixpkgs only exists for its `nix build`
+    # outputs, and letting it pin release-23.11 would put a second nixpkgs in
+    # flake.lock for nothing.
+    nvidia-patch = {
+      url = "github:icewind1991/nvidia-patch-nixos";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+
     #xwayland-satellite-scale-fixes = {
     #  url = "github:larsch/xwayland-satellite/scale-fixes";
     #  inputs.nixpkgs.follows = "nixpkgs";
@@ -198,6 +215,24 @@
           # section; see modules/nixos/cron.nix.
           server = mkHost {
             hostModule = ./hosts/server/configuration.nix;
+            homeModules = {
+              joshr = ./home/joshr/server.nix;
+            };
+          };
+
+          # The same, with a card in it: driver, nvidia-persistenced, the
+          # container toolkit and the NVENC/NvFBC patch. See
+          # modules/nixos/nvidia-server.nix and "The NVIDIA server" in
+          # MANUAL.md.
+          #
+          # It reuses home/joshr/server.nix rather than getting a
+          # `server-nvidia.nix` of its own, which is the one place this host
+          # departs from one-entrypoint-per-host. There is nothing per-host
+          # to say: that file is the shared shell and git, and a GPU is not
+          # something a home profile has an opinion about. Add the file the
+          # moment it does.
+          server-nvidia = mkHost {
+            hostModule = ./hosts/server-nvidia/configuration.nix;
             homeModules = {
               joshr = ./home/joshr/server.nix;
             };

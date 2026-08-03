@@ -57,9 +57,11 @@
     # agent. Its `local.ai` section is below; see modules/nixos/ai.nix and
     # "Local AI" in MANUAL.md.
     #
-    # This is the only host that imports it. The laptop has no discrete GPU,
-    # and the server has neither a GPU nor anyone sitting at it — a CPU-only
-    # ollama would run there, slowly, if that is ever wanted.
+    # This is the only host that imports it. The laptop has no discrete GPU
+    # and `server` has neither a GPU nor anyone sitting at it — a CPU-only
+    # ollama would run there, slowly, if that is ever wanted. `server-nvidia`
+    # is the one that could take this as-is, and deliberately doesn't; its
+    # configuration.nix says why.
     ../../modules/nixos/ai.nix
 
     # NOT imported: ../../modules/nixos/plasma-xdg-data-dirs.nix

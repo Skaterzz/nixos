@@ -1,3 +1,8 @@
+{ config, pkgs, ... }:
+
+# OBS follows the active niri/KDE Qt palette through OBS's bundled System
+# theme. A small child theme keeps that palette but replaces System's
+# hard-coded dark toolbar/settings/source icons with OBS's own light assets.
 let
   obsWithCuda = pkgs.obs-studio.override {
     cudaSupport = true;

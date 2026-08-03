@@ -81,13 +81,13 @@
     # NVIDIA's longest-supported branch, and old enough that nvidia-patch has
     # certainly published offsets for it. "latest" is the desktop's choice
     # and regularly outruns the patch.
-    driver = "production";
+    driver = "legacy_580"; # This is for GTX 1060
 
     # Turing (RTX 20xx, GTX 16xx) or newer. **Set this to false on Pascal** —
     # P4, P40, GTX 10xx, which is most of what ends up in a box like this —
     # since those have no open kernel module and the build produces a driver
     # that will not load.
-    open = true;
+    open = false;
 
     # If this machine's job is serving more concurrent encodes than an
     # unpatched card allows, this turns "the driver quietly lost its patch"

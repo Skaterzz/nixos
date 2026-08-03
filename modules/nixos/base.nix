@@ -5,10 +5,28 @@
   # See modules/nixos/power.nix and local.power.noAutoSleepOnAC.
   imports = [ ./power.nix ];
 
-  nix.settings = {
-		experimental-features = [ "nix-command" "flakes" ];
-		allowed-users = [ "root" "@wheel" ];
-	};
+  nix.settings.experimental-features = [ "nix-command" "flakes" ];
+
+  # NOTE: `allowed-users` is deliberately left at its default of "*".
+  #
+  # It was briefly set to [ "root" "@wheel" ], which broke the two accounts
+  # that are non-wheel on purpose (amandak and sabom — see users.nix). It
+  # gates who may open a connection to nix-daemon *at all*, so every one of
+  # their nix clients was refused at the handshake: home-manager-<user>.service
+  # failed on every switch with
+  #
+  #   error: cannot open connection to remote store 'daemon':
+  #   error: read of 32768 bytes: Connection reset by peer
+  #
+  # which reads like a network fault and is actually an authorization refusal.
+  # nix-shell and direnv would have gone the same way for those users.
+  #
+  # It is also not the setting that grants anything. `trusted-users` is — a
+  # trusted user can name its own substituters and have their contents taken
+  # on faith — and modules/nixos/development.nix pins that to root and @wheel,
+  # which is the trust the admin account already has via sudo. Restricting
+  # `allowed-users` on top of that keeps out no one who matters on a
+  # single-admin laptop; it only locks out the humans who log into it.
 
   # NVIDIA, Steam, VS Code, Vivaldi, Spotify and Discord are all unfree.
   # This has to be set as a module option so it applies to the system pkgs

@@ -35,7 +35,7 @@
   # Applied on a fresh install, and the palette SDDM is built with unless
   # overridden. See MANUAL.md for how the login screen follows runtime
   # switches.
-  default = "matrix";
+  default = "nord";
 
   themes = {
     # ---- greens ----------------------------------------------------------

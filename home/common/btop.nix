@@ -3,7 +3,7 @@
    programs.btop = {
     enable = true;
     settings = {
-      color_theme = "tty";
+      color_theme = "tokyo-night";
       theme_background = false;
       update_ms = 100;
     };

@@ -189,6 +189,7 @@
               # delta = ./home/delta/laptop-niri.nix;
               # raiden = ./home/raiden/laptop-niri.nix;
               amandak = ./home/amandak/laptop-niri.nix;
+              sabom = ./home/sabom/laptop-niri.nix;
             };
           };
 

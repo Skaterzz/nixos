@@ -1,0 +1,11 @@
+{ lib, pkgs, ... }:
+{
+   programs.btop = {
+    enable = true;
+    settings = {
+      color_theme = "tty";
+      theme_background = false;
+      update_ms = 100;
+    };
+  };
+}

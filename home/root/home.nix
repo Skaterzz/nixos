@@ -16,6 +16,7 @@
     ../common/shell.nix
     ../common/git.nix
     ../common/tmux.nix
+    ../common/btop.nix
   ];
 
   home.username = "root";

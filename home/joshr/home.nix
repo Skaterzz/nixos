@@ -9,6 +9,7 @@
     ../common/shell.nix
     ../common/git.nix
     ../common/tmux.nix
+    ../common/btop.nix
     ./kitty.nix
     ./ranger.nix
     ./vscode.nix
@@ -43,14 +44,6 @@
     yt-dlp
   ];
 
-  programs.btop = {
-    enable = true;
-    settings = {
-      color_theme = "tokyo-storm";
-      theme_background = false;
-      update_ms = 100;
-    };
-  };
   programs.mangohud = {
     enable = true;
     enableSessionWide = false;

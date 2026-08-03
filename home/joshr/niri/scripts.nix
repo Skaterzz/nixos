@@ -178,8 +178,8 @@ let
   # Jump to a random theme. This is what Mod+Shift+T runs.
   #
   # The current theme is excluded from the draw, so the key always visibly
-  # does something. With 20 palettes a plain random pick would land on the
-  # one already active about one press in twenty, and a keybind that
+  # does something. With 29 palettes a plain random pick would land on the
+  # one already active about one press in twenty-nine, and a keybind that
   # occasionally appears to do nothing reads as broken rather than as chance.
   #
   # themeCycle above is still built and still on PATH as `theme-cycle`; it

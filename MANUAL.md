@@ -391,21 +391,34 @@ anything to say about.
 
 ### Theme switching
 
-20 palettes ship. Greens: `matrix` (bright phosphor, the default), `forest`,
-`mint`. Monochrome: `mono` (white on black), `mono-light` (black on white).
-Reds: `blackred`, `crimson`. Then `catppuccin-mocha`,
-`catppuccin-macchiato`, `catppuccin-frappe`, `rose-pine`, `rose-pine-moon`,
-`nord`, `gruvbox`, `dracula`, `tokyo-night`, `everforest`, `kanagawa`,
-`solarized`, and `rose-pine-dawn` as the one light option.
+29 palettes ship, and `nord` is the default.
+
+`joshrandall-net` is the house palette — dark neutral grey with a pastel
+green. Greens: `matrix` (bright phosphor), `forest`, `mint`. Monochrome:
+`mono` (white on black), `mono-light` (black on white). Reds: `blackred`,
+`crimson`. Then `catppuccin-mocha`, `catppuccin-macchiato`,
+`catppuccin-frappe`, `rose-pine`, `rose-pine-moon`, `nord`, `dracula`,
+`tokyo-night`, `everforest`, `kanagawa`, `solarized`, and the four Gruvbox
+contrasts — `gruvbox` (medium), `gruvbox-hard`, `gruvbox-soft` and
+`gruvbox-light`, all transcribed from morhetz/gruvbox's own palette.
+
+Four are originals rather than transcriptions: `synthwave` (neon magenta on
+midnight violet), `ember` (amber on a cold neutral charcoal, where Gruvbox's
+orange sits on a warm one), `abyss` (cyan on deep-water navy) and `sakura`
+(pastel rose on ink plum).
+
+Three light options besides `mono-light`: `rose-pine-dawn` is the cool one,
+`gruvbox-light` the yellow one, and `sandstone` — warm paper and sienna —
+sits between them.
 
 `Mod+Shift+T` jumps to a random one, `Mod+Ctrl+T` opens a picker (more useful
 at this count). That matches the wallpaper keys — `Mod+Shift` is the random
 half of both pairs, `Mod+Ctrl` the deliberate half. The theme currently active
-is excluded from the draw, so the key always visibly does something; at 20
+is excluded from the draw, so the key always visibly does something; at 29
 palettes a plain random pick would land on the current one about one press in
-twenty, and a keybind that occasionally appears to do nothing reads as broken
-rather than as chance. `theme-cycle` is still on PATH if you want the ordered
-walk.
+twenty-nine, and a keybind that occasionally appears to do nothing reads as
+broken rather than as chance. `theme-cycle` is still on PATH if you want the
+ordered walk.
 
 The mechanism is worth knowing, because it's what keeps this declarative.
 home-manager owns `~/.config/...` as read-only symlinks into the store, so a

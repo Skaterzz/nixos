@@ -6,6 +6,12 @@
 # NVIDIA card (hosts/laptop/configuration.nix says so at length), so nothing
 # here has to consider Optimus, PRIME or a battery.
 #
+# This is the *desktop* driver: a card driving monitors, 32-bit libraries for
+# Proton, and the suspend dance below. A card in a headless box wants
+# modules/nixos/nvidia-server.nix instead — persistence rather than suspend,
+# the container toolkit, and the NVENC/NvFBC patch. Import one or the other;
+# both write `hardware.nvidia.package`.
+#
 # Waking up
 # ---------
 # By default the driver throws video memory away when the machine suspends.

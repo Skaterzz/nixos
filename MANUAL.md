@@ -84,6 +84,7 @@ the machine.
 - [Hosts](#hosts)
   - [What actually differs](#what-actually-differs)
   - [The server](#the-server)
+  - [The NVIDIA server](#the-nvidia-server)
   - [Adding another host](#adding-another-host)
 - [Updating the dotfiles-derived assets](#updating-the-dotfiles-derived-assets)
 
@@ -91,7 +92,8 @@ the machine.
 
 ```
 flake.nix                        # inputs: nixpkgs, home-manager, plasma-manager,
-                                 #   dotfiles, wallhaven-toplist
+                                 #   spicetify-nix, nvidia-patch, dotfiles,
+                                 #   wallhaven-toplist
 hosts/gamestation/                # the desk: NVIDIA, multi-monitor
   configuration.nix               # top-level system config, imports the modules below
   hardware-configuration.nix      # PLACEHOLDER — replace with your real hardware scan
@@ -100,6 +102,9 @@ hosts/laptop/                     # portable: no NVIDIA, single display
   configuration.nix
   hardware-configuration.nix      # PLACEHOLDER — regenerate on the machine
 hosts/server/                     # headless: no desktop, cron jobs
+  configuration.nix
+  hardware-configuration.nix      # PLACEHOLDER — regenerate on the machine
+hosts/server-nvidia/              # headless with a card: NVENC/NvFBC unlocked
   configuration.nix
   hardware-configuration.nix      # PLACEHOLDER — regenerate on the machine
 modules/nixos/
@@ -119,6 +124,8 @@ modules/nixos/
   plasma-xdg-data-dirs.nix        # workaround for nixpkgs#126590 (see below)
   nvidia.nix                      # NVIDIA driver, 32-bit graphics for Steam/Proton,
                                   #   and the suspend/resume video-memory handling
+  nvidia-server.nix               # the same card with no monitor on it: persistence,
+                                  #   the container toolkit, the nvidia-patch overlay
   gaming.nix                      # Steam, MangoHud
   openrgb.nix                     # OpenRGB daemon + re-applying the profile on resume
   laptop.nix                       # power-profiles-daemon, upower, thermald, fstrim
@@ -126,7 +133,7 @@ modules/nixos/
   boot.nix                         # bootloader: limine theming + other-OS detection
   options.nix                      # local.boot.*, local.power.*, local.sddm.*,
                                    #   local.openrgb.*, local.virtualisation.*,
-                                   #   local.ai.*
+                                   #   local.ai.*, local.nvidia.*
   users.nix                        # the `joshr`, `raiden` and `root` accounts
 home/common/
   options.nix                      # local.* options the entrypoints toggle
@@ -2885,7 +2892,7 @@ from the boot menu at startup — nothing is destroyed by a bad switch.
 
 ## Hosts
 
-Five are defined. Pick one with the flake attribute:
+Six are defined. Pick one with the flake attribute:
 
 | Host | For | Differences |
 |---|---|---|
@@ -2894,6 +2901,7 @@ Five are defined. Pick one with the flake attribute:
 | `gamestation-niri` | the desk, niri | as above, niri + SDDM instead of Plasma |
 | `laptop-niri` | portable, niri | as above; no OpenRGB applet at login |
 | `server` | headless | no desktop at all; systemd-boot; cron jobs |
+| `server-nvidia` | headless, with a card | as `server`, plus the driver and the NVENC/NvFBC patch |
 
 ```bash
 sudo nixos-rebuild switch --flake .#gamestation
@@ -2902,8 +2910,8 @@ sudo nixos-rebuild switch --flake .#server
 ```
 
 The two desk hosts and the two laptop hosts share everything else — the same
-modules, the same `home/joshr` profile, the same package set. `server` is the
-outlier and is described below.
+modules, the same `home/joshr` profile, the same package set. The two headless
+hosts are the outliers and are described below.
 
 ### What actually differs
 
@@ -2966,6 +2974,131 @@ console. Tailscale is enabled there too and still needs `tailscale up` once.
 Each host still needs its own hardware scan —
 `hosts/laptop/hardware-configuration.nix` is the same placeholder as
 gamestation's and must be regenerated on the machine.
+
+### The NVIDIA server
+
+`server-nvidia` is that machine with a card in it, and the difference is one
+import: `modules/nixos/nvidia-server.nix`. Same base, same `systemd-boot`,
+same three cron jobs, same shell-only home profile — `home/joshr/server.nix`,
+reused rather than copied, because a GPU isn't something a home profile has
+an opinion about.
+
+```bash
+sudo nixos-rebuild switch --flake .#server-nvidia
+```
+
+It's a separate host rather than an option on `server` because they're
+separate machines: different hardware scan, and a driver that rebuilds
+locally on every kernel bump is not something to hand to a box with no card
+in it.
+
+The module is the *headless* driver, and deliberately not
+`modules/nixos/nvidia.nix` — importing both would leave two definitions of
+`hardware.nvidia.package` and stop the rebuild. What it does differently:
+
+| | |
+|---|---|
+| `nvidiaPersistenced` | on. A desktop always has a client holding the driver open — the display server. A headless card has none, so without this every job pays for a full initialisation and the clocks fall back to idle in between. |
+| `powerManagement` | off. The suspend/resume video-memory dance is for a machine that sleeps, and it copies the whole of VRAM to `/tmp` on the way down. |
+| `nvidiaSettings` | off. It's a GUI control panel. |
+| `enable32Bit` | off. It's there for 32-bit games under Proton. |
+| `hardware.nvidia-container-toolkit` | follows `virtualisation.docker.enable`, so importing `development.nix` is also what gives containers the card — `docker run --rm --device=nvidia.com/gpu=all <image> nvidia-smi`. That name is a CDI spec, regenerated by a udev rule; the older `--gpus all` wants a runtime wrapper that only comes with the deprecated `virtualisation.docker.enableNvidia`, so the module turns Docker's own CDI support on instead. |
+| the patch | below. |
+
+One thing worth knowing before it confuses you: the module sets
+`services.xserver.videoDrivers = [ "nvidia" ]` on a machine with no X.
+nixpkgs gates its *entire* NVIDIA module on that list — kernel modules, udev
+rules, the libraries under `/run/opengl-driver`, `nvidia-smi`, persistenced.
+Leave it out and every `hardware.nvidia.*` setting is silently inert. It does
+not enable X; `services.xserver.enable` does that, and it stays false.
+
+#### The patch
+
+GeForce cards carry two limits that are policy rather than silicon:
+
+- **NVENC** refuses more than a handful of simultaneous encode sessions —
+  three on older drivers, five on newer ones. The fourth `ffmpeg -c:v
+  h264_nvenc` fails with `OpenEncodeSessionEx failed: out of memory (10)`
+  while the card sits at 20% utilisation. This is the limit that decides how
+  many streams a transcoding server can serve.
+- **NvFBC**, whole-framebuffer capture, is refused on anything that isn't a
+  Quadro. Sunshine, OBS and the remote desktops fall back to slower paths.
+
+Both are a branch on the card's model inside a userspace library.
+[keylase/nvidia-patch](https://github.com/keylase/nvidia-patch) publishes,
+per driver version, the bytes to overwrite so the branch isn't taken, and
+[icewind1991/nvidia-patch-nixos](https://github.com/icewind1991/nvidia-patch-nixos)
+wraps those offsets as a nixpkgs overlay. That's the `nvidia-patch` flake
+input; the overlay is applied inside `nvidia-server.nix` rather than in
+`flake.nix`, so it reaches the hosts that import the module and no others.
+
+Three consequences of the mechanism:
+
+- **It edits a binary NVIDIA ships**, which is a licence question you're
+  answering for yourself. Nothing is redistributed — the `sed` runs on the
+  machine, on the driver that machine downloaded.
+- **It's keyed on the exact driver version.** nixpkgs gets a new driver
+  before the offsets for it are published, so a channel that moves can land
+  on a version the table has never seen. That's why `local.nvidia.driver`
+  defaults to `"production"` rather than the desktop's `"latest"`, and why a
+  version the table doesn't cover **warns and installs unpatched** instead of
+  failing. `local.nvidia.patch.required = true` turns that warning into a
+  failed rebuild on a host where a capped encoder is an outage.
+- **It changes the driver derivation**, so the driver builds on the machine
+  instead of coming from `cache.nixos.org` — kernel module included, several
+  minutes on a server CPU, repeated on every kernel or driver bump.
+
+It reaches containers too. The CDI spec is generated against
+`hardware.nvidia.package`, so the libraries bind-mounted into a container are
+the patched ones — a stock Jellyfin or ffmpeg image gets the unlocked encoder
+without knowing anything about it.
+
+When a rebuild warns that the offsets are missing, in order of cheapness:
+
+```bash
+nix flake update nvidia-patch     # the table is usually days behind a release
+                                  # then: local.nvidia.driver = "production";
+                                  # or:   local.nvidia.patch.nvenc = false;
+
+# what the table currently knows
+nix eval .#nixosConfigurations.server-nvidia.pkgs.nvidia-patch-list.nvenc \
+  --apply builtins.attrNames
+```
+
+#### Checking it worked
+
+There's no flag to read — the check is to exceed the old limit:
+
+```bash
+nix shell nixpkgs#ffmpeg
+for i in $(seq 1 8); do
+  ffmpeg -f lavfi -i testsrc=size=1920x1080:rate=30 -t 60 \
+         -c:v h264_nvenc -f null - &
+done
+nvidia-smi                        # eight encoders, or a pile of session errors
+nvidia-smi -q -d ENCODER_STATS    # what the card thinks it's running
+```
+
+`nvtop` is installed for the same question asked continuously — per-process
+GPU, VRAM and encoder use.
+
+#### On other hardware
+
+`local.nvidia.open = true` needs Turing (RTX 20xx, GTX 16xx) or newer. Most
+of what ends up in a box like this is older — P4, P40, GTX 10xx — and Pascal
+has no open kernel module at all, so leaving it on there produces a driver
+that won't load. Set it to `false` in
+`hosts/server-nvidia/configuration.nix`.
+
+A datacenter or legacy driver that `local.nvidia.driver` can't name goes in
+`local.nvidia.package` (e.g. `config.boot.kernelPackages.nvidiaPackages.dc_580`)
+rather than in `hardware.nvidia.package` — the module writes that one, and a
+second definition either conflicts or, forced, quietly discards the patch.
+
+Nothing that *uses* the card is configured here. Jellyfin, Frigate, a stack
+of ffmpeg jobs, ollama — this is the machine they'd run on, and they go in
+that host's `configuration.nix` or a module of their own. `ai.nix` is
+deliberately not imported; the host file says why.
 
 ### Adding another host
 

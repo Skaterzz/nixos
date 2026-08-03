@@ -110,7 +110,7 @@ in
           "(.*) — Mozilla Firefox" = "󰈹  $1";
           "(.*) - Vivaldi" = "󰖟  $1";
           "(.*) - Visual Studio Code" = "󰨞  $1";
-          "^kitty$" = "  Terminal";
+          # "^kitty$" = "  Terminal";
           "^$" = "  Desktop";
         };
       };

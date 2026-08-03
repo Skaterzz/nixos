@@ -367,7 +367,16 @@ ${workspaceBlocks}
         // into `allow-when-locked`, so route both quit shortcuts through IPC.
         Mod+Shift+E { spawn "${bin pkgs.niri}" "msg" "action" "quit"; } 
 
-        Mod+Shift+I hotkey-overlay-title="Stay awake (toggle)" { spawn "${bin niriScripts.idleInhibit}" "toggle"; }
+        // Hold the machine awake: no dim, no lock, no blank, no sleep, and on
+        // the laptop no lid switch either, until it is toggled back off. The
+        // same script the bar's coffee cup runs, so the key and the click
+        // can't disagree — see idle-inhibit in scripts.nix and the unit it
+        // drives in lock.nix.
+        //
+        // The title names the inhibitor as well as what it does, because the
+        // hotkey overlay (Mod+Shift+/) is where you go looking for this key,
+        // and "idle" is the word you would search it for.
+        Mod+Shift+I hotkey-overlay-title="Stay awake — toggle idle inhibitor" { spawn "${bin niriScripts.idleInhibit}" "toggle"; }
 
         // --- theming ---------------------------------------------------
         // Random theme, or pick one / a wallpaper from a menu. Mod+Shift is

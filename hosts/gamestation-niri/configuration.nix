@@ -53,6 +53,15 @@
     # so containers and VMs are separate switches.
     ../../modules/nixos/virtualization.nix
 
+    # Local models: ollama on the card, a chat window for it, and the OpenClaw
+    # agent. Its `local.ai` section is below; see modules/nixos/ai.nix and
+    # "Local AI" in MANUAL.md.
+    #
+    # This is the only host that imports it. The laptop has no discrete GPU,
+    # and the server has neither a GPU nor anyone sitting at it — a CPU-only
+    # ollama would run there, slowly, if that is ever wanted.
+    ../../modules/nixos/ai.nix
+
     # NOT imported: ../../modules/nixos/plasma-xdg-data-dirs.nix
     #
     # That workaround exists because plasma-workspace's Qt wrapper builds an
@@ -86,6 +95,50 @@
   local.virtualisation.singleGpuPassthrough = {
     enable = true;
     vms = [ ];
+  };
+
+  # Local AI. Three things on loopback, all on this machine's own card:
+  # ollama serving models on 11434, Open WebUI as a chat window on 8080, and
+  # the OpenClaw agent's control UI on 18789. Nothing here opens a firewall
+  # port, and nothing here talks to a hosted model.
+  #
+  # `stopServices` above doesn't need ollama written into it — ai.nix adds its
+  # own units to that list, so a guest can still take the card.
+  #
+  # **The first rebuild after this is a long one.** The card is NVIDIA, so
+  # `acceleration` resolves to CUDA, and cache.nixos.org has no ollama-cuda to
+  # hand out — it compiles here. `local.ai.ollama.acceleration = "cpu";` skips
+  # that if you'd rather see the rest working first.
+  local.ai = {
+    enable = true;
+
+    # Downloaded in the background after the server comes up, not built — a
+    # rebuild doesn't wait on them. qwen3 is here rather than a better-known
+    # name because the agent below needs tool calling and a context window of
+    # at least 16K, and a model without those looks broken rather than small.
+    # nomic-embed-text is what Open WebUI uses to index documents you give it.
+    #
+    # `ollama pull <model>` tries one without editing this; add it here once
+    # it has earned its disk space. `ollama list` says what is actually down.
+    ollama.models = [
+      "qwen3"
+      "nomic-embed-text"
+    ];
+
+    # The agent, running as joshr — see local.ai.openclaw.enable in
+    # modules/nixos/options.nix for what that means and why it isn't on
+    # everywhere. Points at the local qwen3 above, so it works out of the box
+    # with no API key and nothing leaving the machine; `openclaw onboard`
+    # swaps in a hosted provider later if that turns out to be wanted.
+    openclaw = {
+      enable = true;
+      model = "ollama/qwen3";
+
+      # Gone when nobody is logged in. Turn this on for an assistant that can
+      # be messaged while the desk is empty — and see the option's note about
+      # what an unattended agent means before doing so.
+      linger = false;
+    };
   };
 
   # Themed login screen: one sddm-astronaut build per palette, following the

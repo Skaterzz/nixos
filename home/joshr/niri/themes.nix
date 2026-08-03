@@ -38,6 +38,49 @@
   default = "nord";
 
   themes = {
+    # ---- house -----------------------------------------------------------
+
+    # joshrandall.net's colours: dark neutral grey and a pastel green.
+    #
+    # The green is deliberately soft rather than the phosphor green `matrix`
+    # wears. accent is used as a *background* in several places — waybar's
+    # active workspace, wofi's selected row, kitty's selection — with `bg` as
+    # the text on top of it, so a pastel reads as a calm highlight where a
+    # saturated green reads as a highlighter pen.
+    #
+    # The greys carry no hue on purpose: with one pastel accent, any tint in
+    # the background turns the whole session slightly sick-looking. So the
+    # bar, the panels and the terminal chrome stay neutral, and the only
+    # colours on screen are the green, the warning amber and the error rose
+    # — of which only the green is there to be looked at.
+    joshrandall-net = {
+      description = "joshrandall.net — dark grey and pastel green";
+      bg = "#1b1d1c";
+      bgAlt = "#262a28";
+      bgUrgent = "#33201f";
+      fg = "#e4e8e5";
+      fgDim = "#8b938e";
+      accent = "#a8e6a3";
+      accentDim = "#4a6f4a";
+      warn = "#e8d9a0";
+      err = "#e8a0a0";
+      border = "#4a6f4a";
+      # The whole ANSI set is pastel, not just the green — a saturated red or
+      # blue beside a pastel accent looks like a different theme leaking in.
+      # Each hue is a light tint at roughly the accent's lightness, which
+      # keeps them distinguishable from each other and legible on the grey.
+      ansi = {
+        black = "#1b1d1c";       brightBlack = "#4a514d";
+        red = "#e8a0a0";         brightRed = "#f2bcbc";
+        green = "#a8e6a3";       brightGreen = "#c3f0bf";
+        yellow = "#e8d9a0";      brightYellow = "#f2e8bf";
+        blue = "#a0c8e8";        brightBlue = "#bfdcf2";
+        magenta = "#d4b8e8";     brightMagenta = "#e4d1f2";
+        cyan = "#a0e6dc";        brightCyan = "#bff0ea";
+        white = "#e4e8e5";       brightWhite = "#f4f7f5";
+      };
+    };
+
     # ---- greens ----------------------------------------------------------
 
     matrix = {
@@ -387,8 +430,14 @@
       };
     };
 
+    # Gruvbox ships three background contrasts — medium, hard and soft — over
+    # one set of hues, plus a light mode. All four are transcribed from
+    # morhetz/gruvbox's own palette: dark0_hard #1d2021, dark0 #282828,
+    # dark0_soft #32302f and light0 #fbf1c7 for the backgrounds, light1
+    # #ebdbb2 for text on the dark ones, gray #928374 for dimmed text, and
+    # bright_orange #fe8019 as the accent on all three dark variants.
     gruvbox = {
-      description = "Gruvbox dark";
+      description = "Gruvbox dark (medium contrast)";
       bg = "#282828";
       bgAlt = "#3c3836";
       bgUrgent = "#4a2422";
@@ -410,6 +459,98 @@
         magenta = "#b16286";     brightMagenta = "#d3869b";
         cyan = "#689d6a";        brightCyan = "#8ec07c";
         white = "#a89984";       brightWhite = "#ebdbb2";
+      };
+    };
+
+    # dark0_hard. Same hues, a darker canvas — more contrast under the text
+    # and a blacker surround for a bright room or an OLED panel. bgAlt stays
+    # at dark1 rather than dropping to dark0: raised surfaces have to stay
+    # visibly raised, and #1d2021 against #282828 is a step you can barely
+    # see.
+    gruvbox-hard = {
+      description = "Gruvbox dark (hard contrast)";
+      bg = "#1d2021";
+      bgAlt = "#3c3836";
+      bgUrgent = "#401f1d";
+      fg = "#ebdbb2";
+      fgDim = "#928374";
+      accent = "#fe8019";
+      accentDim = "#8f4a12";
+      warn = "#fabd2f";
+      err = "#fb4934";
+      border = "#8f4a12";
+      ansi = {
+        black = "#1d2021";       brightBlack = "#928374";
+        red = "#cc241d";         brightRed = "#fb4934";
+        green = "#98971a";       brightGreen = "#b8bb26";
+        yellow = "#d79921";      brightYellow = "#fabd2f";
+        blue = "#458588";        brightBlue = "#83a598";
+        magenta = "#b16286";     brightMagenta = "#d3869b";
+        cyan = "#689d6a";        brightCyan = "#8ec07c";
+        white = "#a89984";       brightWhite = "#ebdbb2";
+      };
+    };
+
+    # dark0_soft, the other direction: a lifted, warmer background for a dim
+    # room. Here bgAlt has to go *up* to dark2 for the same reason hard's
+    # stays put — dark1 #3c3836 is only a few points off #32302f and raised
+    # surfaces would disappear into the background.
+    gruvbox-soft = {
+      description = "Gruvbox dark (soft contrast)";
+      bg = "#32302f";
+      bgAlt = "#504945";
+      bgUrgent = "#52322e";
+      fg = "#ebdbb2";
+      fgDim = "#928374";
+      accent = "#fe8019";
+      accentDim = "#8f4a12";
+      warn = "#fabd2f";
+      err = "#fb4934";
+      border = "#8f4a12";
+      ansi = {
+        black = "#32302f";       brightBlack = "#928374";
+        red = "#cc241d";         brightRed = "#fb4934";
+        green = "#98971a";       brightGreen = "#b8bb26";
+        yellow = "#d79921";      brightYellow = "#fabd2f";
+        blue = "#458588";        brightBlue = "#83a598";
+        magenta = "#b16286";     brightMagenta = "#d3869b";
+        cyan = "#689d6a";        brightCyan = "#8ec07c";
+        white = "#a89984";       brightWhite = "#ebdbb2";
+      };
+    };
+
+    # Gruvbox light, kept here with its siblings rather than in the light
+    # section below — same reason mono-light sits with mono.
+    #
+    # Upstream doesn't just invert the dark scheme: light mode swaps the
+    # bright hues for the faded ones, because on paper a colour reads as
+    # emphasised by getting darker. So the accent is faded_orange #af3a03
+    # rather than bright_orange, which is also the only version of it that
+    # can carry #fbf1c7 text when the accent is used as a background.
+    gruvbox-light = {
+      description = "Gruvbox light";
+      bg = "#fbf1c7";
+      bgAlt = "#ebdbb2";
+      bgUrgent = "#f0d3c4";
+      fg = "#3c3836";
+      fgDim = "#7c6f64";
+      accent = "#af3a03";
+      accentDim = "#d5c4a1";
+      warn = "#b57614";
+      err = "#9d0006";
+      border = "#d5c4a1";
+      # Gruvbox's published light terminal palette: neutral_* in the normal
+      # slots, faded_* in the bright ones — darker, not lighter, for the same
+      # reason the accent is.
+      ansi = {
+        black = "#fbf1c7";       brightBlack = "#928374";
+        red = "#cc241d";         brightRed = "#9d0006";
+        green = "#98971a";       brightGreen = "#79740e";
+        yellow = "#d79921";      brightYellow = "#b57614";
+        blue = "#458588";        brightBlue = "#076678";
+        magenta = "#b16286";     brightMagenta = "#8f3f71";
+        cyan = "#689d6a";        brightCyan = "#427b58";
+        white = "#7c6f64";       brightWhite = "#3c3836";
       };
     };
 
@@ -537,8 +678,145 @@
       };
     };
 
+    # ---- originals -------------------------------------------------------
+    # Not transcriptions of anything — built here, to the same rules the
+    # borrowed palettes are judged by: the accent has to survive being used
+    # as a background with `bg` written on top of it, `err` has to be
+    # tellable from the accent at a glance (a red battery beside an accented
+    # clock), and the sixteen terminal colours have to keep six distinct
+    # hues so a diff or a syntax highlighter still reads.
+
+    # Retro-neon: the accent is a magenta rather than the usual blue or
+    # green, over a violet-black that isn't quite neutral. The ANSI set keeps
+    # the era's other two signature colours — electric cyan and a lime
+    # yellow — so a terminal looks of a piece with the chrome.
+    synthwave = {
+      description = "Neon magenta over midnight violet";
+      bg = "#1a1030";
+      bgAlt = "#251a45";
+      bgUrgent = "#45152e";
+      fg = "#f0e6ff";
+      fgDim = "#8b7bb8";
+      accent = "#ff2f92";
+      accentDim = "#8a1350";
+      warn = "#ffd166";
+      err = "#ff4d6d";
+      border = "#8a1350";
+      # err (#ff4d6d) sits close to the accent in hue, which is a real risk
+      # in a pink-forward theme — so it is held distinctly redder and lighter
+      # than accent, and never appears next to it on the same widget.
+      ansi = {
+        black = "#1a1030";       brightBlack = "#4a3a75";
+        red = "#ff4d6d";         brightRed = "#ff7d95";
+        green = "#4ee9a1";       brightGreen = "#7ff5c0";
+        yellow = "#f9f871";      brightYellow = "#fdfca8";
+        blue = "#5b7cfa";        brightBlue = "#8aa0ff";
+        magenta = "#ff2f92";     brightMagenta = "#ff6fb5";
+        cyan = "#2de2e6";        brightCyan = "#7af4f7";
+        white = "#e6dcff";       brightWhite = "#ffffff";
+      };
+    };
+
+    # Warm without being brown. Gruvbox's orange sits on a warm grey and the
+    # whole palette leans sepia; this one puts a golden amber on a properly
+    # neutral near-black, so the accent is the only warm thing on screen and
+    # reads as a lit coal rather than as a tint over everything.
+    ember = {
+      description = "Amber embers on cold charcoal";
+      bg = "#131313";
+      bgAlt = "#1f1e1d";
+      bgUrgent = "#331411";
+      fg = "#ece4d9";
+      fgDim = "#8a8078";
+      accent = "#ffb03a";
+      accentDim = "#8a4e0d";
+      warn = "#ffd166";
+      err = "#ff5c47";
+      border = "#8a4e0d";
+      # A warm accent means warn and err both crowd it. warn is pulled up
+      # into yellow and err down into red, far enough either side of the
+      # accent's gold that battery-low and battery-critical never read as the
+      # same state.
+      ansi = {
+        black = "#131313";       brightBlack = "#4a4340";
+        red = "#ef4f3a";         brightRed = "#ff7a68";
+        green = "#9bbf6a";       brightGreen = "#b9d68f";
+        yellow = "#ffb03a";      brightYellow = "#ffca77";
+        blue = "#56a3c9";        brightBlue = "#86c2de";
+        magenta = "#c38fd6";     brightMagenta = "#d8b3e6";
+        cyan = "#57bfae";        brightCyan = "#88d5c8";
+        white = "#ece4d9";       brightWhite = "#fbf6f0";
+      };
+    };
+
+    # Deep water: a blue-black background with one cold, bright cyan on it.
+    # The nearest neighbours here are mint (green-teal on near-black) and
+    # rose-pine-moon (teal on plum) — this one is bluer than either, and the
+    # background carries enough blue to be visibly not-black beside them.
+    abyss = {
+      description = "Bioluminescent cyan in deep water";
+      bg = "#06121a";
+      bgAlt = "#0d1f2b";
+      bgUrgent = "#2c1220";
+      fg = "#cfe9f0";
+      fgDim = "#5c7f8c";
+      accent = "#22d3ee";
+      accentDim = "#0e6a80";
+      warn = "#ffc857";
+      err = "#ff6b81";
+      border = "#0e6a80";
+      ansi = {
+        black = "#06121a";       brightBlack = "#26414d";
+        red = "#ff6b81";         brightRed = "#ff97a7";
+        green = "#35d6a5";       brightGreen = "#6fe8c4";
+        yellow = "#ffc857";      brightYellow = "#ffdb8c";
+        blue = "#4aa8ff";        brightBlue = "#86c6ff";
+        magenta = "#a78bfa";     brightMagenta = "#c4b0fd";
+        cyan = "#22d3ee";        brightCyan = "#67e8f9";
+        white = "#cfe9f0";       brightWhite = "#eaf7fb";
+      };
+    };
+
+    # The quiet counterpart to synthwave: the same corner of the wheel at a
+    # tenth of the volume, pastel rose on an ink-plum background. Two pinks
+    # in one file is deliberate — the file already carries five greens and
+    # five purples, and neon and pastel are not interchangeable at 2am.
+    sakura = {
+      description = "Pastel rose on ink plum";
+      bg = "#1a141c";
+      bgAlt = "#251d29";
+      bgUrgent = "#3d1a2a";
+      fg = "#f2e4ee";
+      fgDim = "#8d7b8d";
+      accent = "#f0a8c8";
+      accentDim = "#7d4f68";
+      warn = "#f0cf9a";
+      err = "#f07a8f";
+      border = "#7d4f68";
+      ansi = {
+        black = "#1a141c";       brightBlack = "#4a3b4a";
+        red = "#f07a8f";         brightRed = "#f7a3b1";
+        green = "#a8d9a0";       brightGreen = "#c4e8be";
+        yellow = "#f0cf9a";      brightYellow = "#f7e2c1";
+        blue = "#97b8e8";        brightBlue = "#b8d0f2";
+        magenta = "#f0a8c8";     brightMagenta = "#f7c6dc";
+        cyan = "#96dcd2";        brightCyan = "#b9ebe4";
+        white = "#f2e4ee";       brightWhite = "#fdf5fa";
+      };
+    };
+
     # ---- light -----------------------------------------------------------
-    # One light option, mostly so the switcher is visibly doing something.
+    # The light palettes that don't belong to a family above; `mono-light`
+    # and `gruvbox-light` live beside their dark siblings instead.
+    #
+    # Light themes need two things doing differently. The accent is a *dark*
+    # colour, not a bright one, because it still has to take `bg` as text on
+    # top of it — a pastel accent on a pale background leaves the active
+    # workspace unreadable. And the ANSI bright slots run darker than the
+    # normal ones rather than lighter, since on a light background emphasis
+    # comes from going down towards the ink, not up towards the paper. (Only
+    # where a palette distinguishes the two at all: Rosé Pine Dawn publishes
+    # one value per hue and both slots take it, as upstream intends.)
 
     rose-pine-dawn = {
       description = "Rosé Pine Dawn (light)";
@@ -561,6 +839,39 @@
         magenta = "#907aa9";     brightMagenta = "#907aa9";
         cyan = "#d7827e";        brightCyan = "#d7827e";
         white = "#575279";       brightWhite = "#575279";
+      };
+    };
+
+    # Warm paper rather than white: an unbleached off-white with a sienna
+    # accent, for a bright room. Rosé Pine Dawn is the cool light option and
+    # Gruvbox light is the yellow one; this sits between them, warm without
+    # gruvbox's cream.
+    #
+    # accentDim is a tan, not a dark sienna. On a dark theme accentDim is a
+    # dimmer version of the accent; on a light one it is a *lighter* one,
+    # because it draws inactive borders and scrollbar thumbs — things that
+    # have to recede into the page, and a dark border recedes from nothing.
+    sandstone = {
+      description = "Warm paper and sienna (light)";
+      bg = "#f6f1e7";
+      bgAlt = "#ede5d6";
+      bgUrgent = "#f2d9cc";
+      fg = "#3b3730";
+      fgDim = "#7d7466";
+      accent = "#b0562a";
+      accentDim = "#d3c3a8";
+      warn = "#a8730f";
+      err = "#a83232";
+      border = "#d3c3a8";
+      ansi = {
+        black = "#e6dcc9";       brightBlack = "#7d7466";
+        red = "#a83232";         brightRed = "#8a2020";
+        green = "#5d7a2e";       brightGreen = "#47601f";
+        yellow = "#a8730f";      brightYellow = "#8a5c07";
+        blue = "#2f6f8f";        brightBlue = "#1e5570";
+        magenta = "#8a4a72";     brightMagenta = "#6f375a";
+        cyan = "#2f7d70";        brightCyan = "#1e6357";
+        white = "#3b3730";       brightWhite = "#26231e";
       };
     };
   };

@@ -623,7 +623,10 @@ let
   # draws scrollbars, checkboxes and dropdown arrows from CSS `color-scheme`
   # rather than from any colour we can set, so getting that backwards leaves
   # those widgets invisible against the themed chrome. Of the palettes here
-  # only mono-light and rose-pine-dawn come out light.
+  # only mono-light, gruvbox-light, rose-pine-dawn and sandstone come out
+  # light; the threshold is nowhere near any of them, the darkest light one
+  # being gruvbox-light at 239 and the lightest dark one catppuccin-frappé
+  # at 53.
   luma = hex: (299 * (channel hex 0) + 587 * (channel hex 2) + 114 * (channel hex 4)) / 1000;
 
   colorScheme = t: if luma t.bg > 127 then "light" else "dark";

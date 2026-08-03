@@ -54,10 +54,17 @@ in
     # the honest shape anyway: swayidle takes one command per event, so two
     # entries for the same event were never meaningful.
     events = {
-      # Lock before the machine suspends, so it never resumes unlocked. No
-      # grace: resuming from suspend is exactly the moment a free keypress
-      # would be spent, and the lid may well have been closed deliberately.
-      before-sleep = lock;
+      # Lock before the machine suspends, so it never resumes unlocked.
+      #
+      # `--grace 0` explicitly, rather than leaning on the `lock-session`
+      # default, because this is the route where a grace window would be
+      # worst: it is spent at resume, when the keypress or lid-open that wakes
+      # the machine is itself the input that would dismiss the lock. A suspend
+      # can be idle-triggered, but the lock it leaves behind is not an idle
+      # lock — nobody is sitting in front of it, and the lid was usually
+      # closed deliberately. Pinning it here keeps that true if the default
+      # ever moves.
+      before-sleep = "${lock} --grace 0";
 
       # Handles `loginctl lock-session` from elsewhere. Someone asked for the
       # lock, so no grace either.

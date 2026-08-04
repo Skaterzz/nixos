@@ -1397,6 +1397,43 @@ let
     LOCK_WARN=${lib.removePrefix "#" t.warn}
   '';
 
+  # The lock screen's password field, as a picture of one.
+  #
+  # Hyprlock cannot change a colour while it is up. `reload_cmd` re-reads a
+  # *path*, and there is no equivalent for a colour anywhere in its config —
+  # so the only way for the field to follow the music is for its frame to *be*
+  # an image, drawn under a field whose own outline and fill are transparent.
+  # This is what draws that image, for a theme at build time and for an album
+  # cover at lock time (scripts.nix), which is why it lives here as a shell
+  # function rather than twice as a command.
+  #
+  # Every number in it is Hyprlock's, and has to stay Hyprlock's:
+  #
+  #   624x62      the field is 620x58 and its outline is drawn *outside* that
+  #               (PasswordInputField.cpp draws outerBox at pos - thickness,
+  #               size + thickness * 2), so its frame is 2px larger all round.
+  #   20 and 18   roundingForBorderBox is `rounding + thickness` and
+  #               roundingForBox is `rounding`, against the 18 in the config.
+  #   dd and d6   the alphas the config used when those colours were static.
+  #
+  # Punched out and composited rather than stroked over a fill, so the ring and
+  # the interior each come out exactly their own colour instead of one showing
+  # through the other where they meet.
+  lockFieldFrame = ''
+    # <edge hex> <fill hex> <output path>
+    lock_field_frame() {
+      magick -size 624x62 xc:none \
+        -fill "#$1dd" -draw 'roundrectangle 0,0 623,61 20,20' \
+        \( -size 624x62 xc:none -fill white \
+           -draw 'roundrectangle 2,2 621,59 18,18' \) \
+        -alpha set -compose DstOut -composite \
+        \( -size 624x62 xc:none -fill "#$2d6" \
+           -draw 'roundrectangle 2,2 621,59 18,18' \) \
+        -compose Over -composite \
+        "png32:$3"
+    }
+  '';
+
   # sddm-astronaut's themeConfig, so the login screen matches.
   #
   # NOTE: nothing reads this. It is published in `_module.args.niriTheming`
@@ -1459,30 +1496,45 @@ let
 
   mkThemeDir =
     name: t:
-    pkgs.runCommand "niri-theme-${name}" { } ''
-      mkdir -p "$out"
-      cp ${pkgs.writeText "niri.kdl" (renderNiri name t)}            "$out/niri.kdl"
-      cp ${pkgs.writeText "waybar.css" (renderWaybarCss name t)}     "$out/waybar.css"
-      cp ${pkgs.writeText "wofi.css" (renderWofiCss name t)}         "$out/wofi.css"
-      cp ${pkgs.writeText "wofi-emoji.css" (renderWofiEmojiCss name t)} "$out/wofi-emoji.css"
-      cp ${pkgs.writeText "dunstrc" (renderDunstrc name t)}          "$out/dunstrc"
-      cp ${pkgs.writeText "swayosd.css" (renderSwayosdCss name t)}   "$out/swayosd.css"
-      cp ${pkgs.writeText "swaylock.env" (renderSwaylockEnv name t)} "$out/swaylock.env"
-      cp ${pkgs.writeText "kdeglobals" (renderKdeglobals name t)}     "$out/kdeglobals"
-      cp ${pkgs.writeText "kitty.conf" (renderKitty name t)}          "$out/kitty.conf"
-      cp ${pkgs.writeText "userChrome.css" (renderFirefoxUserChrome name t)}   "$out/firefox-userChrome.css"
-      cp ${pkgs.writeText "userContent.css" (renderFirefoxUserContent name t)} "$out/firefox-userContent.css"
+    pkgs.runCommand "niri-theme-${name}"
+      {
+        nativeBuildInputs = [ pkgs.imagemagick ];
+      }
+      ''
+        mkdir -p "$out"
+        cp ${pkgs.writeText "niri.kdl" (renderNiri name t)}            "$out/niri.kdl"
+        cp ${pkgs.writeText "waybar.css" (renderWaybarCss name t)}     "$out/waybar.css"
+        cp ${pkgs.writeText "wofi.css" (renderWofiCss name t)}         "$out/wofi.css"
+        cp ${pkgs.writeText "wofi-emoji.css" (renderWofiEmojiCss name t)} "$out/wofi-emoji.css"
+        cp ${pkgs.writeText "dunstrc" (renderDunstrc name t)}          "$out/dunstrc"
+        cp ${pkgs.writeText "swayosd.css" (renderSwayosdCss name t)}   "$out/swayosd.css"
+        cp ${pkgs.writeText "swaylock.env" (renderSwaylockEnv name t)} "$out/swaylock.env"
+        cp ${pkgs.writeText "kdeglobals" (renderKdeglobals name t)}     "$out/kdeglobals"
+        cp ${pkgs.writeText "kitty.conf" (renderKitty name t)}          "$out/kitty.conf"
+        cp ${pkgs.writeText "userChrome.css" (renderFirefoxUserChrome name t)}   "$out/firefox-userChrome.css"
+        cp ${pkgs.writeText "userContent.css" (renderFirefoxUserContent name t)} "$out/firefox-userContent.css"
 
-      # A whole VS Code extension rather than a single file: that is the only
-      # shape VS Code will load a colour theme in. See renderVscodeManifest.
-      mkdir -p "$out/vscode-extension/themes"
-      cp ${pkgs.writeText "package.json" (renderVscodeManifest name t)} \
-         "$out/vscode-extension/package.json"
-      cp ${pkgs.writeText "niri-color-theme.json" (renderVscodeTheme name t)} \
-         "$out/vscode-extension/themes/niri-color-theme.json"
+        # The lock screen's password field in this theme's colours, for the
+        # locks with no music behind them. Built here rather than drawn at lock
+        # time so that it costs nothing on the path that has to lock the screen,
+        # and so that it follows a theme switch the way every other file in this
+        # directory does — by the symlink moving.
+        ${lockFieldFrame}
+        lock_field_frame \
+          ${lib.removePrefix "#" t.accentDim} \
+          ${lib.removePrefix "#" t.bg} \
+          "$out/lock-field.png"
 
-      echo -n "${name}" > "$out/name"
-    '';
+        # A whole VS Code extension rather than a single file: that is the only
+        # shape VS Code will load a colour theme in. See renderVscodeManifest.
+        mkdir -p "$out/vscode-extension/themes"
+        cp ${pkgs.writeText "package.json" (renderVscodeManifest name t)} \
+           "$out/vscode-extension/package.json"
+        cp ${pkgs.writeText "niri-color-theme.json" (renderVscodeTheme name t)} \
+           "$out/vscode-extension/themes/niri-color-theme.json"
+
+        echo -n "${name}" > "$out/name"
+      '';
 
   themeDirs = lib.mapAttrs mkThemeDir themes;
 
@@ -1500,6 +1552,7 @@ in
       stateDir
       activeDir
       sddmThemeConfig
+      lockFieldFrame
       ;
     defaultTheme = themeSet.default;
     defaultThemeDir = themeDirs.${themeSet.default};

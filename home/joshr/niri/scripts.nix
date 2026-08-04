@@ -18,6 +18,7 @@ let
     themeDirs
     stateDir
     activeDir
+    lockFieldFrame
     ;
 
   # Resolve the greeting from the declarative NixOS user description while
@@ -37,6 +38,31 @@ let
       config.home.username
     else
       builtins.head userDescriptionWords;
+
+  # The greeting has two layers of syntax under it, and this is stripped for
+  # both at evaluation time rather than argued with in shell at lock time.
+  #
+  # Hyprlang reads a value to the end of its line and treats `#` as the start
+  # of a comment, and the line the greeting lands in is now a command that
+  # Hyprlock hands to /bin/sh, inside double quotes — so a dollar, a backquote
+  # or a backslash in a name would belong to the shell rather than to the
+  # label. None of them belong in a first name either.
+  safeFirstName =
+    let
+      unsafe = [
+        "\r"
+        "\n"
+        "{"
+        "}"
+        "\""
+        "#"
+        "$"
+        "`"
+        "\\"
+      ];
+      stripped = builtins.replaceStrings unsafe (map (_: "") unsafe) firstName;
+    in
+    if stripped == "" then config.home.username else stripped;
 
   wallpaperDir = "${config.home.homeDirectory}/.local/share/wallpapers";
 
@@ -653,6 +679,7 @@ lockNowPlaying = pkgs.writeShellApplication {
   ];
 
   text = ''
+    ${readLockColors}
     ${pickMprisPlayer}
 
     [ -n "$player" ] || exit 0
@@ -793,12 +820,97 @@ lockNowPlaying = pkgs.writeShellApplication {
         cut -c 1-100
     )"
 
-    printf '%s%s  %s\n' \
+    # Wrapped in the current colour, for the same reason as `lock-label`: a
+    # colour cannot reach a Hyprlock label any other way once it is running.
+    printf '<span foreground="#%s">%s%s  %s</span>\n' \
+      "$LOCK_FG" \
       "$player_icon" \
       "$status_text" \
       "$display"
   '';
 };
+
+  # The colours the lock screen is wearing *at this moment*, written down where
+  # anything drawing part of that screen can read them without asking MPRIS.
+  #
+  # There is one writer — `lock-album-art`, which Hyprlock already runs every
+  # few seconds to find the current cover — and several readers, one per label,
+  # several times a second. Having the readers work it out for themselves would
+  # mean a D-Bus round trip per label per tick, and would let two labels
+  # disagree mid-track-change. A file in the runtime directory is a few
+  # microseconds and one answer.
+  lockColorsPath = ''
+    lock_colors="''${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/hyprlock-colors"
+  '';
+
+  # The theme's lock colours, as `LOCK_*` shell variables.
+  #
+  # Sourced, unlike the album palette below, because this one is a store path:
+  # it is written by a derivation and cannot be edited by anything that isn't
+  # already rebuilding the system.
+  lockThemeColors = ''
+    # shellcheck disable=SC1091
+    if [ -r "${activeDir}/swaylock.env" ]; then
+      . "${activeDir}/swaylock.env"
+    fi
+
+    : "''${LOCK_BG:=0a0e0a}"
+    : "''${LOCK_ACCENT:=39ff14}"
+    : "''${LOCK_ACCENT_DIM:=1f8b0d}"
+    : "''${LOCK_FG:=c8f5c8}"
+    : "''${LOCK_FG_DIM:=5c7a5c}"
+    : "''${LOCK_ERR:=ff5555}"
+    : "''${LOCK_WARN:=f5d76e}"
+  '';
+
+  # An album's colours over whatever is already set, given a file that may hold
+  # some. `LOCK_ERR` and `LOCK_WARN` are deliberately not in the list: an error
+  # is red and a caps-lock warning is yellow whatever happens to be playing.
+  #
+  # Read rather than sourced, one known key at a time and only when the value
+  # is six hex digits. These files are ours and hold nothing else, but they
+  # live in a cache directory rather than in the store, and one of the callers
+  # is the script standing between a locked session and the desktop.
+  lockPaletteColors = ''
+    lock_palette_colors() {
+      local key value
+
+      [ -n "$1" ] || return 0
+      [ -r "$1" ] || return 0
+
+      while IFS='=' read -r key value; do
+        case "$value" in
+          [0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]) ;;
+          *) continue ;;
+        esac
+
+        # Every colour, whether or not this particular caller wants it: the
+        # ones a script doesn't read are still the ones it would have to add
+        # here if it ever did.
+        # shellcheck disable=SC2034
+        case "$key" in
+          LOCK_BG)         LOCK_BG="$value" ;;
+          LOCK_ACCENT)     LOCK_ACCENT="$value" ;;
+          LOCK_ACCENT_DIM) LOCK_ACCENT_DIM="$value" ;;
+          LOCK_FG)         LOCK_FG="$value" ;;
+          LOCK_FG_DIM)     LOCK_FG_DIM="$value" ;;
+        esac
+      done < "$1"
+    }
+  '';
+
+  # The reading half of lockColorsPath: the current colours, falling back to
+  # the theme's when nothing has written any yet — which is the case for a
+  # `lock-now-playing` run from a shell, and for the fraction of a second at
+  # the start of a lock before the first answer lands.
+  readLockColors = ''
+    ${lockColorsPath}
+    ${lockPaletteColors}
+
+    ${lockThemeColors}
+
+    lock_palette_colors "$lock_colors"
+  '';
 
   # Where rendered album art lives, and how a track maps onto a file name.
   # Shared by the two scripts below so that neither has to ask the other.
@@ -816,13 +928,14 @@ lockNowPlaying = pkgs.writeShellApplication {
       printf '%s' "$1" | sha256sum | cut -c1-32
     }
 
-    # <key> <backdrop|cover|palette|lock|source> -> the file that belongs to
-    # it. Takes the key rather than the URL so that a caller which wants
+    # <key> <backdrop|cover|field|palette|lock|source> -> the file that belongs
+    # to it. Takes the key rather than the URL so that a caller which wants
     # several of these pays for the hash once.
     art_path() {
       case "$2" in
         backdrop) printf '%s\n' "$art_cache/$1.backdrop.jpg" ;;
         cover)    printf '%s\n' "$art_cache/$1.cover.png" ;;
+        field)    printf '%s\n' "$art_cache/$1.field.png" ;;
         palette)  printf '%s\n' "$art_cache/$1.palette" ;;
         lock)     printf '%s\n' "$art_cache/.$1.lock" ;;
         source)   printf '%s\n' "$art_cache/.$1.source" ;;
@@ -927,6 +1040,8 @@ lockNowPlaying = pkgs.writeShellApplication {
 
     text = ''
       ${albumArtPaths}
+      ${lockPaletteColors}
+      ${lockFieldFrame}
 
       # The caller usually knows the URL already, having just looked it up to
       # discover the render was missing. Without one, work it out.
@@ -977,11 +1092,14 @@ lockNowPlaying = pkgs.writeShellApplication {
       fi
 
       source_file="$(art_path "$key" source)"
+      art_field="$(art_path "$key" field)"
       tmp_backdrop="$art_backdrop.tmp"
       tmp_cover="$art_cover.tmp"
+      tmp_field="$art_field.tmp"
       tmp_palette="$art_palette.tmp"
       trap '
-        rm -f "$source_file" "$tmp_backdrop" "$tmp_cover" "$tmp_palette"
+        rm -f "$source_file" "$tmp_backdrop" "$tmp_cover" "$tmp_field" \
+          "$tmp_palette"
       ' EXIT
 
       case "$art_url" in
@@ -1115,10 +1233,29 @@ lockNowPlaying = pkgs.writeShellApplication {
         exit 0
       fi
 
+      # The password field, in this cover's colours, if the cover had any.
+      #
+      # Nothing is written when it didn't: `lock-album-art` then answers with
+      # the theme's own frame, which is a store path that follows a theme
+      # switch. A frame rendered here in theme colours would be a copy that
+      # doesn't, and it would go stale the moment the theme changed.
+      LOCK_ACCENT_DIM=""
+      LOCK_BG=""
+      lock_palette_colors "$tmp_palette"
+
+      if [ -n "$LOCK_ACCENT_DIM" ] && [ -n "$LOCK_BG" ]; then
+        if ! lock_field_frame "$LOCK_ACCENT_DIM" "$LOCK_BG" "$tmp_field"; then
+          echo "lock-album-art-fetch: could not render a field frame" >&2
+          exit 0
+        fi
+
+        mv -f "$tmp_field" "$art_field"
+      fi
+
       # Into place only now, and one rename each, so the reload timer either
       # finds the old answer or a finished new one and never a partial file.
       # The palette goes last on purpose. `lock-session` takes its colours
-      # from it and its pictures from the other two, so a palette on disk has
+      # from it and its pictures from the other three, so a palette on disk has
       # to mean the pictures are already there — otherwise a lock landing in
       # this gap would wear a cover it is not showing.
       mv -f "$tmp_backdrop" "$art_backdrop"
@@ -1171,13 +1308,16 @@ lockNowPlaying = pkgs.writeShellApplication {
     text = ''
       ${albumArtPaths}
       ${hyprlockWallpaper}
+      ${lockColorsPath}
+      ${lockPaletteColors}
+      ${lockThemeColors}
 
       mode="''${1:-}"
 
       case "$mode" in
-        backdrop | cover | palette | all) ;;
+        backdrop | cover | field | palette | all) ;;
         *)
-          echo "usage: lock-album-art backdrop|cover|palette|all" >&2
+          echo "usage: lock-album-art backdrop|cover|field|palette|all" >&2
           exit 2
           ;;
       esac
@@ -1220,6 +1360,15 @@ lockNowPlaying = pkgs.writeShellApplication {
             # the new one takes rather than blinking through the empty one.
             ;;
 
+          field)
+            # The theme's own frame whenever the album has no colours of its
+            # own to lend: no music, a grey sleeve, or a cover still
+            # rendering. A store path, so it follows a theme switch.
+            if [ -r "${activeDir}/lock-field.png" ]; then
+              printf '%s\n' "${activeDir}/lock-field.png"
+            fi
+            ;;
+
           palette)
             # And nothing to fall back to here: no palette means the lock
             # screen keeps the theme's own colours, which is what the caller
@@ -1243,13 +1392,36 @@ lockNowPlaying = pkgs.writeShellApplication {
         done
       fi
 
+      # Write down the colours this track comes with, for the labels.
+      #
+      # Here rather than in a script of their own because this is the one
+      # thing Hyprlock already runs on a timer that knows which track is
+      # playing — so the labels get to be a file read instead of an MPRIS
+      # round trip each, and every one of them changes colour on the same
+      # tick as the background does. Written to a temporary file and renamed,
+      # because a widget with no monitor runs one copy of this per output and
+      # they land on top of each other.
+      lock_palette_colors "$(answer palette)"
+
+      lock_colors_tmp="$lock_colors.$$.tmp"
+
+      {
+        printf 'LOCK_BG=%s\n' "$LOCK_BG"
+        printf 'LOCK_ACCENT=%s\n' "$LOCK_ACCENT"
+        printf 'LOCK_ACCENT_DIM=%s\n' "$LOCK_ACCENT_DIM"
+        printf 'LOCK_FG=%s\n' "$LOCK_FG"
+        printf 'LOCK_FG_DIM=%s\n' "$LOCK_FG_DIM"
+      } > "$lock_colors_tmp"
+
+      mv -f "$lock_colors_tmp" "$lock_colors"
+
       case "$mode" in
         # Everything `lock-session` needs, in one run. It asks on the path
         # that has to have the screen locked before the machine suspends, and
-        # three separate runs would be three separate rounds of MPRIS calls
-        # for one question about one track.
+        # four separate runs would be four separate rounds of MPRIS calls for
+        # one question about one track.
         all)
-          for want in backdrop cover palette; do
+          for want in backdrop cover field palette; do
             value="$(answer "$want")"
             [ -z "$value" ] || printf '%s=%s\n' "$want" "$value"
           done
@@ -1259,6 +1431,49 @@ lockNowPlaying = pkgs.writeShellApplication {
           answer "$mode"
           ;;
       esac
+    '';
+  };
+
+  # A lock screen label, in the colour of whatever is playing.
+  #
+  # Hyprlock has no way to change a widget's colour once it is up, so the
+  # colour has to arrive inside the text: labels are rendered through
+  # `pango_parse_markup` (hyprgraphics, TextResource.cpp), which means a
+  # `<span foreground=...>` in a label's *output* does what a `color =` in its
+  # config cannot. Hyprlock re-runs a `cmd[update:N]` label on every tick
+  # whether or not its command line changed — `alwaysUpdate` is set for all of
+  # them (IWidget.cpp) — so the label picks up a new colour a tick after the
+  # track does.
+  #
+  # Nothing here touches MPRIS: `lock-album-art` has already written down what
+  # colour the screen is wearing. That matters because this runs once a second
+  # per clock per monitor.
+  #
+  # If the markup is ever malformed, pango falls back to rendering it as plain
+  # text — which the label's own `color` then draws in the theme's colour. The
+  # failure mode is a lock screen that looks like it did before this existed.
+  lockLabel = pkgs.writeShellApplication {
+    name = "lock-label";
+
+    runtimeInputs = [ pkgs.coreutils ];
+
+    text = ''
+      ${readLockColors}
+
+      text="''${1:-}"
+
+      # Markup in, markup out: whatever is wrapped has to be escaped, or a
+      # name like "Q&A" takes the whole label down to plain text. Ampersands
+      # first, or the escapes escape each other.
+      #
+      # Each `&` is backslashed because bash reads an unescaped one in the
+      # replacement half of a substitution as "whatever the pattern matched"
+      # — so `''${text//</&lt;}` would put a `<` back where the `&` should be.
+      text="''${text//&/\&amp;}"
+      text="''${text//</\&lt;}"
+      text="''${text//>/\&gt;}"
+
+      printf '<span foreground="#%s">%s</span>\n' "$LOCK_FG" "$text"
     '';
   };
 
@@ -1356,18 +1571,8 @@ lockNowPlaying = pkgs.writeShellApplication {
       exit 0
     fi
 
-    # shellcheck disable=SC1091
-    if [ -r "${activeDir}/swaylock.env" ]; then
-      . "${activeDir}/swaylock.env"
-    fi
-
-    : "''${LOCK_BG:=0a0e0a}"
-    : "''${LOCK_ACCENT:=39ff14}"
-    : "''${LOCK_ACCENT_DIM:=1f8b0d}"
-    : "''${LOCK_FG:=c8f5c8}"
-    : "''${LOCK_FG_DIM:=5c7a5c}"
-    : "''${LOCK_ERR:=ff5555}"
-    : "''${LOCK_WARN:=f5d76e}"
+    ${lockThemeColors}
+    ${lockPaletteColors}
 
     runtime_dir="''${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
     config="$runtime_dir/hyprlock-niri.conf"
@@ -1376,13 +1581,10 @@ lockNowPlaying = pkgs.writeShellApplication {
     umask 077
 
     # The first name is baked into this script from
-    # users.users.<name>.description during Nix evaluation. Every route to the
+    # users.users.<name>.description during Nix evaluation, already stripped
+    # of everything that could break the line it lands in. Every route to the
     # lock screen therefore generates the same greeting.
-    first_name=${lib.escapeShellArg firstName}
-
-    # Remove characters that could break the generated Hyprlang line.
-    first_name="$(printf %s "$first_name" | tr -d '\r\n{}"#')"
-    [ -n "$first_name" ] || first_name="${lib.escapeShellArg config.home.username}"
+    first_name=${lib.escapeShellArg safeFirstName}
 
     ${hyprlockWallpaper}
 
@@ -1403,12 +1605,14 @@ lockNowPlaying = pkgs.writeShellApplication {
     # below falls back to what it would show without music.
     backdrop=""
     cover=""
+    field=""
     palette=""
 
     while IFS='=' read -r kind value; do
       case "$kind" in
         backdrop) backdrop="$value" ;;
         cover)    cover="$value" ;;
+        field)    field="$value" ;;
         palette)  palette="$value" ;;
       esac
     done < <(timeout 2 ${lib.getExe lockAlbumArt} all || true)
@@ -1431,40 +1635,34 @@ lockNowPlaying = pkgs.writeShellApplication {
       cover="${emptyCover}"
     fi
 
+    # The password field's frame, as a picture of one — see lockFieldFrame in
+    # theming.nix for why it has to be a picture, and for the geometry that
+    # keeps it exactly where Hyprlock would have drawn its own.
+    #
+    # With a frame to draw, the real field's outline and fill are made
+    # transparent and the image shows through. Without one, the field goes
+    # back to drawing them itself, in the colours of whatever is playing at
+    # the moment of the lock; the only way to get there is a theme directory
+    # from before this existed, but the lock screen has to come up either way.
+    field_outer="00000000"
+    field_inner="00000000"
+
+    if [ -z "$field" ]; then
+      field="${emptyCover}"
+      field_outer="''${LOCK_ACCENT_DIM}dd"
+      field_inner="''${LOCK_BG}d6"
+    fi
+
     # And the album's own colours over the theme's, when the cover had a
     # colour confident enough to take. `album-palette.awk` decides that and
-    # writes the file. `LOCK_ERR` and `LOCK_WARN` are not in the list below
-    # and keep the theme's values: an error is red and a caps-lock warning is
-    # yellow whatever happens to be playing.
+    # writes the file.
     #
-    # These colours are fixed for the life of the lock screen even though the
-    # pictures behind them are not. Hyprlock can be told to re-read a path
-    # while it is up, through `reload_cmd`, but there is no equivalent for a
-    # colour anywhere in its config — and of the things asked for here, the
-    # password field's is the one that could not be faked with markup in a
-    # label. Recolouring only what could be recoloured would leave a lock
-    # screen half in one album's colours and half in another's, which is worse
-    # than a lock screen that simply wears the track it was locked on.
-    #
-    # Read rather than sourced. The file is ours and holds nothing but
-    # assignments, but it is a cache file rather than a store path, and this
-    # is the script that stands between a locked session and the desktop.
-    if [ -n "$palette" ] && [ -r "$palette" ]; then
-      while IFS='=' read -r key value; do
-        case "$value" in
-          [0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]) ;;
-          *) continue ;;
-        esac
-
-        case "$key" in
-          LOCK_BG)         LOCK_BG="$value" ;;
-          LOCK_ACCENT)     LOCK_ACCENT="$value" ;;
-          LOCK_ACCENT_DIM) LOCK_ACCENT_DIM="$value" ;;
-          LOCK_FG)         LOCK_FG="$value" ;;
-          LOCK_FG_DIM)     LOCK_FG_DIM="$value" ;;
-        esac
-      done < "$palette"
-    fi
+    # This is the lock screen's *first* set of colours rather than its only
+    # one: `lock-album-art` writes the same answer out again on every tick,
+    # and the labels below re-read it — so what is fixed here is only what
+    # cannot follow, which is the dots inside the field and the red and yellow
+    # of a failed password and a caps-lock warning.
+    lock_palette_colors "$palette"
 
     # Read straight for the swaylock fallback at the bottom, which stays on
     # the wallpaper: that is the locker of last resort, and routing the album
@@ -1531,9 +1729,19 @@ lockNowPlaying = pkgs.writeShellApplication {
     }
 
     # Quiet clock above the greeting.
+    #
+    # Through lock-label rather than as a plain \$TIME12, so that it follows
+    # the music: a Hyprlock label's colour is fixed at parse time, and the
+    # only colour that can reach one afterwards is one inside its own text.
+    # Hyprlock substitutes \$TIME12 into the command line before running it
+    # (IWidget.cpp formats the string, then strips the cmd prefix), so the
+    # clock is still Hyprlock's own — this only paints it.
+    #
+    # The color below is what pango falls back to if the markup ever fails to
+    # parse, and the alpha it carries applies either way.
     label {
         monitor =
-        text = \$TIME12
+        text = cmd[update:1000] ${lib.getExe lockLabel} "\$TIME12"
         color = rgba(''${LOCK_FG}dd)
         font_size = 72
         font_family = Poppins
@@ -1546,7 +1754,7 @@ lockNowPlaying = pkgs.writeShellApplication {
     # The account's configured full name supplies this first name.
     label {
         monitor =
-        text = Welcome, $first_name
+        text = cmd[update:3000] ${lib.getExe lockLabel} "Welcome, $first_name"
         color = rgb($LOCK_FG)
         font_size = 40
         font_family = Poppins
@@ -1591,11 +1799,44 @@ lockNowPlaying = pkgs.writeShellApplication {
         halign = center
         valign = bottom
     }
+    # The password field's frame, drawn as an image so that it can change
+    # colour with the track — nothing else can, since Hyprlock re-reads paths
+    # and never colours. 624x62 at 0,70 is exactly the box the field below
+    # would have drawn its own outline in; see lockFieldFrame in theming.nix.
+    #
+    # Under the field rather than over it, so the dots and the text stay on
+    # top, and so the outline the field still draws for a wrong password or a
+    # caps-lock warning lands over this one rather than beneath it.
+    image {
+        monitor =
+        path = $field
+
+        size = 62
+        rounding = 0
+        border_size = 0
+        zindex = 0
+
+        reload_time = 3
+        reload_cmd = ${lib.getExe lockAlbumArt} field
+
+        position = 0, 70
+        halign = center
+        valign = bottom
+    }
+
     # One low, horizontal password field. Dots begin at the left and animate
     # individually so typing travels across the line rather than accumulating
     # as a static cluster in its center.
+    #
+    # Its outline and fill are transparent because the image above is drawing
+    # them. The thickness stays, and so do the check, fail and capslock
+    # colours: those are the states Hyprlock animates the outline *to*, and
+    # they are the reason this is a transparent outline rather than no
+    # outline. They keep the theme's red and yellow, which is what an error
+    # and a warning should be whatever is playing.
     input-field {
         monitor =
+        zindex = 1
 
         size = 620, 58
         outline_thickness = 2
@@ -1607,8 +1848,8 @@ lockNowPlaying = pkgs.writeShellApplication {
         dots_rounding = -1
         dots_text_format = •
 
-        outer_color = rgba(''${LOCK_ACCENT_DIM}dd)
-        inner_color = rgba(''${LOCK_BG}d6)
+        outer_color = rgba($field_outer)
+        inner_color = rgba($field_inner)
         font_color = rgb($LOCK_FG)
         font_family = FiraCode Nerd Font
 
@@ -1634,7 +1875,7 @@ lockNowPlaying = pkgs.writeShellApplication {
     # but there is no custom color, scaling, or opacity hover effect.
     label {
         monitor =
-        text = 󰍃 Switch user
+        text = cmd[update:3000] ${lib.getExe lockLabel} "󰍃 Switch user"
         color = rgba(''${LOCK_FG}cc)
         font_size = 15
         font_family = FiraCode Nerd Font
@@ -1648,7 +1889,7 @@ lockNowPlaying = pkgs.writeShellApplication {
 
     label {
         monitor =
-        text = 󰒲 Sleep
+        text = cmd[update:3000] ${lib.getExe lockLabel} "󰒲 Sleep"
         color = rgba(''${LOCK_FG}cc)
         font_size = 15
         font_family = FiraCode Nerd Font

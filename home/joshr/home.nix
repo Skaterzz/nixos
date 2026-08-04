@@ -17,6 +17,7 @@
     ./firefox.nix
     ./browser.nix
     ./wallhaven.nix
+    ./gaming.nix
   ];
 
   # The one place this profile names its user. Everything else that needs a
@@ -44,18 +45,7 @@
     yt-dlp
   ];
 
-  programs.mangohud = {
-    enable = true;
-    enableSessionWide = false;
-    settings = {
-      fps = true;
-      frametime = true;
-      gpu_stats = true;
-      cpu_stats = true;
-      gpu_temp = true;
-      cpu_temp = true;
-    };
-  };
+  
 
   # --- Assets pulled straight from the joshrandall8478/dotfiles repo ---
   # (fonts, custom Plasma themes/look-and-feel, cursor theme, custom icons,

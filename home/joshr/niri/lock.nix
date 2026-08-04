@@ -75,6 +75,11 @@ in
       # ever moves.
       before-sleep = "${lock} --grace 0";
 
+      # Restart Dunst shortly after resume so any stale layer-shell
+      # notification surface left over from before suspend is discarded.
+      after-resume = "${pkgs.coreutils}/bin/sleep 1; "
+        + "${pkgs.systemd}/bin/systemctl --user restart dunst.service";
+
       # Handles `loginctl lock-session` from elsewhere. Someone asked for the
       # lock, so no grace either.
       lock = lock;

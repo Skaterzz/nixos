@@ -15,6 +15,13 @@
     ./displays/laptop.nix
     ./desktop-apps.nix
     ./office.nix
+    ./kitty.nix
+    ./ranger.nix
+    ./vscode.nix
+    ./spicetify.nix
+    ./firefox.nix
+    ./browser.nix
+    ./wallhaven.nix
   ];
 
   # No OpenRGB tray applet at login here, and nothing to switch off to get

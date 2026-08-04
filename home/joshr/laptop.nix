@@ -11,6 +11,13 @@
   imports = [
     ./home.nix
     ./plasma.nix
+    ./kitty.nix
+    ./ranger.nix
+    ./vscode.nix
+    ./spicetify.nix
+    ./firefox.nix
+    ./browser.nix
+    ./wallhaven.nix
   ];
 
   # The lid, Plasma's copy of it.

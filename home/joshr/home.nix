@@ -10,14 +10,6 @@
     ../common/git.nix
     ../common/tmux.nix
     ../common/btop.nix
-    ./kitty.nix
-    ./ranger.nix
-    ./vscode.nix
-    ./spicetify.nix
-    ./firefox.nix
-    ./browser.nix
-    ./wallhaven.nix
-    ./gaming.nix
   ];
 
   # The one place this profile names its user. Everything else that needs a

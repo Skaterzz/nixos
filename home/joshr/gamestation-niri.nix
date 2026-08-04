@@ -19,6 +19,14 @@
     ./office.nix
     ./obs.nix
     ./content-creation.nix
+    ./gaming.nix
+    ./kitty.nix
+    ./ranger.nix
+    ./vscode.nix
+    ./spicetify.nix
+    ./firefox.nix
+    ./browser.nix
+    ./wallhaven.nix
   ];
 
   local.waybar.cavaInBar = true;

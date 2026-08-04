@@ -1204,7 +1204,8 @@ screen locked before the machine suspends.
 
 The password field's outline, the clock, the greeting, the track name and the
 session controls all take their colour from the sleeve, so the whole screen
-belongs to the record rather than to the picture alone.
+belongs to the record rather than to the picture alone — and they follow it
+from track to track, which is its own piece of work; see below.
 
 The cover decides exactly one thing: a hue. Everything else is fixed in
 `home/joshr/niri/album-palette.awk`, which reads the same twelve-colour
@@ -1224,19 +1225,67 @@ photograph, a plain white sleeve — produces no palette at all, and the lock
 screen keeps the theme's own colours. Only the exposure comes out of that
 pass, which every cover needs.
 
-**The colours are fixed for the life of the lock screen**, even though the
-pictures behind them are not. Hyprlock can be told to re-read a *path* while
-it is up — `reload_cmd` is exactly that, and it is how the background and the
-card follow the music — but there is no equivalent for a colour anywhere in
-its config. A label's colour could be smuggled in through markup; the password
-field's cannot, and that was half the point. Recolouring only the half that
-could be recoloured would leave the screen in two albums' colours at once,
-which is worse than a screen that wears the track it was locked on.
-
 The palette file is read rather than sourced, one known key at a time and only
 when the value is six hex digits. It is our own file and holds nothing else,
 but it lives in a cache directory rather than in the store, and `lock-session`
 is the script standing between a locked session and the desktop.
+
+#### …and they change with the track, which took some doing
+
+Skip a track on a locked screen and the colours go with it, a tick behind the
+background. That is not something Hyprlock supports: `reload_cmd` re-reads a
+**path**, and there is no equivalent for a colour anywhere in its config, so
+neither the labels nor the password field can be told to become a different
+colour once they have been parsed. Both of them get there by another road.
+
+**The labels smuggle the colour in through their own text.** Hyprlock renders
+label text through `pango_parse_markup` (hyprgraphics, `TextResource.cpp`), so
+a `<span foreground=...>` in what a label *prints* does what a `color =` in
+its config cannot. Every label is therefore a `cmd[update:N]` calling
+`lock-label`, which wraps the text in the colour of the moment. Three details
+make that work:
+
+- Hyprlock re-runs a `cmd[]` label on every tick whether or not its command
+  line changed — `alwaysUpdate` is set for all of them (`IWidget.cpp`) — so a
+  label with fixed text still picks up a new colour.
+- `$TIME12` is substituted *into the command line* before the `cmd[` prefix is
+  stripped, so the clock is still Hyprlock's own clock; `lock-label` only
+  paints it.
+- Label commands run on the resource gatherer's thread, not the main one, so
+  a clock ticking once a second per monitor costs the renderer nothing. This
+  is the opposite of `reload_cmd`, which is `spawnSync` on the main thread —
+  the reason `lock-album-art` is forbidden from doing any work.
+
+If the markup is ever malformed, pango falls back to rendering it as plain
+text, and the label's own `color =` draws it in the theme's colour. The
+failure mode is the lock screen as it looked before any of this.
+
+**The password field is a picture of a password field.** Its frame is an
+`image` widget — the one thing that *can* be swapped by path — drawn under a
+field whose own outline and fill are transparent. `lockFieldFrame` in
+`theming.nix` renders it, at 624x62 with corner radii of 20 and 18, because
+that is exactly the box Hyprlock draws its own outline in: the field is 620x58
+and `PasswordInputField.cpp` puts the border *outside* that, with
+`roundingForBorderBox` adding the thickness to the radius. The same function
+draws the frame for a theme at build time and for an album at lock time, so
+the two cannot drift.
+
+The field keeps its `outline_thickness`, and its `check_color`, `fail_color`
+and `capslock_color`. Those are the colours Hyprlock animates the outline
+*to*, and they are why this is a transparent outline rather than no outline at
+all: a wrong password still flashes the frame red, over the album's one.
+
+What is left static is the `font_color` — the dots, the typed text and the
+placeholder — which no image can stand in for and no markup can reach. It is
+set from the palette at lock time and stays there for that lock.
+
+One writer, many readers. `lock-album-art` already runs on Hyprlock's timer
+and already knows what is playing, so it writes the current colours to
+`$XDG_RUNTIME_DIR/hyprlock-colors` on every tick, and the labels read that
+file instead of asking MPRIS. A clock, a greeting, a track name and two
+session controls, times three monitors, would otherwise be a D-Bus round trip
+each, several times a second — and any two of them could disagree in the
+middle of a track change. A file is a few microseconds and one answer.
 
 #### Everything locks through `lock-now`
 

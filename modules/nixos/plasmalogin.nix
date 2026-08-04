@@ -6,7 +6,14 @@ let
   user        = config.local.desktop.primaryUser;
   greeter     = "plasmalogin";
   greeterHome = "/var/lib/plasmalogin";   # PLM greeter user's home (STATE_DIR)
-  wallpaper = "${inputs.dotfiles}/dot_local/share/wallpapers/Anime/Yor.jpg";
+  # Same default the desktop and the lock screen start on — see
+  # `defaultWallpaper` in home/joshr/plasma.nix, which is where the reasoning
+  # for naming it in three places rather than one lives.
+  #
+  # A store path is not optional here: the greeter runs as the `plasmalogin`
+  # user before anyone has logged in, so a path under /home/<user> is one it
+  # may not be able to read.
+  wallpaper = "${inputs.dotfiles}/dot_local/share/wallpapers/nixos.png";
 
   # Exactly the set PLM's "Apply Plasma Settings" syncs into the greeter.
   files = [ "kxkbrc" "kdeglobals" "plasmarc" "kcminputrc" "kwinoutputconfig.json" ];

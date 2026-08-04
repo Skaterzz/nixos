@@ -66,6 +66,25 @@ let
 
   wallpaperDir = "${config.home.homeDirectory}/.local/share/wallpapers";
 
+  # What a session that has never picked a wallpaper starts on — see
+  # `wallpaperRestore` below.
+  #
+  # A path under wallpaperDir rather than the `inputs.dotfiles` store path
+  # this file could equally name, because the chosen wallpaper is written to a
+  # state file and read back by things that are not this session: the SDDM
+  # greeter sync (modules/nixos/niri.nix) and the limine theme sync
+  # (modules/nixos/boot.nix). A home path stays the same across a `nix flake
+  # update dotfiles`, where the store path would move and leave the state file
+  # naming a wallpaper that had been garbage collected. It is also the path
+  # the picker would produce for the same image, so the default and a manual
+  # re-pick of it are the same string.
+  #
+  # home/joshr/home.nix links the dotfiles' wallpapers into that directory
+  # file by file, so this resolves to nixos.png in the store either way.
+  # `wallpaperRestore` checks it exists and falls through to a random one if
+  # the dotfiles ever drop the file.
+  defaultWallpaper = "${wallpaperDir}/nixos.png";
+
   # swaylock, patched so the date stacks onto two lines and can't overhang the
   # ring.
   #
@@ -472,7 +491,18 @@ wallpaperMenu = pkgs.writeShellApplication {
     '';
   };
 
-  # Restore the remembered wallpaper at login, falling back to a random one.
+  # Restore the remembered wallpaper at login.
+  #
+  # Three steps, most specific first: whatever was last picked, then the
+  # default (see `defaultWallpaper`), then a random one. The middle step is
+  # what makes a fresh account — or a machine where the state file hasn't been
+  # written yet, which includes the first login after an install — land on a
+  # known image instead of whichever of the collection `shuf` happened to
+  # reach for. The random step stays as the last resort for a dotfiles tree
+  # that no longer carries the default.
+  #
+  # It does not overrule a choice: `wallpaper-set` writes the state file, so
+  # anything picked from `Mod+Ctrl+W` wins on every login after it.
   wallpaperRestore = pkgs.writeShellApplication {
     name = "wallpaper-restore";
     runtimeInputs = [
@@ -485,6 +515,8 @@ wallpaperMenu = pkgs.writeShellApplication {
       saved="$(cat "${stateDir}/wallpaper" 2>/dev/null || echo "")"
       if [ -n "$saved" ] && [ -f "$saved" ]; then
         wallpaper-set "$saved"
+      elif [ -f "${defaultWallpaper}" ]; then
+        wallpaper-set "${defaultWallpaper}"
       else
         wallpaper-random
       fi

@@ -16,6 +16,22 @@ let
   # config.home.homeDirectory rather than written out as /home/joshr, so this
   # file says nothing about *which* user it is configuring.
   wallpaperDir = "${config.home.homeDirectory}/.local/share/wallpapers";
+
+  # The wallpaper this configuration starts on, before anything has been
+  # picked from the switcher or the slideshow.
+  #
+  # One file, named in three places that are three different programs: here
+  # (the desktop and the lock screen), modules/nixos/plasmalogin.nix (the
+  # Plasma login greeter) and home/joshr/niri/scripts.nix (what
+  # `wallpaper-restore` falls back to under niri). They are deliberately not
+  # unified behind an option — each of the three lives in a different module
+  # tree and reads it at a different time — so changing the default means
+  # changing all three.
+  #
+  # The store path rather than ~/.local/share/wallpapers/nixos.png: this is
+  # applied at activation, and a store path is readable whether or not
+  # home.nix has linked the wallpaper directory into place yet.
+  defaultWallpaper = "${inputs.dotfiles}/dot_local/share/wallpapers/nixos.png";
 in
 {
   programs.plasma = {
@@ -35,7 +51,7 @@ in
         library = "org.kde.breeze";
         theme = "Breeze";
       };
-      wallpaper = "${inputs.dotfiles}/dot_local/share/wallpapers/Anime/shinobu.png";
+      wallpaper = defaultWallpaper;
     };
 
     fonts.general = {
@@ -123,9 +139,13 @@ in
         ]
       );
 
+      # The lock screen wears the same default as the desktop above.
+      # `SlidePaths` stays a home path — it is a directory to walk when the
+      # lock screen is put in slideshow mode, and the whole collection lives
+      # there rather than in any one store path.
       kscreenlockerrc."Greeter/Wallpaper/org.kde.image/General" = {
-        Image = "file://${wallpaperDir}/Anime/shinobu.png";
-        PreviewImage = "file://${wallpaperDir}/Anime/shinobu.png";
+        Image = "file://${defaultWallpaper}";
+        PreviewImage = "file://${defaultWallpaper}";
         SlidePaths = "${wallpaperDir}/,/usr/share/wallpapers/";
       };
 

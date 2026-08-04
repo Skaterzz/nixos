@@ -15,7 +15,7 @@ is the map.
 
 ## Hosts
 
-Six configurations across four machines. The desk and the laptop each have a
+Seven configurations across five machines. The desk and the laptop each have a
 Plasma variant and a niri one — separate hosts rather than a switch, because
 the two use different display managers and NixOS won't enable both.
 
@@ -25,6 +25,7 @@ the two use different display managers and NixOS won't enable both.
 | `gamestation-niri` | same box | niri |
 | `laptop` | portable: no NVIDIA, single display | Plasma 6 |
 | `laptop-niri` | same box | niri |
+| `usb` | a stick: boots anywhere, auto-login, disk tools | niri |
 | `server` | headless | none |
 | `server-nvidia` | headless, with a GPU: NVENC unlocked | none |
 
@@ -38,6 +39,7 @@ generation stays in the boot menu.
 [What actually differs](MANUAL.md#what-actually-differs) ·
 [The server](MANUAL.md#the-server) ·
 [The NVIDIA server](MANUAL.md#the-nvidia-server) ·
+[The stick](MANUAL.md#the-stick) ·
 [Adding another host](MANUAL.md#adding-another-host)
 
 ## Accounts
@@ -49,13 +51,17 @@ import the ones in `home/joshr/` and say nothing but their own name. Primary
 means the machine-wide surfaces: the login screen and the boot menu wear
 joshr's theme and wallpaper, and administering the box is joshr's, since
 `raiden` isn't in `wheel`.
+
+`usb` is the exception: `joshr` and `root`, and no one else. It auto-logs in,
+so the account that exists is the account the stick hands to whoever plugs it
+in — see [The stick](MANUAL.md#the-stick).
 [The accounts](MANUAL.md#the-accounts) ·
 [The root account](MANUAL.md#the-root-account)
 
 ## Layout
 
 ```
-flake.nix          # inputs; the six nixosConfigurations; dev-shell templates
+flake.nix          # inputs; the seven nixosConfigurations; dev-shell templates
 hosts/<host>/      # per machine: configuration.nix + hardware scan
 modules/nixos/     # the system side, imported per host
 home/common/       # home-manager bits shared by every account

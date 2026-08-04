@@ -1126,14 +1126,76 @@ version of the same thing, with an extra click.
 
 ### Lock screen
 
-Hyprlock, with the current wallpaper blurred behind a clock, a greeting and
-one wide password field; colours come from the active theme, so it follows a
-theme switch. `swaylock-effects` is still installed and is the fallback the
-lock script drops to if Hyprlock fails to start — a locker regression must
-not leave the session sitting unlocked.
+Hyprlock, with a clock, a greeting, one wide password field and — when
+something is playing — the album cover, blurred across the whole screen and
+again as a small card above the track name. Nothing playing puts the current
+wallpaper back. Colours come from the active theme, so it follows a theme
+switch. `swaylock-effects` is still installed and is the fallback the lock
+script drops to if Hyprlock fails to start — a locker regression must not
+leave the session sitting unlocked.
 
 `swayidle` dims at 4 minutes, locks at 5, blanks at 10, and locks before
 suspend.
+
+#### The background is the album cover
+
+One cover becomes two pictures. `lock-album-art-fetch` renders a 2560x1440
+backdrop — the sleeve blown up to fill the screen and blurred to a wash of its
+own colours, which is what the lock screen uses in place of the wallpaper —
+and a 200px card with soft corners, a hairline edge and a shadow, which sits
+above the track name. Both are keyed by the cover's URL and cached under
+`~/.cache/niri/album-art`, thirty of each, so locking twice during the same
+song does no work at all.
+
+Hyprlock asks for both every three seconds through `reload_cmd`, which is what
+makes the lock screen follow the music while it sits there locked: skip a
+track and the card changes and the background crossfades behind it; stop the
+music and it fades back to the wallpaper.
+
+**`lock-album-art` — the command Hyprlock actually runs — never fetches and
+never renders.** That is the constraint the whole design is built around.
+Hyprlock runs a `reload_cmd` through `spawnSync` from a timer callback on its
+main thread, so a cover downloaded inline would freeze the clock and the
+password field for as long as curl felt like taking. `lock-album-art` answers
+out of the cache, and when a track has no render yet it hands the URL to
+`lock-album-art-fetch` in a detached process and answers with what is true
+right now instead. The cost is that the first lock during a never-seen track
+comes up on the wallpaper and crossfades into the cover a beat later, which is
+the right way round for that trade.
+
+Two of the details are downstream of one Hyprlock behaviour: an empty answer
+from a `reload_cmd` means *keep what you have*, not *show nothing*. That is
+what you want while a cover is still rendering — the previous one stays up
+rather than blinking through a gap — and it means "the music stopped" has to
+be said with a picture. So there is a transparent PNG in the store for the
+card to point at, and the corners, edge and shadow are baked into the rendered
+image rather than left to Hyprlock's `rounding` and `border_size`, because a
+Hyprlock border would draw a neat empty box around the transparent one.
+
+The backdrop is darkened past what Hyprlock's own `brightness` does to the
+wallpaper. Wallpapers are chosen and mostly dark; album covers are neither,
+and a sleeve that is mostly white leaves the pale theme foreground sitting on
+top of it unreadable.
+
+The cover is fetched with the same care as anything else that comes off the
+network. Only `http`, `https` and `file` URLs are followed, `--proto-redir`
+keeps a redirect from walking into `file://` and handing a local file of its
+choosing to ImageMagick, the download is bounded on size and time, and what
+arrives has to *be* an image by its magic bytes — the MPRIS metadata was a
+claim, not a check. A per-track `flock` keeps two renders of the same cover
+from racing, and both files are renamed into place only once they are whole,
+so a reload can never catch a half-written JPEG.
+
+Which player all of this is about is decided once, in a shell fragment shared
+with the now-playing label: a player that is actually playing, or else the
+first paused one. Sharing it is not tidiness — the cover and the title are
+resolved separately, and two copies of that loop would eventually put one
+track's sleeve under another track's name. Every `playerctl` call in it is
+wrapped in `timeout 1`, because these are D-Bus calls into other applications
+and a wedged one (a hung browser tab, usually) blocks its caller for D-Bus's
+own 25-second default. Two of the three callers cannot afford that: one runs
+on Hyprlock's main thread, and one runs on the path that has to have the
+screen locked before the machine suspends.
 
 #### Everything locks through `lock-now`
 

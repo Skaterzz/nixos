@@ -593,31 +593,37 @@ wallpaperMenu = pkgs.writeShellApplication {
   #
   # Thickness moves 8 → 9 with the radius (110 → 130) only to hold the ring's
   # weight steady; at 8 a 130 ring reads visibly thinner than the 110 one did.
-  # A short-lived MPRIS query for the lock screen.
+  # Which MPRIS player the lock screen is about, as a shell fragment rather
+  # than a script of its own.
+  #
+  # Three separate things on the lock screen ask that question — the label,
+  # the cover card and the background behind both — and they have to give the
+  # same answer. A cover from one player under a title from another is worse
+  # than either alone, and it is exactly what two copies of this loop would
+  # drift into the moment one of them was edited.
   #
   # Prefer a playing player. When nothing is actively playing, retain the
   # first paused track so the lock screen still reflects the current media
-  # session. No player means no output, which makes Hyprlock hide the label.
-lockNowPlaying = pkgs.writeShellApplication {
-  name = "lock-now-playing";
-
-  runtimeInputs = with pkgs; [
-    playerctl
-    coreutils
-    gnused
-  ];
-
-  text = ''
+  # session. Leaves `player` empty when there is nothing to show, which makes
+  # every caller here fall back to what it shows without music.
+  #
+  # Every playerctl call is under a `timeout`, which is not defensive
+  # programming for its own sake. These are D-Bus method calls into other
+  # desktop applications, and a player that has stopped answering — a hung
+  # browser tab is the usual one — blocks its caller for D-Bus's own 25s
+  # default. Two of the three callers cannot afford that: one runs on the path
+  # that has to lock the screen before the machine suspends, and one runs on
+  # Hyprlock's main thread. A second is already far longer than an answer
+  # takes.
+  pickMprisPlayer = ''
     player=""
     paused_player=""
 
-    # Prefer an actively playing source. Keep the first paused source as a
-    # fallback when nothing is currently playing.
     while IFS= read -r candidate; do
       [ -n "$candidate" ] || continue
 
       status="$(
-        playerctl --player="$candidate" status 2>/dev/null || true
+        timeout 1 playerctl --player="$candidate" status 2>/dev/null || true
       )"
 
       case "$status" in
@@ -629,9 +635,26 @@ lockNowPlaying = pkgs.writeShellApplication {
           [ -n "$paused_player" ] || paused_player="$candidate"
           ;;
       esac
-    done < <(playerctl --list-all 2>/dev/null || true)
+    done < <(timeout 1 playerctl --list-all 2>/dev/null || true)
 
     [ -n "$player" ] || player="$paused_player"
+  '';
+
+  # A short-lived MPRIS query for the lock screen.
+  #
+  # No player means no output, which makes Hyprlock hide the label.
+lockNowPlaying = pkgs.writeShellApplication {
+  name = "lock-now-playing";
+
+  runtimeInputs = with pkgs; [
+    playerctl
+    coreutils
+    gnused
+  ];
+
+  text = ''
+    ${pickMprisPlayer}
+
     [ -n "$player" ] || exit 0
 
     status="$(
@@ -777,6 +800,382 @@ lockNowPlaying = pkgs.writeShellApplication {
   '';
 };
 
+  # Where rendered album art lives, and how a track maps onto a file name.
+  # Shared by the two scripts below so that neither has to ask the other.
+  #
+  # Keyed by the cover URL rather than by artist and title, because the URL is
+  # what the rendering actually depends on: hashing it gives a name that is
+  # safe in a Hyprlang path, stable across locks — the second lock during the
+  # same song does no work at all — and different for two albums that happen
+  # to share a title.
+  albumArtPaths = ''
+    art_cache="''${XDG_CACHE_HOME:-$HOME/.cache}/niri/album-art"
+
+    # <cover url> <backdrop|cover|lock|source> -> the file that belongs to it.
+    art_path() {
+      local key
+      key="$(printf '%s' "$1" | sha256sum | cut -c1-32)"
+
+      case "$2" in
+        backdrop) printf '%s\n' "$art_cache/$key.backdrop.jpg" ;;
+        cover)    printf '%s\n' "$art_cache/$key.cover.png" ;;
+        lock)     printf '%s\n' "$art_cache/.$key.lock" ;;
+        source)   printf '%s\n' "$art_cache/.$key.source" ;;
+      esac
+    }
+  '';
+
+  # The current track's cover URL, or the empty string when there isn't one.
+  currentArtUrl = ''
+    ${pickMprisPlayer}
+
+    art_url=""
+
+    if [ -n "$player" ]; then
+      art_url="$(
+        timeout 1 playerctl --player="$player" metadata mpris:artUrl \
+          2>/dev/null || true
+      )"
+    fi
+
+    # Only the two schemes the fetcher can resolve. `data:` URLs are left out
+    # on purpose: a handful of players inline an entire JPEG there, and it
+    # would travel through an argv and a cache key to save one local read.
+    case "$art_url" in
+      http://* | https://* | file://*) ;;
+      *) art_url="" ;;
+    esac
+  '';
+
+  # The wallpaper, behind a fixed, punctuation-free path.
+  #
+  # Hyprlang reads `path =` to the end of the line and does no quoting or
+  # escaping of its own, so a wallpaper named `Sunset #2 (final).png` cannot
+  # be pointed at directly — the `#` starts a comment. The symlink is what the
+  # config names instead. Prints nothing when there is no usable wallpaper,
+  # which leaves Hyprlock on the flat themed `color` underneath.
+  hyprlockWallpaper = ''
+    hyprlock_wallpaper() {
+      local wallpaper extension link
+
+      wallpaper="$(cat "${stateDir}/wallpaper" 2>/dev/null || true)"
+      [ -n "$wallpaper" ] || return 0
+      [ -f "$wallpaper" ] || return 0
+
+      extension="$(
+        printf %s "''${wallpaper##*.}" |
+          tr '[:upper:]' '[:lower:]'
+      )"
+
+      case "$extension" in
+        png | jpg | jpeg | webp) ;;
+        *) return 0 ;;
+      esac
+
+      link="''${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/hyprlock-wallpaper.$extension"
+      ln -sfn -- "$wallpaper" "$link" || return 0
+
+      printf '%s\n' "$link"
+    }
+  '';
+
+  # Something valid for the cover card to point at when nothing is playing.
+  #
+  # It has to be an image rather than an empty answer. Hyprlock reads an empty
+  # `reload_cmd` result as "keep what you have" — both Background.cpp and
+  # Image.cpp return early on it — which is the behaviour worth having while a
+  # cover is still rendering, and exactly the wrong one when the music has
+  # stopped. So the way to take the card off the screen is to hand Hyprlock a
+  # picture of nothing. Sized to match the card so nothing is scaled.
+  emptyCover =
+    pkgs.runCommand "hyprlock-empty-cover.png"
+      {
+        nativeBuildInputs = [ pkgs.imagemagick ];
+      }
+      ''
+        magick -size 256x256 xc:none png32:$out
+      '';
+
+  # Renders the current track's cover into the two shapes the lock screen
+  # wants: a blurred full-screen backdrop that stands in for the wallpaper,
+  # and a small framed card to sit above the track name.
+  #
+  # Run detached, by `lock-album-art` whenever a track turns up that has never
+  # been rendered. It downloads and it runs ImageMagick, so it is the half of
+  # this that is allowed to take a second; see the comment on `lock-album-art`
+  # for why nothing on Hyprlock's clock may. Takes the cover URL, and works it
+  # out from MPRIS when run by hand without one.
+  lockAlbumArtFetch = pkgs.writeShellApplication {
+    name = "lock-album-art-fetch";
+
+    runtimeInputs = with pkgs; [
+      coreutils
+      curl
+      file
+      findutils
+      imagemagick
+      playerctl
+      util-linux
+    ];
+
+    text = ''
+      ${albumArtPaths}
+
+      # The caller usually knows the URL already, having just looked it up to
+      # discover the render was missing. Without one, work it out.
+      art_url="''${1:-}"
+
+      if [ -z "$art_url" ]; then
+        ${currentArtUrl}
+      fi
+
+      [ -n "$art_url" ] || exit 0
+
+      # Wherever it came from — MPRIS above, or an argument, which is not
+      # necessarily one of ours once this is a command on PATH.
+      case "$art_url" in
+        http://* | https://* | file://*) ;;
+        *)
+          echo "lock-album-art-fetch: unsupported cover URL: $art_url" >&2
+          exit 2
+          ;;
+      esac
+
+      art_backdrop="$(art_path "$art_url" backdrop)"
+      art_cover="$(art_path "$art_url" cover)"
+
+      if [ -f "$art_backdrop" ] && [ -f "$art_cover" ]; then
+        exit 0
+      fi
+
+      mkdir -p "$art_cache"
+
+      # One worker per track. A second request while the first is still
+      # fetching returns rather than queues, because whoever asked is a reload
+      # timer that will ask again in a couple of seconds anyway — and two
+      # curls racing to write the same cache entry is the one way this could
+      # hand Hyprlock a half-written JPEG.
+      exec 9>"$(art_path "$art_url" lock)"
+      if ! flock -n 9; then
+        exit 0
+      fi
+
+      # The holder we just queued behind may have finished the job.
+      if [ -f "$art_backdrop" ] && [ -f "$art_cover" ]; then
+        exit 0
+      fi
+
+      source_file="$(art_path "$art_url" source)"
+      tmp_backdrop="$art_backdrop.tmp"
+      tmp_cover="$art_cover.tmp"
+      trap 'rm -f "$source_file" "$tmp_backdrop" "$tmp_cover"' EXIT
+
+      case "$art_url" in
+        file://*)
+          # Percent-decoded, because this arrives as a URL: local players hand
+          # back file:///tmp/mpv/Some%20Album.jpg for a file whose name has a
+          # space in it.
+          local_cover="''${art_url#file://}"
+          local_cover="$(printf '%b' "''${local_cover//%/\\x}")"
+
+          if [ ! -f "$local_cover" ]; then
+            echo "lock-album-art-fetch: no such cover: $local_cover" >&2
+            exit 0
+          fi
+
+          # Copied rather than read in place: the player owns that file and is
+          # free to delete it on the next track, halfway through the render.
+          cp -- "$local_cover" "$source_file"
+          ;;
+
+        *)
+          # Bounded on every axis, because this runs behind a lock screen on
+          # whatever network happens to be there, and a cover is never worth
+          # waiting on. `--proto-redir` is the one doing real work: without it
+          # a redirect could walk this into file:// and feed a local file of
+          # its choosing to the renderer below.
+          if ! curl --fail --location --silent --show-error \
+              --proto '=http,https' --proto-redir '=http,https' \
+              --connect-timeout 5 --max-time 20 \
+              --max-filesize 16000000 \
+              --output "$source_file" "$art_url"; then
+            echo "lock-album-art-fetch: could not fetch $art_url" >&2
+            exit 0
+          fi
+          ;;
+      esac
+
+      # The metadata was a claim; this is the check. It also keeps ImageMagick
+      # away from the formats that have delegates behind them — an
+      # image/svg+xml can name external references, and a cover never is one.
+      mime="$(file --brief --mime-type -- "$source_file" 2>/dev/null || true)"
+
+      case "$mime" in
+        image/png | image/jpeg | image/webp | image/gif | image/bmp | image/avif) ;;
+        *)
+          echo "lock-album-art-fetch: $art_url is $mime, not a cover" >&2
+          exit 0
+          ;;
+      esac
+
+      # `[0]` throughout: an animated cover is one image to the lock screen,
+      # and without it ImageMagick writes one output file per frame and the
+      # moves at the bottom find nothing where they expect a render.
+
+      # The backdrop. Blurring at 512px and scaling the result up costs a
+      # fraction of blurring at 2560px and lands in the same place once it is
+      # this soft — the detail was on its way out either way. The square crop
+      # first is for the players that report a 16:9 thumbnail instead of a
+      # cover.
+      #
+      # `-modulate` is the one thing here that is about the lock screen rather
+      # than about the picture. Hyprlock's own `brightness` in the background
+      # block is set for the wallpapers, which are chosen and are mostly dark;
+      # album covers are neither, and a sleeve that is mostly white or mostly
+      # neon yellow leaves the pale theme foreground sitting on top of it
+      # unreadable. The extra fifth off, with a little saturation back to stop
+      # it going muddy, puts a cover in the same range the wallpapers occupy —
+      # which is what the two of them swapping under a crossfade needs.
+      if ! magick "''${source_file}[0]" \
+          -auto-orient -strip -colorspace sRGB \
+          -resize 512x512^ -gravity center -extent 512x512 \
+          -blur 0x8 \
+          -modulate 78,110 \
+          -filter Lanczos -resize 2560x1440^ \
+          -gravity center -extent 2560x1440 \
+          -quality 92 "jpg:$tmp_backdrop"; then
+        echo "lock-album-art-fetch: could not render a backdrop from $art_url" >&2
+        exit 0
+      fi
+
+      # The card: the cover at 200px with soft corners, a hairline edge to
+      # lift it off whatever it is sitting on, and a shadow under it, on a
+      # 256px transparent canvas that leaves the shadow room to fall.
+      #
+      # All of it baked into the PNG rather than left to Hyprlock's own
+      # `rounding` and `border_size`, for one reason: when the music stops the
+      # widget is pointed at a transparent image, and a Hyprlock border would
+      # draw a neat empty box around the nothing.
+      if ! magick "''${source_file}[0]" \
+          -auto-orient -strip -colorspace sRGB \
+          -resize 200x200^ -gravity center -extent 200x200 -alpha set \
+          \( -size 200x200 xc:none -fill white \
+             -draw 'roundrectangle 0,0 199,199 18,18' \) \
+          -compose DstIn -composite \
+          \( -size 200x200 xc:none -fill none \
+             -stroke 'rgba(255,255,255,0.28)' -strokewidth 2 \
+             -draw 'roundrectangle 1,1 198,198 17,17' \) \
+          -compose Over -composite \
+          \( +clone -background black -shadow 50x8+0+4 \) \
+          +swap -background none -layers merge +repage \
+          -gravity center -background none -extent 256x256 \
+          "png32:$tmp_cover"; then
+        echo "lock-album-art-fetch: could not render a cover from $art_url" >&2
+        exit 0
+      fi
+
+      # Into place only now, and one rename each, so the reload timer either
+      # finds the old answer or a finished new one and never a partial file.
+      mv -f "$tmp_backdrop" "$art_backdrop"
+      mv -f "$tmp_cover" "$art_cover"
+
+      # Keep the cache bounded. Thirty tracks each way is a few megabytes and
+      # covers an evening of skipping; past that it is a song you are not
+      # about to lock the screen on.
+      prune_art() {
+        find "$art_cache" -maxdepth 1 -type f -name "$1" -printf '%T@ %p\n' |
+          sort -rn |
+          tail -n +31 |
+          cut -d ' ' -f2- |
+          xargs -r rm -f
+      }
+
+      prune_art '*.backdrop.jpg' || true
+      prune_art '*.cover.png' || true
+
+      # And the lock files, which are empty and never numerous, but are
+      # otherwise the one thing here that only accumulates. A week is far
+      # longer than any of them is held, so nothing in use is removed.
+      find "$art_cache" -maxdepth 1 -type f -name '.*.lock' -mtime +7 -delete ||
+        true
+    '';
+  };
+
+  # What Hyprlock asks, every few seconds, for the path it should be showing.
+  # Prints one path and returns: it never downloads and never renders.
+  #
+  # That restraint is the whole design. Hyprlock runs `reload_cmd` through
+  # `spawnSync` from a timer callback on its main thread (Background.cpp,
+  # Image.cpp), so every millisecond spent in here is a millisecond the lock
+  # screen is not drawing, and a cover fetched inline over a hotel wifi would
+  # freeze the clock and the password field for as long as curl felt like
+  # taking. A track that has no render yet is handed to
+  # `lock-album-art-fetch` in a detached process and collected on a later
+  # tick instead.
+  lockAlbumArt = pkgs.writeShellApplication {
+    name = "lock-album-art";
+
+    runtimeInputs = with pkgs; [
+      coreutils
+      playerctl
+      util-linux
+    ];
+
+    text = ''
+      ${albumArtPaths}
+      ${hyprlockWallpaper}
+
+      mode="''${1:-}"
+
+      case "$mode" in
+        backdrop | cover) ;;
+        *)
+          echo "usage: lock-album-art backdrop|cover" >&2
+          exit 2
+          ;;
+      esac
+
+      ${currentArtUrl}
+
+      if [ -n "$art_url" ]; then
+        rendered="$(art_path "$art_url" "$mode")"
+
+        if [ -f "$rendered" ]; then
+          printf '%s\n' "$rendered"
+          exit 0
+        fi
+
+        # Nothing rendered for this track yet: start the work and answer with
+        # what is true right now. Every descriptor is redirected before the
+        # fork because Hyprlock is reading this command's stdout, and a pipe
+        # left open in the worker would keep it waiting on the download after
+        # all the trouble taken not to.
+        setsid -f ${lib.getExe lockAlbumArtFetch} "$art_url" \
+          </dev/null >/dev/null 2>&1 || true
+      fi
+
+      case "$mode" in
+        backdrop)
+          # The wallpaper is the answer whenever the cover isn't: no music, a
+          # cover that could not be fetched, or one still rendering. Hyprlock
+          # crossfades between whatever two paths it is handed, so the swap
+          # reads as a transition in both directions.
+          hyprlock_wallpaper
+          ;;
+
+        *)
+          if [ -z "$art_url" ]; then
+            printf '%s\n' "${emptyCover}"
+          fi
+
+          # With a cover on the way, print nothing at all. Hyprlock keeps what
+          # it has, which holds the last cover on screen for the second the
+          # new one takes rather than blinking through the empty one.
+          ;;
+      esac
+    '';
+  };
+
   # Switch the current seat to SDDM without unlocking or ending this session.
   #
   # Kept below `switch-user` as a low-level primitive: the normal desktop
@@ -899,27 +1298,50 @@ lockNowPlaying = pkgs.writeShellApplication {
     first_name="$(printf %s "$first_name" | tr -d '\r\n{}"#')"
     [ -n "$first_name" ] || first_name="${lib.escapeShellArg config.home.username}"
 
-    # Hyprlock gets a fixed, punctuation-free path. The selected wallpaper
-    # itself may contain spaces or characters meaningful to Hyprlang.
-    wallpaper="$(cat "${stateDir}/wallpaper" 2>/dev/null || true)"
-    path_line=""
+    ${hyprlockWallpaper}
 
+    # Stale links from an earlier lock, before hyprlock_wallpaper re-creates
+    # the one that matches the wallpaper as it is now.
     rm -f "$runtime_dir"/hyprlock-wallpaper.*
 
-    if [ -n "$wallpaper" ] && [ -f "$wallpaper" ]; then
-      extension="$(
-        printf %s "''${wallpaper##*.}" |
-          tr '[:upper:]' '[:lower:]'
-      )"
+    # The background is the album cover of whatever is playing, and the
+    # wallpaper when nothing is. This is only its first frame: the reload
+    # command in the config below asks the same question every few seconds,
+    # which is what makes the lock screen follow the music while it sits
+    # there locked. Asking now also starts the render for a track that has
+    # never been locked on, so the answer is usually ready by that first tick.
+    #
+    # Under a `timeout` because this is the path that has to have the screen
+    # locked before the machine suspends. lock-album-art bounds its own MPRIS
+    # queries and should never come near this, and if it does, the wallpaper
+    # is the answer it was going to give anyway.
+    backdrop="$(timeout 2 ${lib.getExe lockAlbumArt} backdrop || true)"
 
-      case "$extension" in
-        png | jpg | jpeg | webp)
-          wallpaper_link="$runtime_dir/hyprlock-wallpaper.$extension"
-          ln -sfn -- "$wallpaper" "$wallpaper_link"
-          path_line="    path = $wallpaper_link"
-          ;;
-      esac
+    if [ -z "$backdrop" ]; then
+      backdrop="$(hyprlock_wallpaper)"
     fi
+
+    path_line=""
+
+    if [ -n "$backdrop" ]; then
+      path_line="    path = $backdrop"
+    fi
+
+    # The cover card above the track name. Always a real image, so the widget
+    # has something valid to point at from the first frame: a transparent one
+    # when nothing is playing, or when the cover is still rendering and the
+    # reload timer is about to bring it in.
+    cover="$(timeout 2 ${lib.getExe lockAlbumArt} cover || true)"
+
+    if [ -z "$cover" ]; then
+      cover="${emptyCover}"
+    fi
+
+    # Read straight for the swaylock fallback at the bottom, which stays on
+    # the wallpaper: that is the locker of last resort, and routing the album
+    # art through it too would put one more thing that can fail on the path
+    # that only runs because something already has.
+    wallpaper="$(cat "${stateDir}/wallpaper" 2>/dev/null || true)"
 
     cat > "$config" <<EOF
     general {
@@ -962,6 +1384,21 @@ lockNowPlaying = pkgs.writeShellApplication {
         brightness = 0.64
         vibrancy = 0.16
         vibrancy_darkness = 0.12
+
+        # Follows the music. lock-album-art answers with the blurred cover of
+        # whatever is playing and with the wallpaper when nothing is, so the
+        # background changes with the track and comes back to the wallpaper
+        # when the music stops. The crossfade is what keeps that from
+        # registering as a flicker.
+        #
+        # Three seconds rather than one, because a widget with no monitor is
+        # built once per output and each copy runs its own reload command on
+        # Hyprlock's main thread — on the desk that is three backgrounds and
+        # three covers all asking. All it costs is a track change landing a
+        # beat later than it could.
+        reload_time = 3
+        reload_cmd = ${lib.getExe lockAlbumArt} backdrop
+        crossfade_time = 0.9
     }
 
     # Quiet clock above the greeting.
@@ -988,6 +1425,26 @@ lockNowPlaying = pkgs.writeShellApplication {
         position = 0, 35
         halign = center
         valign = center
+    }
+
+    # The cover of whatever is playing, sitting just above the track name.
+    # The rounded corners, the hairline edge and the shadow are all in the
+    # image rather than in the options below, which is what lets nothing
+    # playing be a transparent image and leave no empty frame behind.
+    image {
+        monitor =
+        path = $cover
+
+        size = 256
+        rounding = 0
+        border_size = 0
+
+        reload_time = 3
+        reload_cmd = ${lib.getExe lockAlbumArt} cover
+
+        position = 0, 184
+        halign = center
+        valign = bottom
     }
 
     # The active MPRIS track. This remains blank when there is no recognized

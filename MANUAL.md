@@ -1128,11 +1128,12 @@ version of the same thing, with an extra click.
 
 Hyprlock, with a clock, a greeting, one wide password field and — when
 something is playing — the album cover, blurred across the whole screen and
-again as a small card above the track name. Nothing playing puts the current
-wallpaper back. Colours come from the active theme, so it follows a theme
-switch. `swaylock-effects` is still installed and is the fallback the lock
-script drops to if Hyprlock fails to start — a locker regression must not
-leave the session sitting unlocked.
+again as a small card above the track name, with previous, play/pause and next
+in a row beneath it. Nothing playing puts the current wallpaper back. Colours
+come from the active theme, so it follows a theme switch. `swaylock-effects`
+is still installed and is the fallback the lock script drops to if Hyprlock
+fails to start — a locker regression must not leave the session sitting
+unlocked.
 
 `swayidle` dims at 4 minutes, locks at 5, blanks at 10, and locks before
 suspend.
@@ -1282,10 +1283,52 @@ set from the palette at lock time and stays there for that lock.
 One writer, many readers. `lock-album-art` already runs on Hyprlock's timer
 and already knows what is playing, so it writes the current colours to
 `$XDG_RUNTIME_DIR/hyprlock-colors` on every tick, and the labels read that
-file instead of asking MPRIS. A clock, a greeting, a track name and two
-session controls, times three monitors, would otherwise be a D-Bus round trip
-each, several times a second — and any two of them could disagree in the
-middle of a track change. A file is a few microseconds and one answer.
+file instead of asking MPRIS. A clock, a greeting, a track name, three
+transport buttons and two session controls, times three monitors, would
+otherwise be a D-Bus round trip each, several times a second — and any two of
+them could disagree in the middle of a track change. A file is a few
+microseconds and one answer.
+
+#### Three buttons under the track name
+
+Previous, play/pause and next, in a row between the track name and the
+password field, and only while there is something for them to control. The
+keyboard's media keys already work on a locked screen — that is what
+`allow-when-locked` on the `XF86Audio` binds in `niri.nix` is for — but a
+keyboard without them left a locked screen with no way to pause the music
+short of unlocking it.
+
+They are three labels rather than one row of controls, because a Hyprlock
+label carries a single `onclick` and the area that catches it is the label's
+own text. That second half does more work than it looks like doing:
+`lock-media-button` prints nothing when there is no media session, and a label
+with no text draws nothing and has no box for a click to land in, so the row
+is not there at all on a lock screen with no music — the same mechanism the
+track name above it already runs on. The cover and the name sit 36px higher
+than they otherwise would to leave room for the row, which costs nothing when
+nothing is playing, because that space is empty then anyway.
+
+The play/pause glyph says what a click will do — a pause bar while the player
+is playing, a play triangle while it isn't. That is the opposite of the marker
+in the track name beside it, where a pause glyph means the player *is* paused;
+both are conventional and neither reads as the other in the place it sits.
+
+A click goes to a **named** player. `lock-media-control` takes the same MPRIS
+snapshot as everything else on the screen and hands the player it names to
+`playerctl --player`, because left to playerctl's own "first available"
+default, a button sitting under Spotify's sleeve could skip a paused browser
+tab's queue instead. The name goes in as a two-entry priority list — the exact
+instance, `firefox.instance123`, and then the bare application name — since
+`--player` acts on the first entry that matches: preferring the instance costs
+nothing and cannot fire the action twice the way a fallback chain of two calls
+could.
+
+The buttons tick at the same 1500 ms as the track name, which is the shortest
+interval the shared MPRIS cache is built to serve, and which keeps the
+play/pause glyph and the pause marker beside it turning over together rather
+than a beat apart. The click itself is immediate — only the glyph waits for a
+tick, and the click drops the cached snapshot on its way out, so that tick
+asks MPRIS rather than serving what was true before the click.
 
 #### What all of that costs while the screen is locked
 
@@ -1300,9 +1343,9 @@ far as the renderer is concerned.
 
 The multiplier is the monitor count. A widget with no `monitor` is built once
 per output (`getOrCreateWidgetsFor`), so the desk runs three backgrounds,
-three cover cards, three field frames and three track labels, each with its
-own timer, all asking the same question within a few hundred milliseconds of
-each other.
+three cover cards, three field frames, three track labels and nine transport
+buttons, each with its own timer, all asking the same question within a few
+hundred milliseconds of each other.
 
 Two things keep that cheap:
 

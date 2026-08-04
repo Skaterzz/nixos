@@ -623,20 +623,21 @@ wallpaperMenu = pkgs.writeShellApplication {
   # every widget on every monitor shares.
   #
   # Everything on this screen that knows about music — the track label, the
-  # cover card, the background behind both and the frame around the password
-  # field — has to give the same answer, or a cover from one player ends up
-  # under a title from another. That is why this is one fragment rather than a
+  # three transport buttons under it, the cover card, the background behind
+  # both and the frame around the password field — has to give the same
+  # answer, or a cover from one player ends up under a title from another and
+  # a button skips a third. That is why this is one fragment rather than a
   # loop copied into each script.
   #
   # It is also why it is *cached*. A widget with no `monitor` is built once per
   # output (Renderer.cpp, getOrCreateWidgetsFor), so on the desk there are
-  # three backgrounds, three covers, three field frames and three track labels,
-  # each with its own timer, and all of them asking the same question within a
-  # few hundred milliseconds of each other. Asking MPRIS once per widget cost
-  # around fifty playerctl processes every three seconds, most of the weight of
-  # it on Hyprlock's render thread, where `reload_cmd` runs through spawnSync.
-  # Now the first one to find the answer stale fetches it and the rest read a
-  # file.
+  # three backgrounds, three covers, three field frames, three track labels and
+  # nine transport buttons, each with its own timer, and all of them asking the
+  # same question within a few hundred milliseconds of each other. Asking MPRIS
+  # once per widget cost around fifty playerctl processes every three seconds,
+  # most of the weight of it on Hyprlock's render thread, where `reload_cmd`
+  # runs through spawnSync. Now the first one to find the answer stale fetches
+  # it and the rest read a file.
   #
   # The window is shorter than every timer that asks, so a tick never serves a
   # previous tick's answer — it only ever covers the burst of widgets firing
@@ -932,6 +933,146 @@ lockNowPlaying = pkgs.writeShellApplication {
       "$display"
   '';
 };
+
+  # One transport control on the lock screen: previous, play/pause or next.
+  #
+  # A button rather than a row, called once per control, because a Hyprlock
+  # label carries a single `onclick` and the area that catches it is the
+  # label's own text — three controls have to be three labels.
+  #
+  # No player means no output, and a label with no text draws nothing and has
+  # no box for a click to land in, so the row is simply not there on a lock
+  # screen with no music. That is the same mechanism the track name above it
+  # already runs on, and it is why the controls need no separate "is anything
+  # playing" test in the config.
+  #
+  # Gated on exactly what the track name is gated on — a player, a title, and
+  # a status of Playing or Paused — so the two can never disagree about
+  # whether there is a media session worth showing.
+  lockMediaButton = pkgs.writeShellApplication {
+    name = "lock-media-button";
+
+    runtimeInputs = with pkgs; [
+      playerctl
+      coreutils
+    ];
+
+    text = ''
+      ${readLockColors}
+      ${mprisSnapshot}
+
+      # The names are playerctl's own commands, so the button a label draws
+      # and the argument its `onclick` passes to `lock-media-control` are the
+      # same word.
+      case "''${1:-}" in
+        previous | play-pause | next)
+          button="$1"
+          ;;
+        *)
+          echo "lock-media-button: want previous, play-pause or next" >&2
+          exit 2
+          ;;
+      esac
+
+      mpris_snapshot
+
+      [ -n "$player" ] || exit 0
+      [ -n "$title" ] || exit 0
+
+      case "$player_status" in
+        Playing | Paused) ;;
+        *) exit 0 ;;
+      esac
+
+      case "$button" in
+        previous)
+          glyph=""
+          ;;
+
+        next)
+          glyph=""
+          ;;
+
+        # The action, not the state: a button says what clicking it will do,
+        # which is the opposite of the marker in the track name beside it —
+        # that one is a pause glyph *because* the player is paused. Both are
+        # conventional and neither reads as the other in place.
+        play-pause)
+          case "$player_status" in
+            Playing) glyph="" ;;
+            *)       glyph="" ;;
+          esac
+          ;;
+      esac
+
+      # In the colour of whatever is playing, for the reason given on
+      # `lock-label`: a colour cannot reach a Hyprlock label any other way
+      # once it is running. Nothing here needs escaping — every glyph above is
+      # a private-use codepoint, and none of them is markup.
+      printf '<span foreground="#%s">%s</span>\n' "$LOCK_FG" "$glyph"
+    '';
+  };
+
+  # What the buttons above do when clicked.
+  #
+  # Aimed at a named player rather than left to playerctl's "first available"
+  # default. The lock screen has already chosen one out of however many are
+  # registered — a playing one, else the first paused one — and it is that
+  # player's cover and title on the screen, so a button beneath them that
+  # skipped a different player's queue would be lying about what it controls.
+  #
+  # Hyprlock runs `onclick` detached, so this is not on the render thread; the
+  # `timeout` is here for the same reason as the ones in the snapshot, which
+  # is that a wedged player would otherwise hold this process for D-Bus's own
+  # 25-second default.
+  lockMediaControl = pkgs.writeShellApplication {
+    name = "lock-media-control";
+
+    runtimeInputs = with pkgs; [
+      playerctl
+      coreutils
+    ];
+
+    text = ''
+      ${mprisSnapshot}
+
+      case "''${1:-}" in
+        previous | play-pause | next)
+          action="$1"
+          ;;
+        *)
+          echo "lock-media-control: want previous, play-pause or next" >&2
+          exit 2
+          ;;
+      esac
+
+      mpris_snapshot
+
+      # Nothing playing, nothing to do. Reachable in principle if a player
+      # disappears between the tick that drew the button and the click on it,
+      # and it is also what makes a stray click on an empty label harmless.
+      [ -n "$player" ] || exit 0
+
+      # Instance first, then the bare application name, as one priority list:
+      # `--player` takes a comma-separated list and acts on the *first* entry
+      # that matches, so this prefers the exact instance the snapshot named —
+      # `firefox.instance123` rather than whichever Firefox answers first —
+      # without any risk of firing the action twice, which two separate calls
+      # in a fallback chain would carry.
+      players="$player,''${player%%.*}"
+
+      if ! timeout 1 playerctl --player="$players" "$action"; then
+        echo "lock-media-control: $action went nowhere ($player)" >&2
+      fi
+
+      # The snapshot on disk describes the track as it was before the click.
+      # Dropping it means the next widget tick asks MPRIS itself rather than
+      # serving that answer, so the play/pause glyph, the track name, the
+      # cover and the colours all follow the click on their own next tick
+      # instead of a cache lifetime after it.
+      rm -f "$mpris_cache"
+    '';
+  };
 
   # The colours the lock screen is wearing *at this moment*, written down where
   # anything drawing part of that screen can read them without asking MPRIS.
@@ -1758,10 +1899,17 @@ lockNowPlaying = pkgs.writeShellApplication {
     # that only runs because something already has.
     wallpaper="$(cat "${stateDir}/wallpaper" 2>/dev/null || true)"
 
+    # The config, comments and all — Hyprlang keeps its own `#` lines, and
+    # they are the only documentation the generated file has.
+    #
+    # Nothing in here may contain a backtick, including the comments: this
+    # heredoc is unquoted, so a pair of them is a command substitution rather
+    # than a piece of punctuation. Same for a `$` that isn't meant for the
+    # shell — see the escaped \$TIME12 and \$FAIL below.
     cat > "$config" <<EOF
     general {
-        # The session controls below are clickable, so keep the pointer
-        # visible instead of making users hunt for it by echolocation.
+        # The session and media controls below are clickable, so keep the
+        # pointer visible instead of making users hunt for it by echolocation.
         hide_cursor = false
         ignore_empty_input = true
         immediate_render = true
@@ -1856,6 +2004,13 @@ lockNowPlaying = pkgs.writeShellApplication {
     # The rounded corners, the hairline edge and the shadow are all in the
     # image rather than in the options below, which is what lets nothing
     # playing be a transparent image and leave no empty frame behind.
+    #
+    # The cover and the track name below it sit 36px higher than the password
+    # field alone would put them, which is the height of the transport
+    # controls beneath them. Moving them rather than squeezing the controls
+    # into the gap that was already there keeps the card, the name and the
+    # buttons reading as one block, and it costs nothing on a screen with no
+    # music: everything between the field and the clock is empty then anyway.
     image {
         monitor =
         path = $cover
@@ -1867,7 +2022,7 @@ lockNowPlaying = pkgs.writeShellApplication {
         reload_time = 3
         reload_cmd = ${lib.getExe lockAlbumArt} cover
 
-        position = 0, 184
+        position = 0, 220
         halign = center
         valign = bottom
     }
@@ -1883,10 +2038,72 @@ lockNowPlaying = pkgs.writeShellApplication {
         font_family = FiraCode Nerd Font
         text_align = center
 
-        position = 0, 158
+        position = 0, 194
         halign = center
         valign = bottom
     }
+
+    # Previous, play/pause and next for the track named above — the same
+    # three actions the XF86Audio keys already reach while locked, for a
+    # machine whose keyboard hasn't got them.
+    #
+    # Three labels rather than one row: a Hyprlock label carries a single
+    # onclick, and the area that catches it is the label's own text. That
+    # second half is also what hides the row when the music stops —
+    # lock-media-button prints nothing without a media session, and a label
+    # with no text has no box for a click to land in. A click that somehow
+    # found one anyway would reach a lock-media-control that exits without
+    # doing anything, for want of a player to do it to.
+    #
+    # 1500 to match the track name, rather than something quicker for the
+    # play/pause glyph: that is the shortest interval the shared MPRIS cache
+    # is built to serve (see mprisSnapshot), and it keeps this glyph and the
+    # pause marker in the name beside it turning over together instead of a
+    # beat apart. The action itself is immediate either way — only the glyph
+    # waits for a tick, and a click drops the cache so that tick asks MPRIS
+    # rather than serving what was true before the click.
+    label {
+        monitor =
+        text = cmd[update:1500] ${lib.getExe lockMediaButton} previous
+        color = rgba(''${LOCK_FG}cc)
+        font_size = 24
+        font_family = FiraCode Nerd Font
+
+        position = -56, 148
+        halign = center
+        valign = bottom
+
+        onclick = ${lib.getExe lockMediaControl} previous
+    }
+
+    label {
+        monitor =
+        text = cmd[update:1500] ${lib.getExe lockMediaButton} play-pause
+        color = rgba(''${LOCK_FG}cc)
+        font_size = 24
+        font_family = FiraCode Nerd Font
+
+        position = 0, 148
+        halign = center
+        valign = bottom
+
+        onclick = ${lib.getExe lockMediaControl} play-pause
+    }
+
+    label {
+        monitor =
+        text = cmd[update:1500] ${lib.getExe lockMediaButton} next
+        color = rgba(''${LOCK_FG}cc)
+        font_size = 24
+        font_family = FiraCode Nerd Font
+
+        position = 56, 148
+        halign = center
+        valign = bottom
+
+        onclick = ${lib.getExe lockMediaControl} next
+    }
+
     # The password field's frame, drawn as an image so that it can change
     # colour with the track — nothing else can, since Hyprlock re-reads paths
     # and never colours. 624x62 at 0,70 is exactly the box the field below

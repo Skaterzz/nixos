@@ -29,6 +29,7 @@ the machine.
   - [Lock screen](#lock-screen)
   - [RGB lighting](#rgb-lighting)
 - [Wallpapers](#wallpapers)
+  - [The default](#the-default)
   - [Which twenty, and who decides](#which-twenty-and-who-decides)
   - [Why the images aren't in the store](#why-the-images-arent-in-the-store)
   - [The one-off directory change](#the-one-off-directory-change)
@@ -85,6 +86,7 @@ the machine.
   - [What actually differs](#what-actually-differs)
   - [The server](#the-server)
   - [The NVIDIA server](#the-nvidia-server)
+  - [The stick](#the-stick)
   - [Adding another host](#adding-another-host)
 - [Updating the dotfiles-derived assets](#updating-the-dotfiles-derived-assets)
 
@@ -107,6 +109,9 @@ hosts/server/                     # headless: no desktop, cron jobs
 hosts/server-nvidia/              # headless with a card: NVENC/NvFBC unlocked
   configuration.nix
   hardware-configuration.nix      # PLACEHOLDER — regenerate on the machine
+hosts/usb/                        # the stick: niri on removable media, auto-login
+  configuration.nix
+  hardware-configuration.nix      # PLACEHOLDER — labels, not UUIDs; see the file
 modules/nixos/
   base.nix                        # nix settings, locale/timezone, fish, base fonts
   plasmalogin.nix                     # SDDM (Wayland) + Plasma 6, portals, audio, Flatpak
@@ -127,6 +132,8 @@ modules/nixos/
   nvidia-server.nix               # the same card with no monitor on it: persistence,
                                   #   the container toolkit, the nvidia-patch overlay
   gaming.nix                      # Steam, MangoHud
+  disk-managements.nix            # gparted, KDE Partition Manager, GNOME Disks
+  filesystems-management.nix      # btrfs-progs, exfatprogs, dosfstools, e2fsprogs
   openrgb.nix                     # OpenRGB daemon + re-applying the profile on resume
   laptop.nix                       # power-profiles-daemon, upower, thermald, fstrim
   power.nix                        # no idle suspend while on mains power
@@ -134,7 +141,9 @@ modules/nixos/
   options.nix                      # local.boot.*, local.power.*, local.sddm.*,
                                    #   local.openrgb.*, local.virtualisation.*,
                                    #   local.ai.*, local.nvidia.*
-  users.nix                        # the `joshr`, `raiden` and `root` accounts
+  users.nix                        # the shared machines' accounts
+  server-users.nix                 # headless: `joshr` and `root`, no session groups
+  usb-users.nix                    # the stick: `joshr` and `root`, and no one else
 home/common/
   options.nix                      # local.* options the entrypoints toggle
   shell.nix                        # fish + starship, shared by every account
@@ -143,6 +152,8 @@ home/joshr/
   gamestation.nix                  # host entrypoint: enables the 2nd-monitor panel
   laptop.nix                       # host entrypoint: single-display panels
   server.nix                       # host entrypoint: shell only, no desktop base
+  usb.nix                          # host entrypoint: the portable subset of
+                                   #   laptop-niri.nix
   home.nix                         # packages (Spotify, Discord, ProtonUp-Qt, ...)
   browser.nix                      # the default browser: Vivaldi, $BROWSER
                                    #   (handlers: modules/nixos/default-apps.nix)
@@ -1656,6 +1667,37 @@ twenty, so as the toplist moves on, the folder moves with it.
 
 Both desktops pick the new files up for free: niri's `Mod+Ctrl+W` picker globs
 the whole tree, and Plasma's slideshow is pointed at the same directory.
+
+### The default
+
+`nixos.png`, out of the dotfiles collection. That is what a session which has
+never picked a wallpaper shows, on both desktops and at every stage of
+starting one.
+
+It is named in three places, because three different programs read it at three
+different times and none of them can see the others' configuration:
+
+| Where | What it dresses | Form |
+|---|---|---|
+| `home/joshr/plasma.nix` (`defaultWallpaper`) | the Plasma desktop and its lock screen | store path |
+| `modules/nixos/plasmalogin.nix` | the Plasma login greeter | store path |
+| `home/joshr/niri/scripts.nix` (`defaultWallpaper`) | what `wallpaper-restore` falls back to under niri | `~/.local/share/wallpapers/nixos.png` |
+
+Changing the default means changing all three. That is deliberate rather than
+an oversight waiting to be tidied into one option: the greeter runs as its own
+system user before anyone has logged in and can't read a path under
+`/home`, which is why the first two are store paths — and the third has to
+*not* be, because it is written into a state file that outlives a `nix flake
+update dotfiles`, and a store path there would be a wallpaper that had since
+been garbage collected.
+
+Under niri the default is a fallback, not an override. `wallpaper-restore`
+runs at login and tries three things in order: the wallpaper last chosen from
+`Mod+Ctrl+W` (`~/.local/state/niri-theme/wallpaper`), then the default, then a
+random one out of the collection. So a fresh account lands on the same image
+every time instead of on whatever `shuf` reached for, and anything picked
+afterwards wins on every login after that. The random step is only reached if
+the dotfiles ever stop carrying `nixos.png`.
 
 ### Which twenty, and who decides
 
@@ -3200,7 +3242,7 @@ from the boot menu at startup — nothing is destroyed by a bad switch.
 
 ## Hosts
 
-Six are defined. Pick one with the flake attribute:
+Seven are defined. Pick one with the flake attribute:
 
 | Host | For | Differences |
 |---|---|---|
@@ -3208,6 +3250,7 @@ Six are defined. Pick one with the flake attribute:
 | `laptop` | portable, Plasma | no NVIDIA; power management; single-display panels |
 | `gamestation-niri` | the desk, niri | as above, niri + SDDM instead of Plasma |
 | `laptop-niri` | portable, niri | as above; no OpenRGB applet at login |
+| `usb` | a stick, niri | boots anywhere; auto-login; one account; the disk tools |
 | `server` | headless | no desktop at all; systemd-boot; cron jobs |
 | `server-nvidia` | headless, with a card | as `server`, plus the driver and the NVENC/NvFBC patch |
 
@@ -3219,7 +3262,7 @@ sudo nixos-rebuild switch --flake .#server
 
 The two desk hosts and the two laptop hosts share everything else — the same
 modules, the same `home/joshr` profile, the same package set. The two headless
-hosts are the outliers and are described below.
+hosts and the stick are the outliers and are described below.
 
 ### What actually differs
 
@@ -3407,6 +3450,107 @@ Nothing that *uses* the card is configured here. Jellyfin, Frigate, a stack
 of ffmpeg jobs, ollama — this is the machine they'd run on, and they go in
 that host's `configuration.nix` or a module of their own. `ai.nix` is
 deliberately not imported; the host file says why.
+
+### The stick
+
+`usb` is a full NixOS install on a USB drive, carried around and booted on
+whatever machine is in front of you. It is not an installer image: nothing on
+it is read-only, it keeps state between boots, and it is rebuilt from this
+repo like any other host.
+
+```bash
+sudo nixos-rebuild switch --flake .#usb
+```
+
+It is `laptop-niri` with three changes, and everything else about it — the
+session, the palette, the keybinds, the shell — is the same.
+
+**It boots on hardware it has never seen.** No `nvidia.nix`, no
+`kernel-params.nix`, and no display layout: `local.niri.outputs` is left at
+its empty default, which is niri's auto-detect. The interesting file is
+`hosts/usb/hardware-configuration.nix`, which is a placeholder of a different
+shape from the others. Filesystems are named by **label** rather than by UUID
+or `/dev/sdX` — the stick is `sdb` on one machine and `sdd` on the next — and
+the labels are `nixos-usb` and `USB-BOOT` rather than the `nixos`/`boot` the
+fixed installs use, so that plugging the stick into one of those machines
+while it is running isn't a coin toss over which filesystem answers to a name.
+The initrd carries every USB host controller back to UHCI, plus `usb_storage`
+and `uas` — a USB 3 drive that negotiates UAS and finds no driver falls back
+slowly or not at all. `ahci`, `nvme` and `sdhci_pci` are in that list too, not
+because gparted needs them (the booted system has the whole module tree and
+udev loads them on sight) but so that the initrd's emergency shell can already
+see the machine's own disks, which is a plausible place to end up on a machine
+that is already not booting.
+
+**It changes nothing on the machine it is plugged into.** The bootloader is
+GRUB rather than the limine default, with `efiInstallAsRemovable = true` —
+`grub-install --removable`, which writes the loader to `EFI/BOOT/BOOTX64.EFI`,
+the one path UEFI firmware boots without being told to. Its other half is
+`boot.loader.efi.canTouchEfiVariables = lib.mkForce false`: writing an NVRAM
+boot entry is how a fixed disk tells the firmware it exists, and from a stick
+it is a permanent entry on someone else's motherboard pointing at a drive that
+won't be there next time. `mkForce` because `modules/nixos/boot.nix` sets it
+true for all three loaders, which is right everywhere else. GRUB asserts the
+two can't both be on, so getting this wrong stops the build rather than
+producing a stick that quietly edits machines. `local.boot.detectOtherSystems`
+is off for the same reason in reverse — os-prober scans the disks present at
+*rebuild* time and would bake one machine's Windows into the menu shown on
+every other.
+
+**Whoever holds it is logged in.** `services.displayManager.autoLogin` names
+`joshr`, and `modules/nixos/usb-users.nix` makes him the only account there is
+— that file exists rather than an option on `users.nix` because a list of
+accounts merges by union, so a host importing that one could add people but
+never take one away. The cost is stated plainly: nothing is asked for between
+power-on and the home directory, and nothing on the drive is encrypted. The
+password still guards `sudo` and the lock screen, which on a device that can
+be walked off with is the whole of the security. Deleting the two `autoLogin`
+options brings the greeter back and changes nothing else. Logging out returns
+to the greeter rather than looping straight back in — SDDM's
+`autoLogin.relogin` defaults to false, which means "on boot, not on every
+session end".
+
+#### The disk tools
+
+Two modules, imported only by this host, though there is nothing host-specific
+in either.
+
+`modules/nixos/disk-managements.nix` is the three GUIs: **gparted**, **KDE
+Partition Manager** and **GNOME Disks**. They overlap on purpose — on a rescue
+stick "the other one opens it" is a feature — but they are also genuinely
+different tools: the first two edit partition tables, and GNOME Disks is the
+udisks2 front end that does SMART, self-tests, benchmarking and writing an
+image to a drive.
+
+Two things in that module are load-bearing and easy to get wrong:
+
+- KDE Partition Manager goes in as `programs.partition-manager.enable` rather
+  than as a package. Its privileged half is kpmcore's `externalcommand`
+  helper, reached over the system D-Bus, so kpmcore has to land in
+  `services.dbus.packages` for its service file and polkit action to exist.
+  Installed as a bare package you get a window that opens, lists the disks,
+  and fails every operation with a permission error.
+- gparted is `gparted.override { withAllTools = true; }`. Its wrapper bakes in
+  the PATH it will use, and the default carries dosfstools, e2fsprogs and
+  util-linux only — so a stock gparted greys out "format as btrfs" even on a
+  machine that has btrfs-progs installed system-wide. The system PATH can't
+  rescue it either: gparted is launched through pkexec, which sanitises the
+  environment. The cost is that an override isn't the build in the binary
+  cache, so gparted compiles locally.
+
+`modules/nixos/filesystems-management.nix` is what all of them shell out to:
+**btrfs-progs**, **exfatprogs**, **dosfstools** and **e2fsprogs** — mkfs,
+fsck, resize and label for btrfs, exFAT, FAT and ext2/3/4. They're
+`environment.systemPackages` because two of the three callers aren't the user:
+udisks2 runs as root from a systemd unit and takes the system PATH, as does
+kpmcore's helper. Mounting is a separate question and doesn't need any of it —
+the kernel handles all four out of the box — these are for making, checking
+and repairing.
+
+`joshr` is deliberately **not** in the `disk` group on this host. That would
+hand every process in the session raw read/write on every block device, which
+is root over the machine by another name; the editors don't want it, since
+asking polkit gets them the same access one operation at a time.
 
 ### Adding another host
 

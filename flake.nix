@@ -210,6 +210,25 @@
             };
           };
 
+          # --- removable -------------------------------------------------
+          # A full install on a USB stick, carried between machines. Same
+          # niri session as the two hosts above; the differences are that it
+          # boots on hardware it has never seen, installs its bootloader at
+          # the removable-media path so it changes nothing on the machine it
+          # is plugged into, and logs straight in.
+          #
+          # It is the one host whose `homeModules` has a single entry and
+          # means it: hosts/usb imports modules/nixos/usb-users.nix rather
+          # than users.nix, so joshr is the only account on the machine.
+          # Naming a second one here would be a home profile for a user that
+          # does not exist.
+          usb = mkHost {
+            hostModule = ./hosts/usb/configuration.nix;
+            homeModules = {
+              joshr = ./home/joshr/usb.nix;
+            };
+          };
+
           # --- headless --------------------------------------------------
           # No desktop at all. Scheduled work lives in its `local.cron`
           # section; see modules/nixos/cron.nix.

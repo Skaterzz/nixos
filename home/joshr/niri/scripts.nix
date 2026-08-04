@@ -619,51 +619,179 @@ wallpaperMenu = pkgs.writeShellApplication {
   #
   # Thickness moves 8 → 9 with the radius (110 → 130) only to hold the ring's
   # weight steady; at 8 a 130 ring reads visibly thinner than the 110 one did.
-  # Which MPRIS player the lock screen is about, as a shell fragment rather
-  # than a script of its own.
+  # What is playing, for the whole lock screen, from one MPRIS round trip that
+  # every widget on every monitor shares.
   #
-  # Three separate things on the lock screen ask that question — the label,
-  # the cover card and the background behind both — and they have to give the
-  # same answer. A cover from one player under a title from another is worse
-  # than either alone, and it is exactly what two copies of this loop would
-  # drift into the moment one of them was edited.
+  # Everything on this screen that knows about music — the track label, the
+  # cover card, the background behind both and the frame around the password
+  # field — has to give the same answer, or a cover from one player ends up
+  # under a title from another. That is why this is one fragment rather than a
+  # loop copied into each script.
+  #
+  # It is also why it is *cached*. A widget with no `monitor` is built once per
+  # output (Renderer.cpp, getOrCreateWidgetsFor), so on the desk there are
+  # three backgrounds, three covers, three field frames and three track labels,
+  # each with its own timer, and all of them asking the same question within a
+  # few hundred milliseconds of each other. Asking MPRIS once per widget cost
+  # around fifty playerctl processes every three seconds, most of the weight of
+  # it on Hyprlock's render thread, where `reload_cmd` runs through spawnSync.
+  # Now the first one to find the answer stale fetches it and the rest read a
+  # file.
+  #
+  # The window is shorter than every timer that asks, so a tick never serves a
+  # previous tick's answer — it only ever covers the burst of widgets firing
+  # together.
+  #
+  # One call rather than the four this used to take, too: `--all-players` with
+  # a format string returns every player's name, status and metadata in one
+  # go, because playerctl's format context carries `playerName` and `status`
+  # alongside the metadata fields (playerctl-formatter.c).
   #
   # Prefer a playing player. When nothing is actively playing, retain the
   # first paused track so the lock screen still reflects the current media
   # session. Leaves `player` empty when there is nothing to show, which makes
   # every caller here fall back to what it shows without music.
   #
-  # Every playerctl call is under a `timeout`, which is not defensive
-  # programming for its own sake. These are D-Bus method calls into other
-  # desktop applications, and a player that has stopped answering — a hung
-  # browser tab is the usual one — blocks its caller for D-Bus's own 25s
-  # default. Two of the three callers cannot afford that: one runs on the path
-  # that has to lock the screen before the machine suspends, and one runs on
-  # Hyprlock's main thread. A second is already far longer than an answer
-  # takes.
-  pickMprisPlayer = ''
+  # The `timeout` is not defensive programming for its own sake: this is a
+  # D-Bus call into other desktop applications, and a player that has stopped
+  # answering — a hung browser tab is the usual one — blocks its caller for
+  # D-Bus's own 25s default. Two of the callers cannot afford that: one runs on
+  # the path that has to lock the screen before the machine suspends, and one
+  # runs on Hyprlock's render thread. A second is already far longer than an
+  # answer takes.
+  mprisSnapshot = ''
+    mpris_cache="''${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/hyprlock-track"
+
+    # Seconds an answer is reused for. See above: below every interval that
+    # asks (the track label's 1.5s is the shortest), above the spread of one
+    # burst.
+    mpris_cache_seconds=1
+
     player=""
-    paused_player=""
+    player_status=""
+    art_url=""
+    media_url=""
+    artist=""
+    title=""
 
-    while IFS= read -r candidate; do
-      [ -n "$candidate" ] || continue
+    # Only the fields, and only in this order: the two that can hold anything
+    # a tagger allowed go last, so a stray delimiter inside one of them can
+    # shift nothing but the other.
+    mpris_format='{{playerName}}|||{{status}}|||{{mpris:artUrl}}|||{{xesam:url}}|||{{artist}}|||{{title}}'
 
-      status="$(
-        timeout 1 playerctl --player="$candidate" status 2>/dev/null || true
-      )"
+    mpris_from_cache() {
+      local stamp age
 
-      case "$status" in
-        Playing)
-          player="$candidate"
-          break
-          ;;
-        Paused)
-          [ -n "$paused_player" ] || paused_player="$candidate"
-          ;;
+      [ -r "$mpris_cache" ] || return 1
+
+      {
+        read -r stamp
+        read -r player
+        read -r player_status
+        read -r art_url
+        read -r media_url
+        read -r artist
+        read -r title
+      } < "$mpris_cache" || true
+
+      case "$stamp" in
+        "" | *[!0-9]*) return 1 ;;
       esac
-    done < <(timeout 1 playerctl --list-all 2>/dev/null || true)
 
-    [ -n "$player" ] || player="$paused_player"
+      # A clock that went backwards leaves an answer from the future, which is
+      # not fresh, it is unreadable.
+      age=$(( EPOCHSECONDS - stamp ))
+      [ "$age" -ge 0 ] || return 1
+      [ "$age" -le "$mpris_cache_seconds" ] || return 1
+    }
+
+    mpris_query() {
+      local line rest name status arturl mediaurl
+      local paused_player="" paused_status="" paused_art=""
+      local paused_media="" paused_artist="" paused_title=""
+
+      player=""
+      player_status=""
+      art_url=""
+      media_url=""
+      artist=""
+      title=""
+
+      while IFS= read -r line || [ -n "$line" ]; do
+        # Anything without the delimiters in it did not come from the format
+        # above — a newline inside a title, most likely.
+        rest="''${line#*|||}"
+        [ "$rest" != "$line" ] || continue
+
+        name="''${line%%|||*}"
+        status="''${rest%%|||*}"
+        rest="''${rest#*|||}"
+        arturl="''${rest%%|||*}"
+        rest="''${rest#*|||}"
+        mediaurl="''${rest%%|||*}"
+        rest="''${rest#*|||}"
+
+        case "$status" in
+          Playing)
+            player="$name"
+            player_status="$status"
+            art_url="$arturl"
+            media_url="$mediaurl"
+            artist="''${rest%%|||*}"
+            title="''${rest#*|||}"
+            break
+            ;;
+
+          Paused)
+            if [ -z "$paused_player" ]; then
+              paused_player="$name"
+              paused_status="$status"
+              paused_art="$arturl"
+              paused_media="$mediaurl"
+              paused_artist="''${rest%%|||*}"
+              paused_title="''${rest#*|||}"
+            fi
+            ;;
+        esac
+      done < <(
+        timeout 1 playerctl --all-players metadata --format "$mpris_format" \
+          2>/dev/null || true
+      )
+
+      if [ -z "$player" ]; then
+        player="$paused_player"
+        player_status="$paused_status"
+        art_url="$paused_art"
+        media_url="$paused_media"
+        artist="$paused_artist"
+        title="$paused_title"
+      fi
+
+      # Only the schemes the fetcher can resolve. `data:` URLs are left out on
+      # purpose: a handful of players inline an entire JPEG there, and it would
+      # travel through a cache file to save one local read.
+      case "$art_url" in
+        http://* | https://* | file://*) ;;
+        *) art_url="" ;;
+      esac
+    }
+
+    mpris_write() {
+      local tmp="$mpris_cache.$$.tmp"
+
+      printf '%s\n' \
+        "$EPOCHSECONDS" "$player" "$player_status" "$art_url" "$media_url" \
+        "$artist" "$title" > "$tmp"
+
+      mv -f "$tmp" "$mpris_cache"
+    }
+
+    mpris_snapshot() {
+      if ! mpris_from_cache; then
+        mpris_query
+        mpris_write
+      fi
+    }
   '';
 
   # A short-lived MPRIS query for the lock screen.
@@ -675,61 +803,25 @@ lockNowPlaying = pkgs.writeShellApplication {
   runtimeInputs = with pkgs; [
     playerctl
     coreutils
-    gnused
   ];
 
   text = ''
     ${readLockColors}
-    ${pickMprisPlayer}
+    ${mprisSnapshot}
+
+    # Everything below used to be four playerctl calls of its own — status,
+    # artist and title, player name, media URL. They are all in the one
+    # snapshot now, which on a cache hit costs no processes at all.
+    mpris_snapshot
 
     [ -n "$player" ] || exit 0
-
-    status="$(
-      playerctl --player="$player" status 2>/dev/null || true
-    )"
-
-    metadata="$(
-      playerctl \
-        --player="$player" \
-        metadata \
-        --format '{{artist}}|||{{title}}' \
-        2>/dev/null || true
-    )"
-
-    artist="''${metadata%%|||*}"
-    title="''${metadata#*|||}"
-
-    # No delimiter means the metadata query failed.
-    [ "$metadata" != "$title" ] || exit 0
     [ -n "$title" ] || exit 0
 
-    # playerName is cleaner than the D-Bus instance name, but fall back to the
-    # candidate selected above for players that do not expose it properly.
-    player_name="$(
-      playerctl \
-        --player="$player" \
-        metadata \
-        --format '{{playerName}}' \
-        2>/dev/null || true
-    )"
-
-    [ -n "$player_name" ] || player_name="$player"
+    status="$player_status"
 
     # Remove instance suffixes such as firefox.instance123 and normalize case.
-    source="$(
-      printf '%s' "$player_name" |
-        tr '[:upper:]' '[:lower:]'
-    )"
+    source="''${player,,}"
     source="''${source%%.*}"
-
-    # Browser players normally identify as the browser, but the media URL can
-    # reveal recognizable web services.
-    media_url="$(
-      playerctl \
-        --player="$player" \
-        metadata xesam:url \
-        2>/dev/null || true
-    )"
 
     case "$media_url" in
       *open.spotify.com/* | spotify:*)
@@ -809,16 +901,27 @@ lockNowPlaying = pkgs.writeShellApplication {
 
     # Hyprlock labels support markup, so sanitize media metadata before it
     # reaches the generated label.
-    display="$(
-      printf '%s' "$display" |
-        tr '\r\n' '  ' |
-        sed \
-          -e 's/[[:space:]][[:space:]]*/ /g' \
-          -e 's/&/\&amp;/g' \
-          -e 's/</\&lt;/g' \
-          -e 's/>/\&gt;/g' |
-        cut -c 1-100
-    )"
+    #
+    # In the shell rather than through tr, sed and cut, which was four
+    # processes and a subshell every time a track label redrew. Two other
+    # things fall out of doing it here: the truncation happens *before* the
+    # escaping, so it can no longer cut an entity in half and take the whole
+    # label down to plain text, and it counts characters rather than bytes, so
+    # it cannot split one either.
+    display="''${display//[$'\r\n\t']/ }"
+
+    while [ "$display" != "''${display//  / }" ]; do
+      display="''${display//  / }"
+    done
+
+    display="''${display:0:100}"
+
+    # Ampersands first, or the escapes escape each other; and each `&` in the
+    # replacement is backslashed because bash reads a bare one as the text the
+    # pattern matched.
+    display="''${display//&/\&amp;}"
+    display="''${display//</\&lt;}"
+    display="''${display//>/\&gt;}"
 
     # Wrapped in the current colour, for the same reason as `lock-label`: a
     # colour cannot reach a Hyprlock label any other way once it is running.
@@ -923,46 +1026,28 @@ lockNowPlaying = pkgs.writeShellApplication {
   albumArtPaths = ''
     art_cache="''${XDG_CACHE_HOME:-$HOME/.cache}/niri/album-art"
 
-    # <cover url> -> the name everything about that cover is filed under.
-    art_key() {
-      printf '%s' "$1" | sha256sum | cut -c1-32
+    # <cover url> -> every file that cover is filed under, as variables.
+    #
+    # Assignments rather than an answer per question: this is on the path
+    # Hyprlock blocks its render thread for, and a function that printed would
+    # cost a subshell per path — six forks to build six strings.
+    # All of them, whether or not a given caller wants all of them: the ones a
+    # script doesn't read are still the ones it would have to add here if it
+    # ever did.
+    # shellcheck disable=SC2034
+    art_paths() {
+      local sum
+
+      sum="$(printf '%s' "$1" | sha256sum)"
+      art_key="''${sum:0:32}"
+
+      art_backdrop="$art_cache/$art_key.backdrop.jpg"
+      art_cover="$art_cache/$art_key.cover.png"
+      art_field="$art_cache/$art_key.field.png"
+      art_palette="$art_cache/$art_key.palette"
+      art_lock="$art_cache/.$art_key.lock"
+      art_source="$art_cache/.$art_key.source"
     }
-
-    # <key> <backdrop|cover|field|palette|lock|source> -> the file that belongs
-    # to it. Takes the key rather than the URL so that a caller which wants
-    # several of these pays for the hash once.
-    art_path() {
-      case "$2" in
-        backdrop) printf '%s\n' "$art_cache/$1.backdrop.jpg" ;;
-        cover)    printf '%s\n' "$art_cache/$1.cover.png" ;;
-        field)    printf '%s\n' "$art_cache/$1.field.png" ;;
-        palette)  printf '%s\n' "$art_cache/$1.palette" ;;
-        lock)     printf '%s\n' "$art_cache/.$1.lock" ;;
-        source)   printf '%s\n' "$art_cache/.$1.source" ;;
-      esac
-    }
-  '';
-
-  # The current track's cover URL, or the empty string when there isn't one.
-  currentArtUrl = ''
-    ${pickMprisPlayer}
-
-    art_url=""
-
-    if [ -n "$player" ]; then
-      art_url="$(
-        timeout 1 playerctl --player="$player" metadata mpris:artUrl \
-          2>/dev/null || true
-      )"
-    fi
-
-    # Only the two schemes the fetcher can resolve. `data:` URLs are left out
-    # on purpose: a handful of players inline an entire JPEG there, and it
-    # would travel through an argv and a cache key to save one local read.
-    case "$art_url" in
-      http://* | https://* | file://*) ;;
-      *) art_url="" ;;
-    esac
   '';
 
   # The wallpaper, behind a fixed, punctuation-free path.
@@ -1042,13 +1127,14 @@ lockNowPlaying = pkgs.writeShellApplication {
       ${albumArtPaths}
       ${lockPaletteColors}
       ${lockFieldFrame}
+      ${mprisSnapshot}
 
       # The caller usually knows the URL already, having just looked it up to
       # discover the render was missing. Without one, work it out.
       art_url="''${1:-}"
 
       if [ -z "$art_url" ]; then
-        ${currentArtUrl}
+        mpris_snapshot
       fi
 
       [ -n "$art_url" ] || exit 0
@@ -1063,10 +1149,7 @@ lockNowPlaying = pkgs.writeShellApplication {
           ;;
       esac
 
-      key="$(art_key "$art_url")"
-      art_backdrop="$(art_path "$key" backdrop)"
-      art_cover="$(art_path "$key" cover)"
-      art_palette="$(art_path "$key" palette)"
+      art_paths "$art_url"
 
       if [ -f "$art_backdrop" ] && [ -f "$art_cover" ] && [ -f "$art_palette" ]
       then
@@ -1080,7 +1163,7 @@ lockNowPlaying = pkgs.writeShellApplication {
       # timer that will ask again in a couple of seconds anyway — and two
       # curls racing to write the same cache entry is the one way this could
       # hand Hyprlock a half-written JPEG.
-      exec 9>"$(art_path "$key" lock)"
+      exec 9>"$art_lock"
       if ! flock -n 9; then
         exit 0
       fi
@@ -1091,8 +1174,7 @@ lockNowPlaying = pkgs.writeShellApplication {
         exit 0
       fi
 
-      source_file="$(art_path "$key" source)"
-      art_field="$(art_path "$key" field)"
+      source_file="$art_source"
       tmp_backdrop="$art_backdrop.tmp"
       tmp_cover="$art_cover.tmp"
       tmp_field="$art_field.tmp"
@@ -1311,6 +1393,7 @@ lockNowPlaying = pkgs.writeShellApplication {
       ${lockColorsPath}
       ${lockPaletteColors}
       ${lockThemeColors}
+      ${mprisSnapshot}
 
       mode="''${1:-}"
 
@@ -1322,18 +1405,23 @@ lockNowPlaying = pkgs.writeShellApplication {
           ;;
       esac
 
-      ${currentArtUrl}
+      mpris_snapshot
 
-      key=""
-      [ -z "$art_url" ] || key="$(art_key "$art_url")"
+      art_key=""
+      [ -z "$art_url" ] || art_paths "$art_url"
 
-      # One answer, for one of the three things a lock screen takes from a
+      # One answer, for one of the four things a lock screen takes from a
       # cover. Prints nothing when there is nothing to say.
       answer() {
-        local want="$1" rendered
+        local want="$1" rendered=""
 
-        if [ -n "$key" ]; then
-          rendered="$(art_path "$key" "$want")"
+        if [ -n "$art_key" ]; then
+          case "$want" in
+            backdrop) rendered="$art_backdrop" ;;
+            cover)    rendered="$art_cover" ;;
+            field)    rendered="$art_field" ;;
+            palette)  rendered="$art_palette" ;;
+          esac
 
           if [ -f "$rendered" ]; then
             printf '%s\n' "$rendered"
@@ -1382,9 +1470,9 @@ lockNowPlaying = pkgs.writeShellApplication {
       # because Hyprlock is reading this command's stdout, and a pipe left
       # open in the worker would keep it waiting on the download after all the
       # trouble taken not to.
-      if [ -n "$key" ]; then
-        for want in backdrop cover palette; do
-          if [ ! -f "$(art_path "$key" "$want")" ]; then
+      if [ -n "$art_key" ]; then
+        for rendered in "$art_backdrop" "$art_cover" "$art_palette"; do
+          if [ ! -f "$rendered" ]; then
             setsid -f ${lib.getExe lockAlbumArtFetch} "$art_url" \
               </dev/null >/dev/null 2>&1 || true
             break

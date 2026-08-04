@@ -1287,6 +1287,48 @@ session controls, times three monitors, would otherwise be a D-Bus round trip
 each, several times a second — and any two of them could disagree in the
 middle of a track change. A file is a few microseconds and one answer.
 
+#### What all of that costs while the screen is locked
+
+Nothing at all while it isn't: every script here runs only under Hyprlock.
+
+While it is, the number that matters is how much of it lands on Hyprlock's
+**render thread**, because a `reload_cmd` runs through `spawnSync` from a timer
+callback on it — a millisecond spent in one is a millisecond the lock screen
+is not drawing. Label commands are the opposite: they go through the resource
+gatherer's own thread, so a clock ticking once a second per monitor is free as
+far as the renderer is concerned.
+
+The multiplier is the monitor count. A widget with no `monitor` is built once
+per output (`getOrCreateWidgetsFor`), so the desk runs three backgrounds,
+three cover cards, three field frames and three track labels, each with its
+own timer, all asking the same question within a few hundred milliseconds of
+each other.
+
+Two things keep that cheap:
+
+- **One MPRIS round trip, shared.** `playerctl --all-players metadata` with a
+  format string returns every player's name, status and metadata in a single
+  call — playerctl's format context carries `playerName` and `status` next to
+  the metadata fields — where this used to take four to six calls per script.
+  The answer then goes in `$XDG_RUNTIME_DIR/hyprlock-track` with a timestamp,
+  and whoever finds it older than a second fetches a new one. The window is
+  deliberately shorter than every interval that asks, so a tick never serves
+  the previous tick's answer; it only ever covers the burst.
+- **No processes in the steady state.** The paths a cover is filed under are
+  built by assignment rather than by a function that prints, and the track
+  label's sanitising is bash string work rather than a `tr | sed | cut`
+  pipeline. On a cache hit the whole of `lock-album-art` forks nothing.
+
+Simulated at three monitors over twelve seconds of locked screen, that took
+`playerctl` from **312 spawns to 5**, and a single `lock-album-art` call —
+the one the renderer waits on — from about **31 ms to 7.5 ms**. Both figures
+are against a stubbed `playerctl`, which is far cheaper than the real one, so
+the difference on the machine is larger than that.
+
+The remaining cost is a rendering job per *new* track: a download and three
+ImageMagick runs, about a third of a second of CPU, in a detached process that
+nothing waits for.
+
 #### Everything locks through `lock-now`
 
 `lock-session` is the script that actually draws the lock screen, and it

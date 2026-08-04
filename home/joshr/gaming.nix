@@ -14,7 +14,7 @@
       vram = true;
       horizontal = true;
       time = true;
-      time_format = "%H:%M"
+      time_format = "%H:%M";
     };
   };
 }

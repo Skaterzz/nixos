@@ -1845,7 +1845,7 @@ lockNowPlaying = pkgs.writeShellApplication {
     # users.users.<name>.description during Nix evaluation, already stripped
     # of everything that could break the line it lands in.
     first_name=${lib.escapeShellArg safeFirstName}
-    greeting="Welcome, $first_name"
+    greeting="Welcome, $first_name."
 
     ${lib.optionalString config.local.niri.randomLockGreetings ''
       # Pick once per lock rather than on the label's refresh timer. The one
@@ -1857,7 +1857,6 @@ lockNowPlaying = pkgs.writeShellApplication {
         "Back at it again, $first_name."
         "Nice to see you, $first_name."
         "Ready when you are, $first_name."
-        "Let's keep going, $first_name."
       )
 
       read -r hour weekday < <(date '+%H %u')
@@ -1877,7 +1876,7 @@ lockNowPlaying = pkgs.writeShellApplication {
           daypart=Afternoon
           greetings+=(
             "Good Afternoon, $first_name."
-            "Keep the momentum going, $first_name."
+            "Let's keep it going, $first_name."
           )
           ;;
         *)
@@ -1894,15 +1893,15 @@ lockNowPlaying = pkgs.writeShellApplication {
       if [ "$weekday" -le 5 ] && [ "$daypart" != Evening ]; then
         greetings+=(
           "Coffee, then code, $first_name."
-          "Let's build something brilliant, $first_name."
           "Ready to ship something, $first_name?"
+	  "Back to VS Code, $first_name."
         )
       else
         greetings+=(
           "Where we dropping, $first_name?"
           "Stand by for Titanfall, $first_name."
           "Late night coding, $first_name?"
-          "Kill them all, $first_name."
+          "One more round, $first_name?"
         )
       fi
 

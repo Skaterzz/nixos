@@ -88,7 +88,6 @@
 # stops a file from being swapped underneath it at runtime.
 let
   cfg = config.local.boot;
-  maxGenerations = cfg.maxGenerations;
 
   themeSet = import ../../home/joshr/niri/themes.nix { inherit lib; };
   inherit (themeSet) themes;

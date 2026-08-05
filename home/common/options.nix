@@ -35,6 +35,25 @@
     '';
   };
 
+  options.local.niri.lockAlbumArtBackground = lib.mkOption {
+    type = lib.types.bool;
+    default = true;
+    description = ''
+      Whether Hyprlock replaces the wallpaper with a blurred version of the
+      current track's album art. When disabled, the selected wallpaper stays
+      behind the lock screen while its other media widgets keep working.
+    '';
+  };
+
+  options.local.niri.lockAlbumArtCover = lib.mkOption {
+    type = lib.types.bool;
+    default = true;
+    description = ''
+      Whether Hyprlock shows the current track's album cover above the now
+      playing label. This is independent of the album-art background.
+    '';
+  };
+
   # Per-host display layout for niri. Rendered into `output` blocks in
   # config.kdl by home/joshr/niri/niri.nix.
   #

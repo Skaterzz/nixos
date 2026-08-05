@@ -66,6 +66,9 @@ let
 
   wallpaperDir = "${config.home.homeDirectory}/.local/share/wallpapers";
 
+  lockAlbumArtBackground = config.local.niri.lockAlbumArtBackground;
+  lockAlbumArtCover = config.local.niri.lockAlbumArtCover;
+
   # What a session that has never picked a wallpaper starts on — see
   # `wallpaperRestore` below.
   #
@@ -1324,8 +1327,17 @@ lockNowPlaying = pkgs.writeShellApplication {
 
       art_paths "$art_url"
 
-      if [ -f "$art_backdrop" ] && [ -f "$art_cover" ] && [ -f "$art_palette" ]
-      then
+      render_complete() {
+        [ -f "$art_palette" ] || return 1
+        ${lib.optionalString lockAlbumArtBackground ''
+          [ -f "$art_backdrop" ] || return 1
+        ''}
+        ${lib.optionalString lockAlbumArtCover ''
+          [ -f "$art_cover" ] || return 1
+        ''}
+      }
+
+      if render_complete; then
         exit 0
       fi
 
@@ -1342,8 +1354,7 @@ lockNowPlaying = pkgs.writeShellApplication {
       fi
 
       # The holder we just queued behind may have finished the job.
-      if [ -f "$art_backdrop" ] && [ -f "$art_cover" ] && [ -f "$art_palette" ]
-      then
+      if render_complete; then
         exit 0
       fi
 
@@ -1436,6 +1447,7 @@ lockNowPlaying = pkgs.writeShellApplication {
         "" | *[!0-9]*) art_brightness=100 ;;
       esac
 
+      ${lib.optionalString lockAlbumArtBackground ''
       # The backdrop. Blurring at 512px and scaling the result up costs a
       # fraction of blurring at 2560px and lands in the same place once it is
       # this soft — the detail was on its way out either way. The square crop
@@ -1461,7 +1473,9 @@ lockNowPlaying = pkgs.writeShellApplication {
         echo "lock-album-art-fetch: could not render a backdrop from $art_url" >&2
         exit 0
       fi
+      ''}
 
+      ${lib.optionalString lockAlbumArtCover ''
       # The card: the cover at 200px with soft corners, a hairline edge to
       # lift it off whatever it is sitting on, and a shadow under it, on a
       # 256px transparent canvas that leaves the shadow room to fall.
@@ -1487,6 +1501,7 @@ lockNowPlaying = pkgs.writeShellApplication {
         echo "lock-album-art-fetch: could not render a cover from $art_url" >&2
         exit 0
       fi
+      ''}
 
       # The password field, in this cover's colours, if the cover had any.
       #
@@ -1513,8 +1528,12 @@ lockNowPlaying = pkgs.writeShellApplication {
       # from it and its pictures from the other three, so a palette on disk has
       # to mean the pictures are already there — otherwise a lock landing in
       # this gap would wear a cover it is not showing.
-      mv -f "$tmp_backdrop" "$art_backdrop"
-      mv -f "$tmp_cover" "$art_cover"
+      ${lib.optionalString lockAlbumArtBackground ''
+        mv -f "$tmp_backdrop" "$art_backdrop"
+      ''}
+      ${lib.optionalString lockAlbumArtCover ''
+        mv -f "$tmp_cover" "$art_cover"
+      ''}
       mv -f "$tmp_palette" "$art_palette"
 
       # Keep the cache bounded. Thirty tracks each way is a few megabytes and
@@ -1528,8 +1547,12 @@ lockNowPlaying = pkgs.writeShellApplication {
           xargs -r rm -f
       }
 
-      prune_art '*.backdrop.jpg' || true
-      prune_art '*.cover.png' || true
+      ${lib.optionalString lockAlbumArtBackground ''
+        prune_art '*.backdrop.jpg' || true
+      ''}
+      ${lib.optionalString lockAlbumArtCover ''
+        prune_art '*.cover.png' || true
+      ''}
       prune_art '*.palette' || true
 
       # And the lock files, which are empty and never numerous, but are
@@ -1590,8 +1613,8 @@ lockNowPlaying = pkgs.writeShellApplication {
 
         if [ -n "$art_key" ]; then
           case "$want" in
-            backdrop) rendered="$art_backdrop" ;;
-            cover)    rendered="$art_cover" ;;
+            backdrop) ${lib.optionalString lockAlbumArtBackground ''rendered="$art_backdrop"''} ;;
+            cover)    ${lib.optionalString lockAlbumArtCover ''rendered="$art_cover"''} ;;
             field)    rendered="$art_field" ;;
             palette)  rendered="$art_palette" ;;
           esac
@@ -1644,13 +1667,19 @@ lockNowPlaying = pkgs.writeShellApplication {
       # open in the worker would keep it waiting on the download after all the
       # trouble taken not to.
       if [ -n "$art_key" ]; then
-        for rendered in "$art_backdrop" "$art_cover" "$art_palette"; do
-          if [ ! -f "$rendered" ]; then
-            setsid -f ${lib.getExe lockAlbumArtFetch} "$art_url" \
-              </dev/null >/dev/null 2>&1 || true
-            break
-          fi
-        done
+        render_missing=false
+        [ -f "$art_palette" ] || render_missing=true
+        ${lib.optionalString lockAlbumArtBackground ''
+          [ -f "$art_backdrop" ] || render_missing=true
+        ''}
+        ${lib.optionalString lockAlbumArtCover ''
+          [ -f "$art_cover" ] || render_missing=true
+        ''}
+
+        if [ "$render_missing" = true ]; then
+          setsid -f ${lib.getExe lockAlbumArtFetch} "$art_url" \
+            </dev/null >/dev/null 2>&1 || true
+        fi
       fi
 
       # Write down the colours this track comes with, for the labels.
@@ -1682,7 +1711,11 @@ lockNowPlaying = pkgs.writeShellApplication {
         # four separate runs would be four separate rounds of MPRIS calls for
         # one question about one track.
         all)
-          for want in backdrop cover field palette; do
+          for want in ${lib.escapeShellArgs (
+            lib.optionals lockAlbumArtBackground [ "backdrop" ]
+            ++ lib.optionals lockAlbumArtCover [ "cover" ]
+            ++ [ "field" "palette" ]
+          )}; do
             value="$(answer "$want")"
             [ -z "$value" ] || printf '%s=%s\n' "$want" "$value"
           done
@@ -1916,12 +1949,10 @@ lockNowPlaying = pkgs.writeShellApplication {
     # the one that matches the wallpaper as it is now.
     rm -f "$runtime_dir"/hyprlock-wallpaper.*
 
-    # The background is the album cover of whatever is playing, and the
-    # wallpaper when nothing is. This is only its first frame: the reload
-    # command in the config below asks the same question every few seconds,
-    # which is what makes the lock screen follow the music while it sits
-    # there locked. Asking now also starts the render for a track that has
-    # never been locked on, so the answer is usually ready by that first tick.
+    # Ask once for every enabled album-art image and for the palette and field
+    # frame shared by the rest of the lock screen. A disabled background falls
+    # through to the wallpaper below; a disabled cover has no widget in the
+    # generated config.
     #
     # Under a `timeout` because this is the path that has to have the screen
     # locked before the machine suspends. lock-album-art bounds its own MPRIS
@@ -2043,6 +2074,7 @@ lockNowPlaying = pkgs.writeShellApplication {
         vibrancy = 0.16
         vibrancy_darkness = 0.12
 
+${lib.optionalString lockAlbumArtBackground ''
         # Follows the music. lock-album-art answers with the blurred cover of
         # whatever is playing and with the wallpaper when nothing is, so the
         # background changes with the track and comes back to the wallpaper
@@ -2057,6 +2089,7 @@ lockNowPlaying = pkgs.writeShellApplication {
         reload_time = 3
         reload_cmd = ${lib.getExe lockAlbumArt} backdrop
         crossfade_time = 0.9
+''}
     }
 
     # Quiet clock above the greeting.
@@ -2097,6 +2130,7 @@ lockNowPlaying = pkgs.writeShellApplication {
         valign = center
     }
 
+${lib.optionalString lockAlbumArtCover ''
     # The cover of whatever is playing, sitting just above the track name.
     # The rounded corners, the hairline edge and the shadow are all in the
     # image rather than in the options below, which is what lets nothing
@@ -2123,6 +2157,7 @@ lockNowPlaying = pkgs.writeShellApplication {
         halign = center
         valign = bottom
     }
+''}
 
     # The active MPRIS track. This remains blank when there is no recognized
     # media session, so the lock screen does not grow an empty placeholder.

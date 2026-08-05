@@ -3,11 +3,11 @@
     "dotfiles": {
       "flake": false,
       "locked": {
-        "lastModified": 1785724170,
-        "narHash": "sha256-3fnXXwPEMyQpto23+pIm+whRfr5NNU3/Bt0FY7n7tx0=",
+        "lastModified": 1785860967,
+        "narHash": "sha256-b1h4Ro8shG57pBgRvA1nYbXfSyspJkxVzI/eEJXxu7Y=",
         "owner": "joshrandall8478",
         "repo": "dotfiles",
-        "rev": "38005084628167cf27a0bd5064be4ccc8688710e",
+        "rev": "c7f30a11cb299f9b182c06271d61dbb69ee76a1d",
         "type": "github"
       },
       "original": {
@@ -38,11 +38,11 @@
     },
     "nixpkgs": {
       "locked": {
-        "lastModified": 1785692966,
-        "narHash": "sha256-vUfIeBEfpbAfZ5zjgIkYk7eHBeVfCYVjLbWnMkseYnk=",
+        "lastModified": 1785828668,
+        "narHash": "sha256-8fsyqeO+mJqvIzeO4xIpgJe/f7MTbbVTEC6RT6WSXNs=",
         "owner": "NixOS",
         "repo": "nixpkgs",
-        "rev": "643809054d65fdd466a63e3155b8c498cb483c04",
+        "rev": "e72e4f299401a3689d4b3d5fc6496b11db7064eb",
         "type": "github"
       },
       "original": {
@@ -179,7 +179,7 @@
     "wallhaven-toplist": {
       "flake": false,
       "locked": {
-        "narHash": "sha256-kTuX4PFk64aIBJ8SN2TnQ40LWmCnW5uEB+X18252LpQ=",
+        "narHash": "sha256-VoTqPd9bTrozHWxXoWkE8jI+mLh757iURJRhvGzdZ3M=",
         "type": "file",
         "url": "https://wallhaven.cc/api/v1/search?atleast=1920x1080&categories=111&order=desc&purity=100&ratios=16x9%2C16x10&sorting=toplist&topRange=1M"
       },

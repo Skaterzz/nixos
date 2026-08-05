@@ -34,4 +34,7 @@
   local.niri.randomLockGreetings = false;
 
   local.waybar.cavaInBar = true;
+  
+  local.niri.lockAlbumArtBackground = true;
+  local.niri.lockAlbumArtCover = true;
 }

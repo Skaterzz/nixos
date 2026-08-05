@@ -1178,17 +1178,18 @@ lockNowPlaying = pkgs.writeShellApplication {
     }
   '';
 
-  # The reading half of lockColorsPath: the current colours, falling back to
-  # the theme's when nothing has written any yet — which is the case for a
-  # `lock-now-playing` run from a shell, and for the fraction of a second at
-  # the start of a lock before the first answer lands.
+  # The colours labels should use at runtime. Album colours only participate
+  # when the album-art background does; the independent cover-card option may
+  # still show the sleeve without repainting any text.
   readLockColors = ''
-    ${lockColorsPath}
-    ${lockPaletteColors}
-
     ${lockThemeColors}
 
-    lock_palette_colors "$lock_colors"
+    ${lib.optionalString lockAlbumArtBackground ''
+      ${lockColorsPath}
+      ${lockPaletteColors}
+
+      lock_palette_colors "$lock_colors"
+    ''}
   '';
 
   # Where rendered album art lives, and how a track maps onto a file name.
@@ -1328,13 +1329,14 @@ lockNowPlaying = pkgs.writeShellApplication {
       art_paths "$art_url"
 
       render_complete() {
-        [ -f "$art_palette" ] || return 1
         ${lib.optionalString lockAlbumArtBackground ''
           [ -f "$art_backdrop" ] || return 1
+          [ -f "$art_palette" ] || return 1
         ''}
         ${lib.optionalString lockAlbumArtCover ''
           [ -f "$art_cover" ] || return 1
         ''}
+        return 0
       }
 
       if render_complete; then
@@ -1586,9 +1588,11 @@ lockNowPlaying = pkgs.writeShellApplication {
     text = ''
       ${albumArtPaths}
       ${hyprlockWallpaper}
-      ${lockColorsPath}
-      ${lockPaletteColors}
-      ${lockThemeColors}
+      ${lib.optionalString lockAlbumArtBackground ''
+        ${lockColorsPath}
+        ${lockPaletteColors}
+        ${lockThemeColors}
+      ''}
       ${mprisSnapshot}
 
       mode="''${1:-}"
@@ -1615,8 +1619,8 @@ lockNowPlaying = pkgs.writeShellApplication {
           case "$want" in
             backdrop) ${lib.optionalString lockAlbumArtBackground ''rendered="$art_backdrop"''} ;;
             cover)    ${lib.optionalString lockAlbumArtCover ''rendered="$art_cover"''} ;;
-            field)    rendered="$art_field" ;;
-            palette)  rendered="$art_palette" ;;
+            field)    ${lib.optionalString lockAlbumArtBackground ''rendered="$art_field"''} ;;
+            palette)  ${lib.optionalString lockAlbumArtBackground ''rendered="$art_palette"''} ;;
           esac
 
           if [ -f "$rendered" ]; then
@@ -1668,9 +1672,9 @@ lockNowPlaying = pkgs.writeShellApplication {
       # trouble taken not to.
       if [ -n "$art_key" ]; then
         render_missing=false
-        [ -f "$art_palette" ] || render_missing=true
         ${lib.optionalString lockAlbumArtBackground ''
           [ -f "$art_backdrop" ] || render_missing=true
+          [ -f "$art_palette" ] || render_missing=true
         ''}
         ${lib.optionalString lockAlbumArtCover ''
           [ -f "$art_cover" ] || render_missing=true
@@ -1682,28 +1686,30 @@ lockNowPlaying = pkgs.writeShellApplication {
         fi
       fi
 
-      # Write down the colours this track comes with, for the labels.
-      #
-      # Here rather than in a script of their own because this is the one
-      # thing Hyprlock already runs on a timer that knows which track is
-      # playing — so the labels get to be a file read instead of an MPRIS
-      # round trip each, and every one of them changes colour on the same
-      # tick as the background does. Written to a temporary file and renamed,
-      # because a widget with no monitor runs one copy of this per output and
-      # they land on top of each other.
-      lock_palette_colors "$(answer palette)"
+      ${lib.optionalString lockAlbumArtBackground ''
+        # Write down the colours this track comes with, for the labels.
+        #
+        # Here rather than in a script of their own because this is the one
+        # thing Hyprlock already runs on a timer that knows which track is
+        # playing — so the labels get to be a file read instead of an MPRIS
+        # round trip each, and every one of them changes colour on the same
+        # tick as the background does. Written to a temporary file and renamed,
+        # because a widget with no monitor runs one copy of this per output and
+        # they land on top of each other.
+        lock_palette_colors "$(answer palette)"
 
-      lock_colors_tmp="$lock_colors.$$.tmp"
+        lock_colors_tmp="$lock_colors.$$.tmp"
 
-      {
-        printf 'LOCK_BG=%s\n' "$LOCK_BG"
-        printf 'LOCK_ACCENT=%s\n' "$LOCK_ACCENT"
-        printf 'LOCK_ACCENT_DIM=%s\n' "$LOCK_ACCENT_DIM"
-        printf 'LOCK_FG=%s\n' "$LOCK_FG"
-        printf 'LOCK_FG_DIM=%s\n' "$LOCK_FG_DIM"
-      } > "$lock_colors_tmp"
+        {
+          printf 'LOCK_BG=%s\n' "$LOCK_BG"
+          printf 'LOCK_ACCENT=%s\n' "$LOCK_ACCENT"
+          printf 'LOCK_ACCENT_DIM=%s\n' "$LOCK_ACCENT_DIM"
+          printf 'LOCK_FG=%s\n' "$LOCK_FG"
+          printf 'LOCK_FG_DIM=%s\n' "$LOCK_FG_DIM"
+        } > "$lock_colors_tmp"
 
-      mv -f "$lock_colors_tmp" "$lock_colors"
+        mv -f "$lock_colors_tmp" "$lock_colors"
+      ''}
 
       case "$mode" in
         # Everything `lock-session` needs, in one run. It asks on the path
@@ -1711,11 +1717,14 @@ lockNowPlaying = pkgs.writeShellApplication {
         # four separate runs would be four separate rounds of MPRIS calls for
         # one question about one track.
         all)
-          for want in ${lib.escapeShellArgs (
+          wants=( ${lib.escapeShellArgs (
             lib.optionals lockAlbumArtBackground [ "backdrop" ]
             ++ lib.optionals lockAlbumArtCover [ "cover" ]
-            ++ [ "field" "palette" ]
-          )}; do
+            ++ [ "field" ]
+            ++ lib.optionals lockAlbumArtBackground [ "palette" ]
+          )} )
+
+          for want in "''${wants[@]}"; do
             value="$(answer "$want")"
             [ -z "$value" ] || printf '%s=%s\n' "$want" "$value"
           done
@@ -1866,7 +1875,9 @@ lockNowPlaying = pkgs.writeShellApplication {
     fi
 
     ${lockThemeColors}
-    ${lockPaletteColors}
+    ${lib.optionalString lockAlbumArtBackground ''
+      ${lockPaletteColors}
+    ''}
 
     runtime_dir="''${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
     config="$runtime_dir/hyprlock-niri.conf"
@@ -1949,10 +1960,10 @@ lockNowPlaying = pkgs.writeShellApplication {
     # the one that matches the wallpaper as it is now.
     rm -f "$runtime_dir"/hyprlock-wallpaper.*
 
-    # Ask once for every enabled album-art image and for the palette and field
-    # frame shared by the rest of the lock screen. A disabled background falls
-    # through to the wallpaper below; a disabled cover has no widget in the
-    # generated config.
+    # Ask once for every enabled album-art image and for the field frame. The
+    # palette and its album-coloured frame only participate with the album-art
+    # background; a disabled background leaves every colour on the theme even
+    # when the independent cover card remains enabled.
     #
     # Under a `timeout` because this is the path that has to have the screen
     # locked before the machine suspends. lock-album-art bounds its own MPRIS
@@ -1961,14 +1972,18 @@ lockNowPlaying = pkgs.writeShellApplication {
     backdrop=""
     cover=""
     field=""
-    palette=""
+    ${lib.optionalString lockAlbumArtBackground ''
+      palette=""
+    ''}
 
     while IFS='=' read -r kind value; do
       case "$kind" in
         backdrop) backdrop="$value" ;;
         cover)    cover="$value" ;;
         field)    field="$value" ;;
-        palette)  palette="$value" ;;
+        ${lib.optionalString lockAlbumArtBackground ''
+          palette) palette="$value" ;;
+        ''}
       esac
     done < <(timeout 2 ${lib.getExe lockAlbumArt} all || true)
 
@@ -2008,16 +2023,18 @@ lockNowPlaying = pkgs.writeShellApplication {
       field_inner="''${LOCK_BG}d6"
     fi
 
-    # And the album's own colours over the theme's, when the cover had a
-    # colour confident enough to take. `album-palette.awk` decides that and
-    # writes the file.
-    #
-    # This is the lock screen's *first* set of colours rather than its only
-    # one: `lock-album-art` writes the same answer out again on every tick,
-    # and the labels below re-read it — so what is fixed here is only what
-    # cannot follow, which is the dots inside the field and the red and yellow
-    # of a failed password and a caps-lock warning.
-    lock_palette_colors "$palette"
+    ${lib.optionalString lockAlbumArtBackground ''
+      # And the album's own colours over the theme's, when the cover had a
+      # colour confident enough to take. `album-palette.awk` decides that and
+      # writes the file.
+      #
+      # This is the lock screen's *first* set of colours rather than its only
+      # one: `lock-album-art` writes the same answer out again on every tick,
+      # and the labels below re-read it — so what is fixed here is only what
+      # cannot follow, which is the dots inside the field and the red and yellow
+      # of a failed password and a caps-lock warning.
+      lock_palette_colors "$palette"
+    ''}
 
     # Read straight for the swaylock fallback at the bottom, which stays on
     # the wallpaper: that is the locker of last resort, and routing the album

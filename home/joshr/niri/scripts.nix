@@ -2074,7 +2074,7 @@ lockNowPlaying = pkgs.writeShellApplication {
         vibrancy = 0.16
         vibrancy_darkness = 0.12
 
-${lib.optionalString lockAlbumArtBackground ''
+    ${lib.optionalString lockAlbumArtBackground ''
         # Follows the music. lock-album-art answers with the blurred cover of
         # whatever is playing and with the wallpaper when nothing is, so the
         # background changes with the track and comes back to the wallpaper
@@ -2089,7 +2089,7 @@ ${lib.optionalString lockAlbumArtBackground ''
         reload_time = 3
         reload_cmd = ${lib.getExe lockAlbumArt} backdrop
         crossfade_time = 0.9
-''}
+    ''}
     }
 
     # Quiet clock above the greeting.
@@ -2130,7 +2130,7 @@ ${lib.optionalString lockAlbumArtBackground ''
         valign = center
     }
 
-${lib.optionalString lockAlbumArtCover ''
+    ${lib.optionalString lockAlbumArtCover ''
     # The cover of whatever is playing, sitting just above the track name.
     # The rounded corners, the hairline edge and the shadow are all in the
     # image rather than in the options below, which is what lets nothing
@@ -2157,7 +2157,7 @@ ${lib.optionalString lockAlbumArtCover ''
         halign = center
         valign = bottom
     }
-''}
+    ''}
 
     # The active MPRIS track. This remains blank when there is no recognized
     # media session, so the lock screen does not grow an empty placeholder.

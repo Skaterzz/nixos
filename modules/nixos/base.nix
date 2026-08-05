@@ -36,39 +36,47 @@ in
   # This has to be set as a module option so it applies to the system pkgs
   # (and, via home-manager.useGlobalPkgs, to joshr's profile too).
   nixpkgs.config.allowUnfree = true;
-  nix = {
-    # 1. Automatically run garbage collection on a schedule
-    gc = {
-      automatic = true;
-      dates = "daily";
-      options = "--delete-older-than 7d"; # Fallback safety net
-    };
-
+  nix.gc = {
+    automatic = true;
+  
+    # Weekly, Sunday morning in the machine's local timezone.
+    dates = "Sun 04:00";
+  
+    # This is already the default, but explicit is clearer.
+    persistent = true;
+  
+    # Avoid GC beginning immediately during boot when the scheduled run
+    # was missed. Also prevents several machines starting simultaneously.
+    randomizedDelaySec = "1h";
+  
+    # Preserve approximately two weeks of rollback history.
+    options = "--delete-older-than 14d";
   };
-
-
   # Create a custom daily service that safely handles "+10"
-systemd.services.nix-clean-generations = {
-  description = "Clean all profiles down to the last 10 generations and run GC";
-  startAt = "daily";
-  serviceConfig = {
-    Type = "oneshot";
-    ExecStart = pkgs.writeShellScript "nix-clean" ''
-      # 1. Clear system profile generations down to maxGenerations
-      ${pkgs.nix}/bin/nix-env --profile /nix/var/nix/profiles/system --delete-generations +${toString cfg.maxGenerations}
+# systemd.services.nix-clean-generations = {
+#   description = "Clean all profiles down to the last ${toString cfg.maxGenerations} generations and run GC";
+#   startAt = "daily";
+#   serviceConfig = {
+#     Type = "oneshot";
+#     ExecStart = pkgs.writeShellScript "nix-clean" ''
+#       # 1. Clear system profile generations down to maxGenerations
+#       ${pkgs.nix}/bin/nix-env --profile /nix/var/nix/profiles/system --delete-generations +${toString cfg.maxGenerations}
+# 
+#       # 2. Clear all per-user profiles down to maxGenerations
+#       for profile in /nix/var/nix/profiles/per-user/*; do
+#         if [ -d "$profile" ]; then
+#           ${pkgs.nix}/bin/nix-env --profile "$profile/profile" --delete-generations +${toString cfg.maxGenerations}
+#         fi
+#       done
+# 
+#       # 3. Collect garbage to free up physical space
+#       ${pkgs.nix}/bin/nix-store --gc
+#     '';
+#   };
+# };
 
-      # 2. Clear all per-user profiles down to maxGenerations
-      for profile in /nix/var/nix/profiles/per-user/*; do
-        if [ -d "$profile" ]; then
-          ${pkgs.nix}/bin/nix-env --profile "$profile/profile" --delete-generations +${toString cfg.maxGenerations}
-        fi
-      done
-
-      # 3. Collect garbage to free up physical space
-      ${pkgs.nix}/bin/nix-store --gc
-    '';
-  };
-};
+# If the pc was shut off past the clean time, make the timer run the service.
+systemd.timers.nix-clean-generations.timerConfig.Persistent = true;
 
   # Building the NixOS manual is one of the slower steps of a rebuild and it
   # runs nearly every time. Web docs cover the same ground. Set this back to

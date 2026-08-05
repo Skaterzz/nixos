@@ -12,6 +12,7 @@
 {
   imports = [
     ./home.nix
+    ./airpods-media-controls.nix
     ./desktop-apps.nix
     ./niri
     ./niri/privacy.nix

@@ -10,6 +10,7 @@
 {
   imports = [
     ./home.nix
+    ./airpods-media-controls.nix
     ./niri
     ./niri/privacy.nix
     ./displays/laptop.nix

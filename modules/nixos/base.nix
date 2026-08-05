@@ -2,7 +2,7 @@
 
 
 let 
-  maxGenerations = 7;
+  cfg = config.local.boot;
 in
 {
   # Power behaviour that every host wants: no idle suspend while on mains.
@@ -55,12 +55,12 @@ systemd.services.nix-clean-generations = {
     Type = "oneshot";
     ExecStart = pkgs.writeShellScript "nix-clean" ''
       # 1. Clear system profile generations down to maxGenerations
-      ${pkgs.nix}/bin/nix-env --profile /nix/var/nix/profiles/system --delete-generations +10
+      ${pkgs.nix}/bin/nix-env --profile /nix/var/nix/profiles/system --delete-generations +${cfg.maxGenerations}
 
       # 2. Clear all per-user profiles down to maxGenerations
       for profile in /nix/var/nix/profiles/per-user/*; do
         if [ -d "$profile" ]; then
-          ${pkgs.nix}/bin/nix-env --profile "$profile/profile" --delete-generations +10
+          ${pkgs.nix}/bin/nix-env --profile "$profile/profile" --delete-generations +${cfg.maxGenerations}
         fi
       done
 

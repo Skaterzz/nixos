@@ -474,7 +474,7 @@ in
       boot.loader.limine = {
         enable = true;
 
-	maxGenerations = 10;
+	      maxGenerations = ${cfg.maxGenerations};
         # Not negotiable while limine-theme-sync exists: enrolling the config
         # hashes it into the bootloader, and the next theme change would then
         # halt the machine at the boot menu. See the header note.

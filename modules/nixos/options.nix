@@ -34,6 +34,12 @@
     '';
   };
 
+  options.local.boot.maxGenerations = lib.mkOption {
+    type = lib.types.ints.positives;
+    default = 7;
+    description = "Maximum amount of generations shown in limine, and most amount kept on system (not cleared by systemd)";
+  };
+
   options.local.boot.loader = lib.mkOption {
     type = lib.types.enum [
       "limine"

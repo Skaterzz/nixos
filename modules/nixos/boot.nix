@@ -88,6 +88,7 @@
 # stops a file from being swapped underneath it at runtime.
 let
   cfg = config.local.boot;
+  maxGenerations = cfg.maxGenerations;
 
   themeSet = import ../../home/joshr/niri/themes.nix { inherit lib; };
   inherit (themeSet) themes;
@@ -474,7 +475,7 @@ in
       boot.loader.limine = {
         enable = true;
 
-	      maxGenerations = ${cfg.maxGenerations};
+	      maxGenerations = cfg.maxGenerations;
         # Not negotiable while limine-theme-sync exists: enrolling the config
         # hashes it into the bootloader, and the next theme change would then
         # halt the machine at the boot menu. See the header note.

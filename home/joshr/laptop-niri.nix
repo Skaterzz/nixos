@@ -22,6 +22,7 @@
     ./firefox.nix
     ./browser.nix
     ./wallhaven.nix
+    ./emu-hackathon.nix
   ];
 
   # No OpenRGB tray applet at login here, and nothing to switch off to get

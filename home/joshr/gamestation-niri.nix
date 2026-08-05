@@ -27,6 +27,7 @@
     ./firefox.nix
     ./browser.nix
     ./wallhaven.nix
+    ./emu-hackathon.nix
   ];
 
   local.waybar.cavaInBar = true;

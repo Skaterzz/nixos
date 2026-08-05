@@ -1843,9 +1843,73 @@ lockNowPlaying = pkgs.writeShellApplication {
 
     # The first name is baked into this script from
     # users.users.<name>.description during Nix evaluation, already stripped
-    # of everything that could break the line it lands in. Every route to the
-    # lock screen therefore generates the same greeting.
+    # of everything that could break the line it lands in.
     first_name=${lib.escapeShellArg safeFirstName}
+    greeting="Welcome, $first_name"
+
+    ${lib.optionalString config.local.niri.randomLockGreetings ''
+      # Pick once per lock rather than on the label's refresh timer. The one
+      # `date` call is the only process this adds; the list and the draw use
+      # Bash builtins, so the greeting costs nothing while the lock screen is
+      # up. With the option off, Nix leaves this whole block out.
+      greetings=(
+        "Welcome, $first_name."
+        "Back at it again, $first_name."
+        "Nice to see you, $first_name."
+        "Ready when you are, $first_name."
+        "Let's keep going, $first_name."
+      )
+
+      read -r hour weekday < <(date '+%H %u')
+
+      # Morning is 05:00-11:59, afternoon is 12:00-17:59, and evening also
+      # covers the quiet hours after midnight. Only greetings for the current
+      # part of the day enter the draw.
+      case "$hour" in
+        05 | 06 | 07 | 08 | 09 | 10 | 11)
+          daypart=Morning
+          greetings+=(
+            "Good Morning, $first_name."
+            "Fresh start, $first_name."
+          )
+          ;;
+        12 | 13 | 14 | 15 | 16 | 17)
+          daypart=Afternoon
+          greetings+=(
+            "Good Afternoon, $first_name."
+            "Keep the momentum going, $first_name."
+          )
+          ;;
+        *)
+          daypart=Evening
+          greetings+=(
+            "Good Evening, $first_name."
+            "The night shift begins, $first_name."
+          )
+          ;;
+      esac
+
+      # Weekday mornings and afternoons lean toward work and coding. Evenings
+      # and the whole weekend lean toward games instead.
+      if [ "$weekday" -le 5 ] && [ "$daypart" != Evening ]; then
+        greetings+=(
+          "Coffee, then code, $first_name."
+          "Let's build something brilliant, $first_name."
+          "Ready to ship something, $first_name?"
+        )
+      else
+        greetings+=(
+          "Where we dropping, $first_name?"
+          "Stand by for Titanfall, $first_name."
+          "Late night coding, $first_name?"
+          "Kill them all, $first_name."
+        )
+      fi
+
+      greeting_count="''${#greetings[@]}"
+      greeting_index=$((RANDOM % greeting_count))
+      greeting="''${greetings[$greeting_index]}"
+    ''}
 
     ${hyprlockWallpaper}
 
@@ -2019,10 +2083,12 @@ lockNowPlaying = pkgs.writeShellApplication {
         valign = center
     }
 
-    # The account's configured full name supplies this first name.
+    # With randomLockGreetings off this remains the original welcome; with it
+    # on, the selection is made once above and kept until the lock is dismissed.
+    # The refresh remains because lock-label also follows the album palette.
     label {
         monitor =
-        text = cmd[update:3000] ${lib.getExe lockLabel} "Welcome, $first_name"
+        text = cmd[update:3000] ${lib.getExe lockLabel} "$greeting"
         color = rgb($LOCK_FG)
         font_size = 40
         font_family = Poppins

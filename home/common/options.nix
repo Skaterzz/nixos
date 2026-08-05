@@ -25,6 +25,16 @@
     '';
   };
 
+  options.local.niri.randomLockGreetings = lib.mkOption {
+    type = lib.types.bool;
+    default = false;
+    description = ''
+      Whether Hyprlock chooses a randomized, time-aware greeting each time the
+      niri session locks. When disabled, it always shows the ordinary
+      "Welcome, <first name>" greeting.
+    '';
+  };
+
   # Per-host display layout for niri. Rendered into `output` blocks in
   # config.kdl by home/joshr/niri/niri.nix.
   #

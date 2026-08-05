@@ -59,4 +59,6 @@
     # NOT imported: ./spicetify.nix. Spotify, patched — a from-source theme
     # build for a machine with no speakers of its own.
   ];
+
+  local.niri.randomLockGreetings = true;
 }

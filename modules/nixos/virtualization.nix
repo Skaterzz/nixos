@@ -36,6 +36,26 @@
       # Software TPM. The other half of what Windows 11 refuses to install
       # without, and harmless for guests that don't ask.
       swtpm.enable = true;
+      verbatimConfig = ''
+      namespaces = []
+
+      cgroup_device_acl = [
+        "/dev/null",
+        "/dev/full",
+        "/dev/zero",
+        "/dev/random",
+        "/dev/urandom",
+        "/dev/ptmx",
+        "/dev/kvm",
+
+        "/dev/nvidiactl",
+        "/dev/nvidia0",
+        "/dev/nvidia-modeset",
+        "/dev/nvidia-uvm",
+
+        "/dev/dri/renderD128"
+      ]
+    '';
     };
   };
 

@@ -1,5 +1,9 @@
 { config, lib, pkgs, ... }:
 
+
+let 
+  maxGenerations = 7;
+in
 {
   # Power behaviour that every host wants: no idle suspend while on mains.
   # See modules/nixos/power.nix and local.power.noAutoSleepOnAC.
@@ -36,11 +40,35 @@
     # 1. Automatically run garbage collection on a schedule
     gc = {
       automatic = true;
-      dates = "weekly";
+      dates = "daily";
       options = "--delete-older-than 7d"; # Fallback safety net
     };
 
   };
+
+
+  # Create a custom daily service that safely handles "+10"
+systemd.services.nix-clean-generations = {
+  description = "Clean all profiles down to the last 10 generations and run GC";
+  startAt = "daily";
+  serviceConfig = {
+    Type = "oneshot";
+    ExecStart = pkgs.writeShellScript "nix-clean" ''
+      # 1. Clear system profile generations down to maxGenerations
+      ${pkgs.nix}/bin/nix-env --profile /nix/var/nix/profiles/system --delete-generations +10
+
+      # 2. Clear all per-user profiles down to maxGenerations
+      for profile in /nix/var/nix/profiles/per-user/*; do
+        if [ -d "$profile" ]; then
+          ${pkgs.nix}/bin/nix-env --profile "$profile/profile" --delete-generations +10
+        fi
+      done
+
+      # 3. Collect garbage to free up physical space
+      ${pkgs.nix}/bin/nix-store --gc
+    '';
+  };
+};
 
   # Building the NixOS manual is one of the slower steps of a rebuild and it
   # runs nearly every time. Web docs cover the same ground. Set this back to

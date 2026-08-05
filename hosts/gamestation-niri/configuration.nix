@@ -124,6 +124,10 @@
     # it has earned its disk space. `ollama list` says what is actually down.
     ollama.models = [
       "qwen3"
+      "qwen2.5-coder:14b"
+      "deepseek-coder-v2"
+      "deepseek-r1:14b"
+      "deepseek-r1:8b"
       #"qwen3-coder"
       #"qwen3-coder-next"
       "nomic-embed-text"

@@ -1,4 +1,4 @@
-{ ... }:
+{ lib, niriScripts, ... }:
 
 # joshr's home profile on the laptop, niri session.
 #
@@ -37,4 +37,5 @@
   # either. If a docked keyboard or mouse ever needs it, `nix run nixpkgs#openrgb`
   # is a one-off, and importing modules/nixos/gaming.nix on this host is the
   # permanent version.
+  services.swayidle.events.lock = lib.mkForce (lib.getExe niriScripts.lockBlank);
 }

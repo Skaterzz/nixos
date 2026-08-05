@@ -31,7 +31,7 @@
     ./emu-hackathon.nix
   ];
 
-  local.niri.randomLockGreetings = true;
+  local.niri.randomLockGreetings = false;
 
   local.waybar.cavaInBar = true;
 }

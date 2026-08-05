@@ -26,7 +26,7 @@
     ./emu-hackathon.nix
   ];
 
-  local.niri.randomLockGreetings = true;
+  local.niri.randomLockGreetings = false;
 
   # No OpenRGB tray applet at login here, and nothing to switch off to get
   # that: `local.openrgb.autostart` defaults to whether the OpenRGB daemon is

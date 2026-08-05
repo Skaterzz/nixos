@@ -60,5 +60,5 @@
     # build for a machine with no speakers of its own.
   ];
 
-  local.niri.randomLockGreetings = true;
+  local.niri.randomLockGreetings = false;
 }

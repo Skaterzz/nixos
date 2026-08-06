@@ -100,6 +100,7 @@ in
     kdePackages.kcalc
     thunderbird
     kdePackages.kate
+    vesktop
 
     # Provides kbuildsycoca6, KDE's desktop-entry and MIME service cache.
     kdePackages.kservice

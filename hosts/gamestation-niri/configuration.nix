@@ -112,7 +112,7 @@
   # hand out — it compiles here. `local.ai.ollama.acceleration = "cpu";` skips
   # that if you'd rather see the rest working first.
   local.ai = {
-    enable = false;
+    enable = true;
 
     # Downloaded in the background after the server comes up, not built — a
     # rebuild doesn't wait on them. qwen3 is here rather than a better-known

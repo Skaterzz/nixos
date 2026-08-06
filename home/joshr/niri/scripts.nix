@@ -1891,13 +1891,43 @@ lockNowPlaying = pkgs.writeShellApplication {
     first_name=${lib.escapeShellArg safeFirstName}
     greeting="Welcome, $first_name."
 
+    ${lib.optionalString (config.local.niri.timeBasedLockGreetings || config.local.niri.randomLockGreetings) ''
+      greetings=("Welcome, $first_name.")
+      read -r hour weekday < <(date '+%H %u')
+
+    # Morning is 05:00-11:59, afternoon is 12:00-17:59, and evening also
+      # covers the quiet hours after midnight. Only greetings for the current
+      # part of the day enter the draw.
+
+
+      case "$hour" in
+        05 | 06 | 07 | 08 | 09 | 10 | 11)
+          daypart=Morning
+          greetings+=(
+            "Good Morning, $first_name."
+          )
+          ;;
+        12 | 13 | 14 | 15 | 16 | 17)
+          daypart=Afternoon
+          greetings+=(
+            "Good Afternoon, $first_name."
+          )
+          ;;
+        *)
+          daypart=Evening
+          greetings+=(
+            "Good Evening, $first_name."
+          )
+          ;;
+      esac
+    ''
+    }
     ${lib.optionalString config.local.niri.randomLockGreetings ''
       # Pick once per lock rather than on the label's refresh timer. The one
       # `date` call is the only process this adds; the list and the draw use
       # Bash builtins, so the greeting costs nothing while the lock screen is
       # up. With the option off, Nix leaves this whole block out.
-      greetings=(
-        "Welcome, $first_name."
+      greetings+=(
         "Back at it again, $first_name."
         "Nice to see you, $first_name."
         "Ready when you are, $first_name."
@@ -1912,21 +1942,18 @@ lockNowPlaying = pkgs.writeShellApplication {
         05 | 06 | 07 | 08 | 09 | 10 | 11)
           daypart=Morning
           greetings+=(
-            "Good Morning, $first_name."
             "Fresh start, $first_name."
           )
           ;;
         12 | 13 | 14 | 15 | 16 | 17)
           daypart=Afternoon
           greetings+=(
-            "Good Afternoon, $first_name."
             "Let's keep it going, $first_name."
           )
           ;;
         *)
           daypart=Evening
           greetings+=(
-            "Good Evening, $first_name."
             "The night shift begins, $first_name."
           )
           ;;
@@ -1948,7 +1975,9 @@ lockNowPlaying = pkgs.writeShellApplication {
           "One more round, $first_name?"
         )
       fi
+    ''}
 
+    ${lib.optionalString (config.local.niri.timeBasedLockGreetings || config.local.niri.randomLockGreetings) ''
       greeting_count="''${#greetings[@]}"
       greeting_index=$((RANDOM % greeting_count))
       greeting="''${greetings[$greeting_index]}"

@@ -35,6 +35,14 @@
     '';
   };
 
+  options.local.niri.timeBasedLockGreetings = lib.mkOption {
+    type = lib.types.bool;
+    default = false;
+    description = ''
+      Gives time based greetings: "Good {Morning, Afternoon, Evening}, <first name>".
+    '';
+  }
+
   options.local.niri.lockAlbumArtBackground = lib.mkOption {
     type = lib.types.bool;
     default = true;

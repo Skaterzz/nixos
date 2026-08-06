@@ -27,6 +27,10 @@
   ];
 
   local.niri.randomLockGreetings = false;
+  local.niri.timeBasedLockGreetings = true;
+
+  local.niri.lockAlbumArtBackground = false;
+  local.niri.lockAlbumArtCover = true;
 
   # No OpenRGB tray applet at login here, and nothing to switch off to get
   # that: `local.openrgb.autostart` defaults to whether the OpenRGB daemon is

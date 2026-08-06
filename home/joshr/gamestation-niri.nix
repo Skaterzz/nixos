@@ -32,6 +32,7 @@
   ];
 
   local.niri.randomLockGreetings = false;
+  local.niri.timeBasedLockGreetings = true;
 
   local.waybar.cavaInBar = true;
   

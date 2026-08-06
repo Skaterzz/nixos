@@ -99,7 +99,7 @@
 
     # Turing (RTX 20xx) and newer can use the open kernel module instead.
     # Flip this to `true` if your card supports it.
-    open = false;
+    open = true;
 
     nvidiaSettings = true;
     package = config.boot.kernelPackages.nvidiaPackages.latest;

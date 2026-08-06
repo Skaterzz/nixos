@@ -1893,7 +1893,7 @@ lockNowPlaying = pkgs.writeShellApplication {
 
     ${lib.optionalString (config.local.niri.timeBasedLockGreetings || config.local.niri.randomLockGreetings) ''
       greetings=("Welcome, $first_name.")
-      read -r hour weekday < <(date '+%H %u')
+      read -r hour < <(date '+%H %u')
 
     # Morning is 05:00-11:59, afternoon is 12:00-17:59, and evening also
       # covers the quiet hours after midnight. Only greetings for the current
@@ -1933,7 +1933,7 @@ lockNowPlaying = pkgs.writeShellApplication {
         "Ready when you are, $first_name."
       )
 
-      read -r hour weekday < <(date '+%H %u')
+      read -r weekday < <(date '+%H %u')
 
       # Morning is 05:00-11:59, afternoon is 12:00-17:59, and evening also
       # covers the quiet hours after midnight. Only greetings for the current

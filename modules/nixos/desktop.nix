@@ -34,6 +34,34 @@
 
     hardware.enableAllFirmware = true;
 
+    # Power profiles — power-saver, balanced, performance — and the daemon
+    # that owns them.
+    #
+    # Here rather than in laptop.nix, where this used to live, because it
+    # isn't a laptop thing. This file is what the five graphical hosts have in
+    # common and every one of them draws the profile somewhere: under Plasma
+    # it is the switcher inside the battery applet (which is also where the
+    # `Meta+B` shortcut from the dotfiles lands), and under niri it is the
+    # `power-profiles-daemon` module in home/joshr/niri/waybar.nix. That
+    # module hides itself outright when nothing answers on the system bus, so
+    # on a host without this line the widget simply doesn't exist.
+    #
+    # The desk gets it for its own sake and not just to have something to
+    # draw: `amd_pstate` exposes the same three profiles to a desktop CPU, and
+    # "performance" before a game is the same switch the laptop uses to mean
+    # the opposite of "quiet". Where the CPU driver can't offer them, the
+    # daemon still answers with a placeholder and the widget still reads
+    # `balanced` — it just doesn't change anything.
+    #
+    # `powerprofilesctl` arrives with it (the NixOS module puts the package in
+    # environment.systemPackages), which is how to read or set the profile
+    # from a shell or a script.
+    #
+    # TLP and auto-cpufreq want the same knobs and nixpkgs asserts if either
+    # is on alongside this. Nothing in this config enables them, and picking
+    # one up later means turning this off in the same edit.
+    services.power-profiles-daemon.enable = true;
+
     # Firewall
     networking.firewall.allowedTCPPorts= [
       53317 # Localsend

@@ -18,10 +18,15 @@
   # Standby".
   boot.kernelParams = [ "mem_sleep_default=deep" ];
 
-  # Plasma's power-profile switcher (and the Meta+B shortcut carried over
-  # from the dotfiles' powerdevil config) talks to power-profiles-daemon.
-  # Note this conflicts with TLP — enable one or the other, not both.
-  services.power-profiles-daemon.enable = true;
+  # NOT here any more: services.power-profiles-daemon.enable.
+  #
+  # It moved to modules/nixos/desktop.nix, which all five graphical hosts
+  # import. The profile switcher is drawn on the desk as much as on the
+  # laptop — Plasma's battery applet holds it either way, and the niri bar has
+  # a module for it — so pinning the daemon to the laptop meant the desk had
+  # the widget and nothing to put in it. Stating it in both files instead
+  # would be the split ownership the lid settings at the bottom of this module
+  # exist to avoid.
 
   powerManagement.enable = true;
 

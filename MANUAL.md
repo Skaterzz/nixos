@@ -136,7 +136,9 @@ modules/nixos/
   disk-managements.nix            # gparted, KDE Partition Manager, GNOME Disks
   filesystems-management.nix      # btrfs-progs, exfatprogs, dosfstools, e2fsprogs
   openrgb.nix                     # OpenRGB daemon + re-applying the profile on resume
-  laptop.nix                       # power-profiles-daemon, upower, thermald, fstrim
+  desktop.nix                      # what the five graphical hosts share: bluetooth,
+                                   #   firmware, power-profiles-daemon, LocalSend
+  laptop.nix                       # upower, thermald, fstrim, deep sleep, the lid
   power.nix                        # no idle suspend while on mains power
   boot.nix                         # bootloader: limine theming + other-OS detection
   options.nix                      # local.boot.*, local.power.*, local.sddm.*,
@@ -227,9 +229,10 @@ home/joshr/niri/
 
 Left is the username, workspaces and the focused window title, centre is the
 clock and date, right is the tray, media controls, brightness, volume,
-bluetooth, network, battery, caps lock and gamemode while each is on, the idle
-inhibitor, then **lock** and **power** as a matched pair at the far end. Each
-group is its own rounded floating pill rather than one long bar.
+bluetooth, network, the battery and power profile as one widget, caps lock and
+gamemode while each is on, the idle inhibitor, then **lock** and **power** as a
+matched pair at the far end. Each group is its own rounded floating pill rather
+than one long bar.
 
 The right-hand group is deliberately tight — the modules carry no horizontal
 margin of their own, so the bar's 4px `spacing` is the entire gap between two
@@ -287,6 +290,68 @@ only one of them is the one you'd reach for. Toggling bluetooth off in blueman
 `.off`. `rfkill block bluetooth`, the airplane-mode route, lands on
 `.disabled`. Styling `.disabled` alone would leave the everyday case at full
 brightness, which is the trap in the name.
+
+**The power profile** sits immediately right of the charge, and the two are
+one widget rather than two neighbours: a leaf for power-saver, a pair of
+scales for balanced, a dial for performance. Click it or scroll it to step
+through them — up and left click go toward performance, down and right click
+toward saving. The tooltip names the profile and the driver actually carrying
+it, which is the part worth knowing: a profile the daemon accepts but has no
+driver for changes nothing.
+
+The two halves of that arrive by different routes, which is worth knowing
+before changing either. Clicking is the module's own handler and it *replaces*
+waybar's generic one, so an `on-click` in `waybar.nix` would do nothing and
+there's no way to point the click at a script. Scrolling isn't built in at
+all, and is the `power-profile` helper in `scripts.nix` wired to
+`on-scroll-up`/`on-scroll-down` — the same shape as the volume and brightness
+scrolls next door. They agree on direction because the script's list is in the
+daemon's own order, which is the order the click steps through.
+
+That helper takes the same `flock -n` guard as the brightness script, and here
+it earns it twice over: a touchpad flick is tens of scroll events a second,
+and without it two runs read the same profile and both step off it. It also
+reads the profile back after setting it rather than trusting the exit status,
+which is what makes scrolling wrap correctly on hardware that has no
+`performance` profile — otherwise scrolling up from balanced there would
+appear to do nothing, for ever. A run is a few hundred milliseconds because
+`powerprofilesctl` is a Python program talking over D-Bus, and that is what
+rate-limits the scroll to a speed you can follow.
+
+There's no OSD on it, where the volume and brightness scrolls raise one. Those
+are levels you change from a media key with your eyes somewhere else; this
+only moves when the pointer is on the widget, and the widget has already
+changed glyph and colour by the time a pop-up could appear.
+
+Three different silhouettes rather than one needle in three positions,
+because a dial a few degrees further round isn't something you read out of the
+corner of your eye at 13px. The colours are the bar's existing vocabulary and
+not a new one — the accent for power-saver, which is what gamemode wears for
+"a thing you chose"; plain `@fg` for balanced, the default; and warn for
+performance, which is what the idle inhibitor wears for a mode you can forget
+you left on, and that's exactly what performance is on a laptop. `@fg-dim` is
+the obvious pick for power-saver and is deliberately not used: dim on this bar
+means *off* — the muted sink, the powered-down bluetooth radio — and
+power-saver is a profile that's emphatically on.
+
+"One widget" is a `group/` in `waybar.nix`: a box holding both modules with no
+spacing of its own, taking one slot in the bar, so the two halves meet flush
+where every other neighbouring pair carries the bar's 4px. (Its `orientation`
+has to be spelled out. waybar's default is *orthogonal to the parent*, which
+in a top bar means stacking the two vertically inside 34px.) They're still two
+modules because waybar has none that knows both, and a custom one that did
+would have to reimplement what `battery` already does — repainting on udev
+events from the power supply rather than on a timer, and putting the `warning`
+and `critical` classes on the pill at 30% and 15%. That's the same argument
+the `backlight` module makes for not going custom.
+
+None of it is conditional on the host. `battery` hides itself where there's no
+battery and `power-profiles-daemon` hides itself when nothing answers on the
+system bus, so the laptop draws both halves and the desk draws the profile
+alone, looking like any other pill. The daemon is enabled for every graphical
+host in `modules/nixos/desktop.nix`; without it the module isn't on the bar at
+all. `powerprofilesctl` comes with it, which is how to read or set the profile
+from a shell.
 
 **Caps lock** is one glyph between the battery and the idle inhibitor, in the
 theme's warn colour, and it is on the bar *only* while caps lock is on. The
@@ -3418,9 +3483,33 @@ wrong for Optimus hybrids. If the laptop does have an NVIDIA chip, read the
 comment at the bottom of `hosts/laptop/configuration.nix`: hybrids want PRIME
 offload, not that module as written.
 
-**Power.** `modules/nixos/laptop.nix` adds power-profiles-daemon (which backs
-Plasma's power-profile switcher and the `Meta+B` shortcut from the dotfiles),
-upower, thermald and fstrim.
+**Power.** `modules/nixos/laptop.nix` adds upower, thermald, fstrim, deep
+sleep and the lid handling.
+
+power-profiles-daemon used to be there too and is now in
+`modules/nixos/desktop.nix`, which all five graphical hosts import. The
+profile switcher is drawn on the desk as much as on the laptop — under Plasma
+it is the selector inside the battery applet, which is also what the `Meta+B`
+shortcut from the dotfiles talks to, and under niri it's the bar module
+described above — so pinning the daemon to the laptop meant the desk had a
+widget with nothing to put in it. The desk earns it in its own right anyway:
+`amd_pstate` offers a desktop CPU the same three profiles, and "performance"
+before a game is the same switch the laptop uses to mean the opposite of
+"quiet". Where the CPU driver can't offer them the daemon still answers with a
+placeholder, so the widget reads `balanced` and switching it changes nothing.
+
+Under Plasma there is nothing to add to the panel for it. KDE ships no
+standalone power-profile applet — the selector is part of
+`org.kde.plasma.battery` ("Power and Battery"), which `home/joshr/plasma.nix`
+already keeps in the system tray's `shown` list on both Plasma hosts, so it's
+visible whether or not the machine has a battery. It swaps its tray icon per
+profile — a leaf for power-saver, a dial for balanced, the performance glyph
+for performance — and badges the battery icon with the profile where there is
+a battery, so the "which profile am I in" reading the niri bar gives is
+already there. The daemon was the only piece missing on the desk.
+
+It conflicts with TLP and auto-cpufreq, which nixpkgs asserts on. Neither is
+enabled here; picking one up later means turning this off in the same edit.
 
 **Kernel command line.** `hosts/gamestation/kernel-params.nix` is imported by
 both desk hosts — it's the same physical box, so the flags belong to the

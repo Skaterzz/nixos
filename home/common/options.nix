@@ -62,6 +62,23 @@
     '';
   };
 
+  options.local.niri.lockBatteryIndicator = lib.mkOption {
+    type = lib.types.bool;
+    default = true;
+    description = ''
+      Whether Hyprlock shows the battery charge in the bottom-right corner of
+      the lock screen.
+
+      On by default, and safe to leave on everywhere: the battery has to be
+      found before it can be drawn. `lock-session` looks for a system battery
+      each time it writes the config and leaves the widget out of the file
+      entirely when the machine hasn't got one, so a desk draws nothing here
+      whatever this is set to — which is also why there is no per-host `false`
+      for the machines without a battery. Turning it off is for a laptop whose
+      corner you would rather have empty.
+    '';
+  };
+
   # Per-host display layout for niri. Rendered into `output` blocks in
   # config.kdl by home/joshr/niri/niri.nix.
   #

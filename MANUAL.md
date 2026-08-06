@@ -1141,11 +1141,12 @@ version of the same thing, with an extra click.
 Hyprlock, with a clock, a greeting, one wide password field and — when
 something is playing — the album cover, blurred across the whole screen and
 again as a small card above the track name, with previous, play/pause and next
-in a row beneath it. Nothing playing puts the current wallpaper back. Colours
-come from the active theme, so it follows a theme switch. `swaylock-effects`
-is still installed and is the fallback the lock script drops to if Hyprlock
-fails to start — a locker regression must not leave the session sitting
-unlocked.
+in a row beneath it. Nothing playing puts the current wallpaper back. On a
+machine with a battery, the charge sits in the bottom-right corner; on one
+without, nothing is drawn there at all. Colours come from the active theme, so
+it follows a theme switch. `swaylock-effects` is still installed and is the
+fallback the lock script drops to if Hyprlock fails to start — a locker
+regression must not leave the session sitting unlocked.
 
 `swayidle` dims at 4 minutes, locks at 5, blanks at 10, and locks before
 suspend.
@@ -1341,6 +1342,55 @@ play/pause glyph and the pause marker beside it turning over together rather
 than a beat apart. The click itself is immediate — only the glyph waits for a
 tick, and the click drops the cached snapshot on its way out, so that tick
 asks MPRIS rather than serving what was true before the click.
+
+#### The battery, on the machines that have one
+
+The charge sits in the bottom-right corner, on the same 18px baseline as the
+session controls so the bottom of the screen still reads as one row, and as far
+from them as the screen allows: it is the only thing on a lock screen that is
+purely read, and it has no business sharing an edge with two labels you click.
+The glyph, the five-icon ramp and the thresholds are the bar's — warning at
+30%, critical at 15%, neither of them while it is charging — because it is the
+same battery, and a machine reading 󰁼 25% in the bar and something else once it
+locked would be saying two things about one number. Warning and critical wear
+the theme's yellow and red rather than the album's, for the same reason
+`LOCK_WARN` and `LOCK_ERR` sit out the palette: a battery about to die is red
+whatever is playing.
+
+**Nothing is drawn on a machine without a battery, and that is decided per
+lock rather than per host.** `lock-session` looks for one while it writes the
+config — the first `/sys/class/power_supply` entry whose `type` is Battery,
+whose `scope` isn't Device, and whose bay isn't empty — and appends the widget
+only if it finds one. So `local.niri.lockBatteryIndicator` can default to true
+and be left alone: the desk draws nothing because there is nothing to draw, the
+laptop draws its charge, and the USB stick draws whichever is true of the
+machine it was plugged into that morning. Setting it to `false` is for a laptop
+whose corner you would rather have empty.
+
+The `scope` test is the one worth spelling out. `/sys/class/power_supply` is
+every power source the kernel knows about, and most of them are not the
+answer: the mains adapter is in there with a `type` of Mains, and so is
+anything with a battery the machine merely *talks* to — a wireless mouse, a
+controller, a headset — which the kernel marks with a `scope` of Device.
+Without that test a desk with a Logitech mouse would grow a battery indicator
+on its lock screen showing the mouse's charge, in the place the laptop's own
+would be, on a screen with nothing to click to find out which it meant.
+
+A two-pack laptop would show the first pack rather than the sum. Adding them
+honestly needs `energy_full` from each — the capacities are percentages of
+different sizes, so averaging them is wrong — and the drivers that report
+`charge_*` in µAh instead cannot be added at all across packs at different
+voltages. Nothing here has a second battery; that is the work it would take if
+something ever did.
+
+The widget ticks at the same 3000 ms as the greeting and the session controls.
+A charge level is slow enough that anything faster would be for nothing, but
+its *colour* is not — the labels pick the album's palette up on their own next
+tick, and a battery three seconds behind the rest of the screen is one nobody
+notices catching up. It costs a handful of sysfs reads through bash's own
+`read` and no processes at all, on the resource gatherer's thread rather than
+the renderer's, which is the same bargain every other label on the screen
+makes; see below.
 
 #### What all of that costs while the screen is locked
 

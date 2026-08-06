@@ -68,6 +68,7 @@ let
 
   lockAlbumArtBackground = config.local.niri.lockAlbumArtBackground;
   lockAlbumArtCover = config.local.niri.lockAlbumArtCover;
+  lockBatteryIndicator = config.local.niri.lockBatteryIndicator;
 
   # What a session that has never picked a wallpaper starts on — see
   # `wallpaperRestore` below.
@@ -1780,6 +1781,167 @@ lockNowPlaying = pkgs.writeShellApplication {
     '';
   };
 
+  # The machine's own battery, or nothing at all on a machine without one.
+  #
+  # Shared between the widget below and `lock-session`, which asks the same
+  # question while it writes the config, so that the two can never disagree
+  # about whether this machine has a battery to draw.
+  #
+  # `/sys/class/power_supply` holds every power source the kernel knows about,
+  # and most of them are not the answer. The mains adapter is in there with a
+  # `type` of Mains, and so is anything with a battery that the machine merely
+  # talks to — a wireless mouse, a controller, a headset — which the kernel
+  # marks with a `scope` of Device. Drawing one of those would put the charge
+  # of a mouse where the laptop's own is meant to be, on a screen where there
+  # is nothing to click to find out which it meant. A `present` of 0 is the
+  # third case: a bay the driver enumerated with no pack in it.
+  #
+  # The first match wins, which on a two-pack laptop means BAT0 and not the
+  # sum of both. Summing them honestly needs `energy_full` from each — the
+  # capacities are percentages of different sizes and averaging them is wrong
+  # — and the drivers that report `charge_*` in µAh instead cannot be added at
+  # all across packs at different voltages. None of the machines here has a
+  # second battery; if one ever does, that is the work it would take.
+  batteryDevice = ''
+    battery_device() {
+      local device kind scope present
+
+      for device in /sys/class/power_supply/*; do
+        [ -r "$device/type" ] || continue
+
+        # `2>/dev/null` ahead of the input redirect, not after it. Bash
+        # applies redirections left to right and reports a failed one on
+        # whatever stderr is at that moment, so the usual trailing order
+        # prints "No such file or directory" and *then* silences the file
+        # descriptor it was going to be printed on. These reads are guarded,
+        # so the only way they fail is the device going away mid-loop — which
+        # is a thing that happens, and which nothing needs to hear about.
+        read -r kind 2>/dev/null < "$device/type" || continue
+        [ "$kind" = Battery ] || continue
+
+        scope=System
+        if [ -r "$device/scope" ]; then
+          read -r scope 2>/dev/null < "$device/scope" || continue
+        fi
+
+        # A `case` rather than `[ … ] && continue`, which under `set -e` would
+        # take the whole script down on the batteries this is meant to keep.
+        case "$scope" in
+          Device) continue ;;
+        esac
+
+        if [ -r "$device/present" ]; then
+          read -r present 2>/dev/null < "$device/present" || continue
+          [ "$present" = 1 ] || continue
+        fi
+
+        printf '%s\n' "$device"
+        return 0
+      done
+    }
+  '';
+
+  # The battery, for the bottom-right corner of the lock screen.
+  #
+  # The same glyphs and the same thresholds as the bar's battery module
+  # (waybar.nix), because it is the same battery: a machine reading 󰁼 25% in
+  # the bar and something else on the lock screen would be saying two things
+  # about one number. Warning at 30 and critical at 15, neither of them while
+  # it is charging, exactly as the bar's stylesheet has it — and in the
+  # theme's own warn and err rather than the album's, for the same reason the
+  # palette leaves those two alone. A battery about to die is red whatever is
+  # playing.
+  #
+  # Prints nothing when there is no battery. `lock-session` has already left
+  # the widget out of the config in that case, so this is the answer for the
+  # narrow window the other check cannot cover — a pack pulled out of its bay
+  # while the screen is locked — and a label with no text draws nothing.
+  #
+  # A handful of `read` builtins and no processes at all, on the resource
+  # gatherer's thread rather than the renderer's; see the label commands in
+  # `lock-session`.
+  lockBattery = pkgs.writeShellApplication {
+    name = "lock-battery";
+
+    runtimeInputs = [ pkgs.coreutils ];
+
+    text = ''
+      ${readLockColors}
+      ${batteryDevice}
+
+      device="$(battery_device)"
+      [ -n "$device" ] || exit 0
+
+      # Every driver here reports `capacity` directly. One that didn't would
+      # leave the corner empty rather than wrong, which is the right way for
+      # this to fail: the charge is not worth guessing at from `energy_now`
+      # and a full-charge value the driver would also have had to publish.
+      #
+      # Redirect order as in battery_device above — stderr first, or a battery
+      # pulled out mid-lock writes a line to Hyprlock's log every three
+      # seconds until the screen is unlocked.
+      read -r capacity 2>/dev/null < "$device/capacity" || exit 0
+
+      case "$capacity" in
+        "" | *[!0-9]*) exit 0 ;;
+      esac
+
+      status=Unknown
+      if [ -r "$device/status" ]; then
+        read -r status 2>/dev/null < "$device/status" || status=Unknown
+      fi
+
+      case "$status" in
+        Charging)
+          glyph="󰂄"
+          ;;
+
+        # On mains with nothing left to put in: "Full", or "Not charging" from
+        # a battery held below 100% on purpose by a charge threshold, which is
+        # a normal state rather than a fault and must not read as one.
+        Full | "Not charging")
+          glyph="󰚥"
+          ;;
+
+        # waybar fills five icons from the same percentage, in buckets of
+        # twenty. Written out rather than computed so the two lists can be
+        # compared by eye.
+        *)
+          if [ "$capacity" -ge 80 ]; then
+            glyph="󰂂"
+          elif [ "$capacity" -ge 60 ]; then
+            glyph="󰂀"
+          elif [ "$capacity" -ge 40 ]; then
+            glyph="󰁾"
+          elif [ "$capacity" -ge 20 ]; then
+            glyph="󰁼"
+          else
+            glyph="󰁺"
+          fi
+          ;;
+      esac
+
+      color="$LOCK_FG"
+
+      case "$status" in
+        Charging | Full | "Not charging") ;;
+        *)
+          if [ "$capacity" -le 15 ]; then
+            color="$LOCK_ERR"
+          elif [ "$capacity" -le 30 ]; then
+            color="$LOCK_WARN"
+          fi
+          ;;
+      esac
+
+      # Wrapped in a colour for the same reason as `lock-label`: a Hyprlock
+      # label's colour is fixed at parse time, and the only colour that can
+      # reach one afterwards is one inside its own text. Nothing here needs
+      # pango-escaping — a glyph and a number, both of them ours.
+      printf '<span foreground="#%s">%s  %s%%</span>\n' "$color" "$glyph" "$capacity"
+    '';
+  };
+
   # Switch the current seat to SDDM without unlocking or ending this session.
   #
   # Kept below `switch-user` as a low-level primitive: the normal desktop
@@ -2067,6 +2229,18 @@ lockNowPlaying = pkgs.writeShellApplication {
     # art through it too would put one more thing that can fail on the path
     # that only runs because something already has.
     wallpaper="$(cat "${stateDir}/wallpaper" 2>/dev/null || true)"
+
+    ${lib.optionalString lockBatteryIndicator ''
+      ${batteryDevice}
+
+      # Whether there is a battery to draw, decided here rather than left to
+      # the widget: a desk should not carry a label that wakes every three
+      # seconds to discover it has nothing to say, and a lock screen with an
+      # empty corner is not the same thing as one with no corner widget in it
+      # at all. Asked once per lock, so a machine that grows a battery — a
+      # laptop whose pack was out of its bay — has one by the next lock.
+      battery="$(battery_device)"
+    ''}
 
     # The config, comments and all — Hyprlang keeps its own `#` lines, and
     # they are the only documentation the generated file has.
@@ -2381,6 +2555,38 @@ lockNowPlaying = pkgs.writeShellApplication {
         onclick = ${lib.getExe suspendSystem}
     }
     EOF
+
+    ${lib.optionalString lockBatteryIndicator ''
+      # Appended rather than written into the config above, because this is
+      # the one widget whose presence depends on the machine it is being
+      # written for.
+      if [ -n "$battery" ]; then
+        cat >> "$config" <<EOF
+      # The battery, in the far corner, away from everything you interact
+      # with: this is the one thing on the lock screen that is only ever
+      # read. It sits on the same 18px baseline as the session controls, so
+      # the bottom of the screen still reads as one row.
+      #
+      # Ticking with the greeting and the session controls rather than on a
+      # clock of its own. A charge level is slow enough that anything faster
+      # would be for nothing, and the colour of it is not: the labels pick up
+      # the album's palette on their own next tick, and a battery three
+      # seconds behind the rest of the screen is a battery nobody notices
+      # catching up.
+      label {
+          monitor =
+          text = cmd[update:3000] ${lib.getExe lockBattery}
+          color = rgba(''${LOCK_FG}cc)
+          font_size = 15
+          font_family = FiraCode Nerd Font
+
+          position = -32, 18
+          halign = right
+          valign = bottom
+      }
+      EOF
+      fi
+    ''}
 
     # Hyprlock blocks until the session is unlocked. A nonzero exit here
     # means it failed to initialize, not merely that a password was wrong.

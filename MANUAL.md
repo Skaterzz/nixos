@@ -45,6 +45,7 @@ the machine.
   - [How the boot menu ends up wearing the desktop's colours](#how-the-boot-menu-ends-up-wearing-the-desktops-colours)
 - [Shells](#shells)
   - [`nix-clean`](#nix-clean)
+  - [`nix-delete-gens`](#nix-delete-gens)
 - [Development environments](#development-environments)
   - [One import, and it's off by default](#one-import-and-its-off-by-default)
   - [The one-command path](#the-one-command-path)
@@ -2190,6 +2191,38 @@ config is regenerated, so the function ends by reminding you to
 `sudo nixos-rebuild boot --flake /etc/nixos#<host>` — and `<host>` there is
 the flake attribute, not the hostname. On this machine those differ:
 `gamestation` and `gamestation-niri` both run on a box called `dialga`.
+
+### `nix-delete-gens`
+
+`nix-clean`'s sibling, in the same file and also fish-only. Same job, counted
+rather than dated: keep the newest N generations and delete everything below
+them, for when "I want to be back to ten generations" is the actual thought
+and working out which date that is would be a detour.
+
+```fish
+nix-delete-gens        # keep the newest 10
+nix-delete-gens 3      # keep the newest 3
+```
+
+It prints the generation numbers it is about to delete and waits for a `y`
+before touching anything — the one place it differs from `nix-clean`, which
+just goes. Anything other than `y`/`yes` aborts, as does an empty answer.
+
+The deletion itself is `nix-env --delete-generations +N`, whose rule is worth
+knowing because it is deliberately more careful than "keep the newest N": it
+counts N back from the **current** generation, and never deletes the current
+one or anything above it. On a machine sitting on a rollback — booted into
+generation 8 with 15 present — the seven above you are what you'd roll
+forward to, and they stay. The preview does the same arithmetic so that the
+list it shows is the list that goes.
+
+Both profiles are trimmed, then swept, for the reason spelled out under
+`nix-clean` above: the `sudo` half reaches the system profile, the plain half
+reaches home-manager's, and the second is skipped when you already are root.
+Deleting a generation only unlinks it, so garbage collection is what turns it
+back into free space — hence the sweep at the end rather than a separate
+`nix-clean` run afterwards. The boot-menu caveat is the same one, and the
+function closes with the same reminder.
 
 ## Development environments
 

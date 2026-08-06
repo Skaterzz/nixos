@@ -164,6 +164,114 @@ in
           echo "which is not this machine's hostname."
         '';
       };
+
+      # nix-clean by count rather than by age: keep the newest N generations,
+      # delete everything below them, then sweep. Same two-profile split and
+      # the same boot-menu caveat as nix-clean above — see that comment.
+      #
+      # The deleting is left to `nix-env --delete-generations +N`, which is the
+      # only part of this that has to be exactly right. Its rule is "keep N
+      # counting back from the *current* generation, and never touch the
+      # current one or anything above it", so a machine sitting on a rollback
+      # doesn't lose the newer generations it would roll forward to.
+      #
+      # The arithmetic below only builds the preview, and deliberately mirrors
+      # that same rule so the list shown is the list deleted: generations are
+      # listed oldest-first, so with the current one at position `cur`, the
+      # doomed ones are exactly the first `cur - N`. Parsing --list-generations
+      # is what makes the preview possible at all; --dry-run would be the other
+      # way, but its output wording is not something to depend on.
+      nix-delete-gens = {
+        description = "delete nix generations, keeping the newest <count> (default 10)";
+        body = ''
+          set -l keep $argv[1]
+          test -z "$keep"; and set keep 10
+
+          # Anything that isn't a positive integer would either be rejected by
+          # nix-env further down or, worse, quietly change what gets deleted.
+          if not string match -qr '^[1-9][0-9]*$' -- $keep
+              echo "nix-delete-gens: keep count must be a positive whole number, got '$keep'." >&2
+              return 1
+          end
+
+          set -l system /nix/var/nix/profiles/system
+          set -l hm ~/.local/state/nix/profiles/home-manager
+
+          # Reading the profile doesn't need root; only the deletion does.
+          set -l listing (nix-env -p $system --list-generations)
+          if test $status -ne 0
+              echo "nix-delete-gens: could not list the system profile's generations." >&2
+              return 1
+          end
+
+          set -l cur 0
+          for i in (seq (count $listing))
+              if string match -qr '\(current\)\s*$' -- $listing[$i]
+                  set cur $i
+              end
+          end
+          if test $cur -eq 0
+              echo "nix-delete-gens: no generation is marked (current); refusing to guess." >&2
+              return 1
+          end
+
+          set -l ndoomed (math $cur - $keep)
+          if test $ndoomed -lt 1
+              echo "Nothing to delete: "(count $listing)" system generations, and the newest $keep are staying."
+              return 0
+          end
+
+          set -l gens (string match -rg '^\s*(\d+)' -- $listing)
+
+          echo "Deleting these $ndoomed system generations, keeping the newest $keep:"
+          printf '  %s\n' $gens[1..$ndoomed]
+          echo
+
+          read -l -P "Proceed, then collect garbage? [y/N] " reply
+          if not string match -qir '^y(es)?$' -- $reply
+              echo "Aborted; nothing was deleted."
+              return 1
+          end
+
+          sudo nix-env -p $system --delete-generations +$keep
+          if test $status -ne 0
+              echo "Deleting system generations failed; stopping here." >&2
+              return 1
+          end
+
+          # Already covered by the sudo run when this *is* root.
+          if test (id -u) -ne 0; and test -e $hm
+              echo "Trimming home-manager to its newest $keep generations…"
+              nix-env -p $hm --delete-generations +$keep
+              if test $status -ne 0
+                  echo "System generations went, home-manager's did not." >&2
+                  return 1
+              end
+          end
+
+          # Deleting a generation only unlinks it; the closure it was holding
+          # down isn't space back until something collects it.
+          echo "Collecting garbage…"
+          sudo nix-collect-garbage
+          if test $status -ne 0
+              echo "Generations were deleted, but garbage collection failed." >&2
+              return 1
+          end
+          if test (id -u) -ne 0
+              nix-collect-garbage
+              if test $status -ne 0
+                  echo "The system profile was swept, home-manager's was not." >&2
+                  return 1
+              end
+          end
+
+          echo
+          echo "Deleted generations are still listed in the boot menu."
+          echo "Prune it with: sudo nixos-rebuild boot --flake /etc/nixos#<host>"
+          echo "<host> is the flake attribute (gamestation, laptop-niri, server…),"
+          echo "which is not this machine's hostname."
+        '';
+      };
     };
   };
 

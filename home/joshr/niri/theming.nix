@@ -286,6 +286,20 @@ let
       color: @fg-dim;
     }
 
+    /* Bluetooth off is dim rather than red, unlike the network rule below:
+       nothing is broken when the radio is down, it is a thing you turned
+       off — the same reading the muted sink directly above gets.
+
+       Two classes because there are two ways off and only one of them is
+       the obvious one. `off` is the controller powered down, which is what
+       blueman's toggle and `bluetoothctl power off` do; `disabled` is
+       rfkill blocking the radio, the airplane-mode route. Styling
+       `disabled` alone would leave the common case lit. */
+    #bluetooth.disabled,
+    #bluetooth.off {
+      color: @fg-dim;
+    }
+
     #network.disconnected {
       color: @err;
     }

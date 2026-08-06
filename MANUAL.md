@@ -227,9 +227,9 @@ home/joshr/niri/
 
 Left is the username, workspaces and the focused window title, centre is the
 clock and date, right is the tray, media controls, brightness, volume,
-network, battery, caps lock and gamemode while each is on, the idle inhibitor,
-then **lock** and **power** as a matched pair at the far end. Each group is
-its own rounded floating pill rather than one long bar.
+bluetooth, network, battery, caps lock and gamemode while each is on, the idle
+inhibitor, then **lock** and **power** as a matched pair at the far end. Each
+group is its own rounded floating pill rather than one long bar.
 
 The right-hand group is deliberately tight — the modules carry no horizontal
 margin of their own, so the bar's 4px `spacing` is the entire gap between two
@@ -275,6 +275,18 @@ the same reason. See "Brightness" below.
 On a host with no backlight device at all it draws no text but still holds its
 padding — it isn't one of the custom modules waybar hides outright. That's the
 desk before the reboot `ddcci` needs, and it sorts itself out.
+
+**Bluetooth** goes dim when the radio is off — `@fg-dim`, the same colour the
+muted volume immediately to its left takes, rather than the red the network
+module to its right turns when it drops. Nothing is broken when bluetooth is
+off; it's a thing you turned off, and the module keeps its slot either way.
+
+Two CSS classes carry that colour, because waybar has two states for "off" and
+only one of them is the one you'd reach for. Toggling bluetooth off in blueman
+— or `bluetoothctl power off` — powers the controller down and lands on
+`.off`. `rfkill block bluetooth`, the airplane-mode route, lands on
+`.disabled`. Styling `.disabled` alone would leave the everyday case at full
+brightness, which is the trap in the name.
 
 **Caps lock** is one glyph between the battery and the idle inhibitor, in the
 theme's warn colour, and it is on the bar *only* while caps lock is on. The

@@ -3247,96 +3247,6 @@ lockNowPlaying = pkgs.writeShellApplication {
     '';
   };
 
-  # Step the power profile one place. This is what scrolling the bar's
-  # power-profiles-daemon module runs; see waybar.nix.
-  #
-  # The module handles *clicking* itself — left click forward, right click
-  # back — and there is no configuration hook to redirect that, so this exists
-  # for the scroll wheel alone rather than as the one route both take.
-  powerProfile = pkgs.writeShellApplication {
-    name = "power-profile";
-    runtimeInputs = with pkgs; [
-      power-profiles-daemon
-      util-linux
-    ];
-    text = ''
-      # The profiles power-profiles-daemon defines, in its own order: saving,
-      # default, spending. Written out rather than read back from the daemon
-      # because there is no machine-readable listing to read — `list` prints a
-      # human-shaped block, and parsing that to decide what a scroll does is a
-      # worse dependency than three names that are fixed by the D-Bus
-      # interface. Hardware that offers only two is handled below.
-      #
-      # The order matters beyond taste: it is what makes scrolling up agree
-      # with the module's own left click, which steps forward through the same
-      # list in the order the daemon hands it over.
-      profiles=(power-saver balanced performance)
-      count=''${#profiles[@]}
-
-      # Serialise, and drop overlapping runs rather than queue them — the same
-      # guard, for the same reason, as the brightness script above.
-      #
-      # It matters more here. A touchpad flick is tens of scroll events a
-      # second and each one starts a run, so without this two runs read the
-      # same profile and both step off it, and a queue of them keeps applying
-      # long after the finger has stopped. `powerprofilesctl` is a Python
-      # program that talks over D-Bus, which puts a run at a few hundred
-      # milliseconds and makes this the rate limit as well as the lock: a
-      # scroll moves at a speed a person can follow, whatever the pointer is.
-      exec 9>"''${XDG_RUNTIME_DIR:-/tmp}/power-profile.lock"
-      flock -n 9 || exit 0
-
-      current="$(powerprofilesctl get 2>/dev/null || true)"
-      if [ -z "$current" ]; then
-        echo "power-profile: power-profiles-daemon is not answering" >&2
-        exit 1
-      fi
-
-      # Where we are now. A name that isn't one of the three leaves this at
-      # balanced, so the first step lands somewhere sensible rather than
-      # nowhere at all.
-      index=1
-      for i in "''${!profiles[@]}"; do
-        if [ "''${profiles[$i]}" = "$current" ]; then
-          index="$i"
-        fi
-      done
-
-      case "''${1:-}" in
-        up)   step=1 ;;
-        down) step=-1 ;;
-        *)
-          echo "usage: power-profile [up|down]" >&2
-          exit 2
-          ;;
-      esac
-
-      # Step, and keep going the same way past anything the daemon won't take.
-      # `performance` is the one that is often missing — it needs a driver
-      # that offers it — and on a machine without it scrolling up from
-      # balanced has to wrap to power-saver rather than stop dead.
-      #
-      # The result is read back rather than trusted to the exit status.
-      # Whether `powerprofilesctl set` fails loudly on a profile that isn't
-      # there is not something this could check, and a silent no-op would make
-      # scrolling one direction do nothing for ever on exactly the hardware
-      # this branch is for. Reading it back costs one more D-Bus round trip on
-      # a control with three positions.
-      for ((attempt = 1; attempt < count; attempt++)); do
-        index=$(( (index + step + count) % count ))
-        want="''${profiles[$index]}"
-
-        if powerprofilesctl set "$want" 2>/dev/null &&
-          [ "$(powerprofilesctl get 2>/dev/null || true)" = "$want" ]; then
-          exit 0
-        fi
-      done
-
-      echo "power-profile: no profile to step to from $current" >&2
-      exit 1
-    '';
-  };
-
   # Audio visualiser for the bar. See the custom/cava module in waybar.nix.
   cavaConfig = pkgs.writeText "cava-waybar.conf" ''
     [general]
@@ -3590,7 +3500,6 @@ in
     osd
     volume
     brightness
-    powerProfile
     cavaBar
     capsLock
     gamemodeStatus
@@ -3617,7 +3526,6 @@ in
       osd
       volume
       brightness
-      powerProfile
       cavaBar
       capsLock
       gamemodeStatus

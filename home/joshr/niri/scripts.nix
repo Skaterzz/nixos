@@ -1902,19 +1902,16 @@ lockNowPlaying = pkgs.writeShellApplication {
 
       case "$hour" in
         05 | 06 | 07 | 08 | 09 | 10 | 11)
-          daypart=Morning
           greetings+=(
             "Good Morning, $first_name."
           )
           ;;
         12 | 13 | 14 | 15 | 16 | 17)
-          daypart=Afternoon
           greetings+=(
             "Good Afternoon, $first_name."
           )
           ;;
         *)
-          daypart=Evening
           greetings+=(
             "Good Evening, $first_name."
           )

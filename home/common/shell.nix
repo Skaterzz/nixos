@@ -94,39 +94,6 @@ in
         description = "long list with git status";
         body = "eza -l --git --git-repos --icons=auto --group-directories-first $argv";
       };
-      nix-delete-gens = {
-	description = "Deletes all older nix gens then garbage collects. Keeps the latest 10 by default. Provide an arg to specify how many generations to keep";
-	argumentNames = [ "num" ];
-	body = ''
-	if test -z "$num"
-        set num 10
-    end
-
-    # List existing system generations for confirmation
-    echo "\nCurrent NixOS generations:"
-    nixos-generate-config --list-generations | awk '{print $1}'
-
-    # Prompt before deletion to prevent accidental data loss
-    echo -n "\n WARNING: This will delete the oldest $num generations. Proceed? (y/N) "
-    read -l response
-
-    if [ "$response" != "y" ] && [ "$response" != "Y" ]
-        echo "\nABORTED: Deletion canceled by user."
-        return 1
-    end
-
-    # Delete the specified number of generations
-    echo "\nDeleting oldest $num generations..."
-    sudo nixos-generate-config --delete-generations \
-        "$(nixos-generate-config --list-generations | tail -n "$num" | awk '{print $1}')"
-
-    # Run garbage collection after deletion
-    echo "\nRunning Nix garbage collection..."
-    nix-collect-garbage
-
-    echo "\nProcess completed successfully!\n"
-	'';
-      };
 
       # On-demand version of the weekly sweep in modules/nixos/base.nix, for
       # when you want the space back now or want a different cutoff than the

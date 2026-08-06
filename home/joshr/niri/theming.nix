@@ -201,6 +201,7 @@ let
     #privacy,
     #custom-microphone-privacy,
     #battery,
+    #power-profiles-daemon,
     #bluetooth,
     #mpris,
     #custom-caps-lock,
@@ -228,6 +229,7 @@ let
     #pulseaudio:hover,
     #network:hover,
     #battery:hover,
+    #power-profiles-daemon:hover,
     #mpris:hover,
     #bluetooth:hover,
     #custom-microphone-privacy:hover,
@@ -311,6 +313,59 @@ let
     #battery.critical:not(.charging) {
       color: @bg;
       background-color: @err;
+    }
+
+    /* Charge and power profile are one widget, not two. `group/power` in
+       waybar.nix puts them in a box with no spacing of its own, so the two
+       halves meet flush where every other neighbouring pair on the bar has
+       the bar's 4px between them.
+
+       The group carries the pill's vertical inset and nothing else. The 8px
+       of side padding stays on the halves themselves, which is what keeps the
+       profile looking like every other pill on the hosts with no battery
+       beside it to draw — it is on its own there, and a group that had taken
+       the padding over would have left it with 16px a side. Their own
+       `margin: 4px 0` from the block above has to come back off, or it would
+       be added to the group's and squeeze both halves to 18px in a 34px bar.
+
+       Nothing is written for the case where neither half draws — no battery
+       and no daemon. waybar 0.15.0's group has no `empty` class to hang it
+       on (that landed after the release), so all that is left there is a
+       zero-width box and one 4px gap. Every graphical host runs the daemon,
+       so it is not a case that arises. */
+    #power {
+      margin: 4px 0;
+    }
+
+    #power #battery,
+    #power #power-profiles-daemon {
+      margin: 0;
+    }
+
+    /* The three profiles, in the bar's own vocabulary: the accent for the one
+       you chose in order to be thrifty, plain @fg for the default, and warn
+       for the one that costs battery and heat — the same register the idle
+       inhibitor two slots over uses for a mode you can forget you left on.
+
+       @fg-dim, the obvious pick for power-saver, is deliberately not used. On
+       this bar dim means *off* — the muted sink, the powered-down bluetooth
+       radio — and power-saver is a profile that is emphatically on.
+
+       `balanced` is @fg, which it would inherit from the pill rule anyway. It
+       is written out so all three read as one mapping in one place, and so
+       that a fourth profile from some other daemon backend has somewhere
+       obvious to be added: waybar sets a CSS class named after whatever the
+       profile is called. */
+    #power-profiles-daemon.power-saver {
+      color: @accent;
+    }
+
+    #power-profiles-daemon.balanced {
+      color: @fg;
+    }
+
+    #power-profiles-daemon.performance {
+      color: @warn;
     }
 
     /* Audio visualiser, immediately left of the track name.

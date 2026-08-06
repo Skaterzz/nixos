@@ -4,8 +4,9 @@
 #
 #   left    workspaces + focused window title
 #   centre  clock and date
-#   right   tray, nowplaying, brightness, audio, network, battery, caps lock
-#           and gamemode (each only while it's on), session menu
+#   right   tray, nowplaying, brightness, audio, network, battery and power
+#           profile as one widget, caps lock and gamemode (each only while
+#           it's on), session menu
 #
 # Theming: waybar is started with `-s <active theme>/waybar.css` and the
 # switcher restarts it, so a theme change swaps the whole stylesheet. The
@@ -71,7 +72,7 @@ in
         "network"
         "privacy"
         "custom/microphone-privacy"
-        "battery"
+        "group/power"
         "custom/caps-lock"
         "custom/gamemode"
         "custom/idle-inhibitor"
@@ -336,6 +337,42 @@ in
         on-click = "${pkgs.blueman}/bin/blueman-manager";
       };
 
+      # The charge and the power profile, drawn as one widget.
+      #
+      # They are two modules because waybar has no module that knows both, and
+      # a custom one that did would have to reimplement what `battery` already
+      # does for free: it repaints on udev events from the power supply rather
+      # than on a timer, and it is what puts the `warning` and `critical`
+      # classes on the pill at 30% and 15%. That is the same argument the
+      # `backlight` module further up makes for not going custom — the reading
+      # has to be right no matter what changed it.
+      #
+      # What waybar does offer is `group/`, which is a box holding several
+      # modules with *zero* spacing between them, occupying one slot in the
+      # bar. So the two halves meet flush where every other neighbouring pair
+      # carries the bar's 4px `spacing`, and read as one control rather than
+      # as two that happen to be adjacent. theming.nix does the rest.
+      #
+      # `orientation` is not optional even though this is a horizontal bar.
+      # waybar's default is "orthogonal" — orthogonal to the *parent* — so
+      # leaving it out would stack the charge above the profile inside a 34px
+      # bar.
+      #
+      # The same group is right on every host with no condition around it,
+      # because both halves hide themselves when they have nothing to say:
+      # `battery` hides where there is no battery (the desk, and the stick
+      # whenever it boots a desktop) and `power-profiles-daemon` hides when
+      # nothing answers on the system bus. So the laptop draws both, the desk
+      # draws the profile alone and it looks like any other pill, and neither
+      # case needs to be spelled out here.
+      "group/power" = {
+        orientation = "horizontal";
+        modules = [
+          "battery"
+          "power-profiles-daemon"
+        ];
+      };
+
       battery = {
         states = {
           warning = 30;
@@ -346,6 +383,47 @@ in
         format-plugged = "󰚥  {capacity}%";
         format-icons = [ "󰁺" "󰁼" "󰁾" "󰂀" "󰂂" ];
         tooltip-format = "{timeTo}";
+      };
+
+      # The active power profile, immediately right of the charge.
+      #
+      # Left click steps forward through the profiles the daemon offers, right
+      # click steps back. That is the module's own handler and it replaces the
+      # generic one outright, so unlike `pulseaudio` and `backlight` there is
+      # no `on-click` here to keep in step with anything — and no way to add
+      # one either.
+      #
+      # power-profiles-daemon is enabled for every graphical host in
+      # modules/nixos/desktop.nix; without it this module draws nothing at
+      # all, which is also what makes it safe to list unconditionally.
+      #
+      # Three different silhouettes rather than one needle in three positions:
+      # a speedometer a few degrees further round is not something you can
+      # read at 13px out of the corner of your eye, where a leaf, a pair of
+      # scales and a dial are told apart at a glance. `default` is the
+      # fallback for a profile the daemon offers under some other name. waybar
+      # also puts a CSS class named after the active profile on the module, so
+      # a fourth one gets its own glyph here and its own colour in theming.nix
+      # — which is where the three below are coloured.
+      #
+      # `{profile}` is deliberately not in `format`. The right-hand cluster is
+      # already twelve slots at its widest and the name says nothing the glyph
+      # doesn't; it is in the tooltip, with the driver actually in force
+      # underneath — which is the thing worth knowing, since a profile the
+      # daemon accepts but has no driver for changes nothing.
+      #
+      # `{driver}` and not `{cpu_driver}`: the split into CPU and platform
+      # drivers landed after waybar 0.15.0, and an unknown placeholder is a
+      # format error rather than an empty string.
+      "power-profiles-daemon" = {
+        format = "{icon}";
+        format-icons = {
+          default = "󰊚";
+          power-saver = "󰌪";
+          balanced = "󰗑";
+          performance = "󰓅";
+        };
+        tooltip-format = "Power profile: {profile}\nDriver: {driver}";
       };
 
       # Caps lock, between the battery and the idle inhibitor — and only while

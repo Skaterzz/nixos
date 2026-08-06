@@ -32,6 +32,12 @@
   local.niri.lockAlbumArtBackground = false;
   local.niri.lockAlbumArtCover = true;
 
+  # The charge in the bottom-right corner of the lock screen. On by default
+  # and stated here anyway, because this is the machine the option was written
+  # for — the desk gets the same default and draws nothing, since `lock-session`
+  # only writes the widget out when it finds a battery.
+  local.niri.lockBatteryIndicator = true;
+
   # No OpenRGB tray applet at login here, and nothing to switch off to get
   # that: `local.openrgb.autostart` defaults to whether the OpenRGB daemon is
   # enabled, and the daemon comes with modules/nixos/gaming.nix, which

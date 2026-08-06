@@ -271,9 +271,16 @@ drops overlapping runs, so a finer step would mostly land on a held lock.
 It is waybar's built-in `backlight` module even so, because the number has to
 be right whatever moved the level — the scroll, a media key, the pre-lock dim
 in `lock.nix`. Those all write the device through sysfs, which is what the
-module watches, so it repaints on the change instead of on a timer. What it
-shows is the *first* device's level, the same convention the OSD uses and for
-the same reason. See "Brightness" below.
+module watches, so it repaints on the change rather than waiting for its next
+poll.
+
+Which display it speaks for is `local.niri.brightness.device`, and the same
+option is what the OSD reads back, so the two always quote the same screen.
+Left unset they each pick their own "first" by a different rule and can end up
+describing different monitors. Its `interval` is also raised well above
+waybar's default, because on this machine each tick of it is a DDC/CI round
+trip to every monitor rather than a sysfs read. Both are covered under
+"Brightness" below.
 
 On a host with no backlight device at all it draws no text but still holds its
 padding — it isn't one of the custom modules waybar hides outright. That's the
@@ -424,10 +431,12 @@ Brightness has a second reason: swayosd drives `brightnessctl` with at most one
 print one line per display into a parser that wants a single number.
 
 Reading the level back rather than predicting it is also what keeps the number
-honest — clamping at 0% and 100% is `brightnessctl`'s and `wpctl`'s, and a
-level computed here would be wrong at both ends of the range. `volume show`
-draws the current level without changing it, which is the quickest way to tell
-whether the daemon is up.
+honest, and a level computed here would be wrong at both ends of the range.
+For volume the clamping is `wpctl`'s; for brightness it is the script's own,
+because the script now works out each target itself rather than handing
+`brightnessctl` a relative step — see "Brightness" below for why. `volume
+show` draws the current level without changing it, which is the quickest way
+to tell whether the daemon is up.
 
 Every route to the volume goes through that one script: the media keys, and
 waybar's click-to-mute and scroll. The bar's scroll passes an explicit step of
@@ -963,6 +972,14 @@ run. What it did last time is in the journal.
 journalctl -u openrgb-resume -b
 ```
 
+**The monitors' brightness** is the third, and it's the session's rather than
+the system's — swayidle's `after-resume` (`lock.nix`) runs `brightness sync`
+alongside the Dunst restart. Same shape of problem as the lighting, milder:
+the displays lost power, a DDC/CI write sent while they had none went nowhere,
+and nothing in the kernel noticed. `sync` asks each monitor what it is
+actually at and re-asserts the level if the answer disagrees. See
+[Brightness](#brightness).
+
 ### Displays
 
 One file per host under `home/joshr/displays/`, kept separate so a monitor
@@ -1067,16 +1084,109 @@ Two things worth knowing:
   the same helper for the same reason, so the keys and the scroll can't
   drift apart. See "The bar".
 
-The OSD that comes up with the keys reports the *first* device's level, read
-back after the write. On the laptop that is the only device there is, and on
-the desk every display has just taken the same step — but they can still drift
-apart, if a monitor refuses a write or gets adjusted from its own buttons, and
-what you get then is one display's real level rather than an average of two
-that belongs to neither. See "The on-screen display".
-
 Not enabled on the Plasma variant of the desk. It would work, but it would
 also hand powerdevil's idle timer real dimming on displays it currently can't
 touch.
+
+#### A monitor is a thing that can refuse
+
+Everything below is one consequence: on a desk, writing a brightness is not
+setting a register, it is sending a request to another computer that may not
+be listening. A laptop panel never refuses. A monitor does — while it is
+asleep behind DPMS, while it is bringing its link back up, or because its
+firmware felt like it.
+
+**The driver does not check.** `ddcci-backlight`'s update path sends the
+command and reports success whether or not anything took it, so
+`/sys/class/backlight/<dev>/brightness` is only ever *the last value written*.
+There is a second attribute that is honest: reading `actual_brightness` makes
+the driver go and ask the monitor, a live VCP 0x10 read over i2c.
+
+Those two files are the whole of it, because different things were reading
+different ones. waybar's `backlight` module reads `actual_brightness` — the
+truth. The `brightness` helper used to read `brightness` — the intent. So
+after a single write a monitor missed, the bar said one thing, the pop-up said
+another, and the panel in front of you agreed with neither.
+
+It got worse from there, because `brightnessctl`'s relative steps are computed
+from `brightness` too. Once sysfs believed the display was at 100% and it was
+actually at 20%, every press of the up key asked for 105%, got clamped to 100%,
+and changed nothing. **The keys appeared dead**, and stayed that way until you
+pressed *down* enough times to come back under 20.
+
+The fixes, all in `brightness` (`scripts.nix`):
+
+- **Everything reads `actual_brightness`**, falling back to `brightness` only
+  when the monitor won't answer. The bar and the OSD now quote the same
+  attribute of the same display, and a key press steps from where the screen
+  really is — so a display that has drifted is corrected by the next press
+  rather than becoming permanently unreachable. Computing the target here is
+  also why the clamping is now the script's; `brightnessctl` is handed an
+  absolute value.
+- **`brightness sync`** re-asserts every display's intended level and waits
+  for it to take: write, ask the monitor, write again if the answer disagrees,
+  up to six attempts a second apart. This is the repair for a write that
+  landed on something asleep. It gives up quietly rather than hanging, and
+  when everything already agrees it is one read per display and no writes.
+- It drops the lock between attempts, so a brightness key pressed during a
+  sync isn't thrown away by `flock -n` — and because the next attempt
+  re-asserts whatever is in sysfs *then*, the person at the keyboard wins.
+
+#### Which display the number is about
+
+`local.niri.brightness.device` names the backlight device that speaks for the
+rest. The keys still drive every display; this only decides which one gets
+quoted by the bar and the OSD.
+
+Nothing picks that consistently on its own. waybar, given no device, takes the
+one with the highest `max_brightness` and breaks ties in udev enumeration
+order; the helper took whichever came first out of `brightnessctl --list`,
+which is readdir order and so is whatever the kernel's directory hashing gave
+that boot. On a laptop both rules find the same single panel. On the desk they
+are two rules over two `ddcci*` devices and no reason to agree — with each
+other, or with the monitor you happen to be looking at.
+
+Setting it is one line, and it feeds both:
+
+```nix
+local.niri.brightness.device = "ddcci5";
+```
+
+Find the name by asking each device which monitor it is. `idModel` and
+`idSerial` come from the `ddcci` device the backlight sits on:
+
+```bash
+for d in /sys/class/backlight/*; do
+  printf '%s\t%s\t%s\n' "${d##*/}" \
+    "$(cat "$d/device/idModel" 2>/dev/null)" \
+    "$(cat "$d/device/idSerial" 2>/dev/null)"
+done
+```
+
+A `ddcci*` name is its i2c adapter number, so it follows the *bus* rather than
+the monitor — moving a cable to another port can renumber it. Left `null`,
+both sides keep their old guess and a name matching nothing falls back there
+too, with a warning on stderr from the helper.
+
+They can still each be right about a *different* number if the monitors have
+genuinely drifted — one refused a write, one was adjusted from its own buttons
+— but it is at least always the same screen being reported.
+
+#### Why the bar polls slowly
+
+`interval` on the backlight module is 30, against waybar's default of 2.
+
+The module's udev thread runs an `epoll_wait` with that as its timeout, and
+re-reads every tracked device's `actual_brightness` whenever it expires. On a
+`ddcci` device that attribute is a DDC/CI read. At the default, **both
+monitors are interrogated over i2c every two seconds forever** — including all
+through the ten minutes the screen is blanked.
+
+Thirty costs nothing that matters. The poll is only the safety net for changes
+that emit no uevent, which means someone pressing the buttons on the monitor
+itself; everything that goes through sysfs emits one, and a uevent wakes the
+`epoll` immediately. The keys, the scroll and the idle dim are all as
+instantaneous as they were.
 
 ### The login screen
 
@@ -1204,6 +1314,33 @@ regression must not leave the session sitting unlocked.
 
 `swayidle` dims at 4 minutes, locks at 5, blanks at 10, and locks before
 suspend.
+
+#### The dim is undone before the screen goes dark
+
+The 10-minute blank puts the brightness back *first*, and then powers the
+monitors off. That reads like a wasted write — nobody is going to see it — and
+it is the fix for the desk coming back at the wrong brightness.
+
+Left to the dim's own resume command, the write that undoes the dim goes out
+at the moment input returns. That is the same moment niri is turning the
+outputs back on, so it lands on a monitor still re-establishing its link and
+in no state to answer, and the driver doesn't notice it was ignored (see
+[Brightness](#brightness)). Sysfs then said 100%, the panel sat at 20%, and
+the keys stepped from 100 and appeared dead. Restoring five minutes earlier
+means the monitor takes the write while it is still awake and nothing is owed
+across the DPMS off.
+
+The resume command is `brightness sync` instead, which checks rather than
+assumes — a monitor that came back on its own stored level is put right, and
+if everything already agrees it reads each display once and stops. Coming back
+from suspend runs the same thing, for the same reason and one step harder: the
+displays lost power, not just signal.
+
+Both are detached through `systemd-run --user` rather than run inline, because
+swayidle runs with `-w` and waits for each command. `sync` deliberately keeps
+trying for a few seconds while a monitor wakes up, and blocking swayidle's
+event loop for that long is the exact mistake [`lock-now`](#everything-locks-through-lock-now)
+exists to avoid.
 
 #### The background is the album cover
 

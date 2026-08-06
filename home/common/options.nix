@@ -169,6 +169,43 @@
     );
   };
 
+  options.local.niri.brightness.device = lib.mkOption {
+    type = lib.types.nullOr lib.types.str;
+    default = null;
+    example = "ddcci5";
+    description = ''
+      Backlight device that speaks for "the display" — the one the bar's
+      brightness reading and the OSD both report. The keys still drive every
+      display; this only decides which one is *quoted*.
+
+      Nothing picks that consistently on its own, which is the reason this
+      exists. waybar's backlight module, given no device, takes the one with
+      the highest `max_brightness` and breaks ties in udev enumeration order;
+      the `brightness` helper takes whichever sorts first in
+      /sys/class/backlight. On a laptop those are the same single panel. On a
+      desk with one `ddcci*` device per monitor they are two different numbers
+      about two different screens, neither of them necessarily the monitor in
+      front of you.
+
+      null leaves that as it was — right for a machine with one panel, and for
+      one where you haven't decided yet. A name that matches no device falls
+      back to the same place, with a warning on stderr from the helper.
+
+      Find the name by asking each device which monitor it is. `idModel` and
+      `idSerial` come from the ddcci device the backlight sits on:
+
+          for d in /sys/class/backlight/*; do
+            printf '%s\t%s\t%s\n' "''${d##*/}" \
+              "$(cat "$d/device/idModel" 2>/dev/null)" \
+              "$(cat "$d/device/idSerial" 2>/dev/null)"
+          done
+
+      Note that a `ddcci*` name is its i2c adapter number
+      (`ddcci<adapter>`), so it follows the bus the monitor is on rather than
+      the monitor. Moving a cable to a different port can renumber it.
+    '';
+  };
+
   options.local.niri.workspaceOutput = lib.mkOption {
     type = lib.types.nullOr lib.types.str;
     default = null;

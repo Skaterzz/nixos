@@ -20,6 +20,12 @@ let
       "custom/cava"
     else
       "";
+
+  # The display the backlight module reports, shared with the `brightness`
+  # helper's OSD through the same option (scripts.nix). "" is how "unset"
+  # reaches waybar — see the module below.
+  brightnessDevice = config.local.niri.brightness.device;
+  backlightDevice = if brightnessDevice == null then "" else brightnessDevice;
 in
 {
   programs.waybar = {
@@ -272,14 +278,38 @@ in
       # reading has to be right no matter what moved the level — this scroll,
       # a media key, the pre-lock dim in lock.nix. All of those write the
       # device through sysfs, which is what the built-in module is watching;
-      # it repaints on the change rather than on a timer. A custom module
-      # would have to poll, and a `brightness` helper that signalled waybar
-      # instead would still miss everything that didn't go through it.
+      # it repaints on the uevent rather than waiting for its next poll. A
+      # custom module would have nothing but the poll, and a `brightness`
+      # helper that signalled waybar instead would still miss everything that
+      # didn't go through it.
       #
-      # `{percent}` is the first device's level, which is the same thing the
-      # OSD reports and the same convention for the same reason: on the laptop
-      # it is the only device, and on the desk every display has just taken
-      # the same step. They can drift — see "Brightness" in MANUAL.md.
+      # `{percent}` is one device's level, and `device` is what decides which.
+      # Left unset the module takes the device with the highest
+      # `max_brightness` and breaks ties in udev enumeration order, while the
+      # `brightness` helper takes whichever sorts first in
+      # /sys/class/backlight — two different rules that happen to agree on a
+      # laptop's single panel and need not agree on a desk with a `ddcci*`
+      # device per monitor. Naming the device here and reading the same option
+      # in scripts.nix makes the bar and the OSD quote the same screen. Unset
+      # (`local.niri.brightness.device = null`) leaves both to their own idea
+      # of first, which is what this did before.
+      #
+      # An empty string is how "unset" reaches waybar, and it means the same
+      # thing to it: `best_device` looks for an exact name match and falls
+      # through to the automatic choice when nothing matches.
+      #
+      # **`interval` is a DDC/CI round trip per display, not a sysfs read.**
+      # The module's udev thread does an `epoll_wait` with this as its timeout
+      # and re-reads every tracked device's `actual_brightness` whenever it
+      # expires — and on a ddcci device that attribute is answered by asking
+      # the monitor (see the header comment on `brightness` in scripts.nix).
+      # At waybar's default of 2 seconds that is both monitors interrogated
+      # over i2c every two seconds forever, including all through the ten
+      # minutes the screen is blanked. 30 costs nothing that matters: the poll
+      # is only the safety net for changes that emit no uevent, i.e. someone
+      # pressing the buttons on the monitor itself. Everything that goes
+      # through sysfs — these scrolls, the keys, the idle dim — emits one, and
+      # a uevent wakes the epoll immediately.
       #
       # No click action. Volume has one because mute is a real toggle;
       # brightness has no equivalent, and a click that jumped to some fixed
@@ -291,6 +321,8 @@ in
       # modules further right that waybar hides outright. That is the desk
       # before the reboot ddcci needs, and it corrects itself.
       backlight = {
+        device = backlightDevice;
+        interval = 30;
         format = "{icon}  {percent}%";
         format-icons = [ "󰃞" "󰃟" "󰃠" ];
         tooltip-format = "Brightness {percent}%";

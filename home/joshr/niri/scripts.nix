@@ -66,6 +66,13 @@ let
 
   wallpaperDir = "${config.home.homeDirectory}/.local/share/wallpapers";
 
+  # The backlight device the `brightness` helper reads back for the OSD. Empty
+  # when unset, which the script treats as "whichever sorts first". Shared with
+  # waybar.nix through the same option so the bar and the pop-up are always
+  # quoting the same display — see local.niri.brightness.device.
+  brightnessDevice = config.local.niri.brightness.device;
+  primaryBacklight = if brightnessDevice == null then "" else brightnessDevice;
+
   lockAlbumArtBackground = config.local.niri.lockAlbumArtBackground;
   lockAlbumArtCover = config.local.niri.lockAlbumArtCover;
   lockBatteryIndicator = config.local.niri.lockBatteryIndicator;
@@ -3139,108 +3146,324 @@ lockNowPlaying = pkgs.writeShellApplication {
   # Also the reason the keybinds call this rather than brightnessctl directly:
   # a host with one display and a host with two want the same key to mean the
   # same thing.
+  #
+  # The rest of this is about a DDC/CI monitor being a thing that can *refuse*,
+  # which a laptop panel never does. Writing `/sys/class/backlight/<dev>/
+  # brightness` is a register write on a panel and a round trip to another
+  # computer on a monitor, and the driver does not check the answer:
+  # ddcci-backlight's update_status sends the command and reports success
+  # (ddcci_monitor_writectrl) whether or not anything took it. So `brightness`
+  # is only ever the last value *written*, and after a write the monitor missed
+  # — asleep behind DPMS, or still bringing the link back up — it is a number
+  # nothing on the desk agrees with.
+  #
+  # `actual_brightness` is the other one, and it is the honest one: reading it
+  # makes the driver go and ask the monitor (ddcci_backlight_get_brightness is
+  # a live VCP 0x10 read). It is also what waybar's backlight module reads, so
+  # everything here reads it too — the bar and the OSD quoting two different
+  # sysfs files about the same display is most of what "out of sync" meant.
   brightness = pkgs.writeShellApplication {
     name = "brightness";
     runtimeInputs = with pkgs; [
       brightnessctl
       util-linux
       coreutils
-      gawk
       osd
     ];
     text = ''
       step=5
 
-      # Serialise, and drop overlapping runs rather than queue them.
+      sysfs=/sys/class/backlight
+
+      # Where `dim` records what it is about to leave, for `restore` to put
+      # back. See `dim` below for why this isn't brightnessctl's --save.
+      state="''${XDG_RUNTIME_DIR:-/tmp}/brightness.dim"
+
+      # Serialise against other runs of this script.
       #
       # A DDC/CI write is a round trip over the monitor's own i2c bus, on the
       # order of 100ms per display — the kernel backlight of a laptop panel is
       # effectively instant by comparison. Holding the key down generates
-      # presses far faster than the monitors can answer, and without this the
-      # backlog keeps applying for seconds after the key is released. -n makes
-      # a run that arrives mid-write exit instead of waiting its turn.
-      exec 9>"''${XDG_RUNTIME_DIR:-/tmp}/brightness.lock"
-      flock -n 9 || exit 0
-
-      # Machine-readable list is `name,class,current,percent%,max` per device.
+      # presses far faster than the monitors can answer.
       #
-      # The process substitution keeps a non-zero brightnessctl — which is
-      # what an empty backlight class produces, the ordinary state of a
-      # desktop without ddcci loaded — from tripping `set -e` here, so the
-      # empty case gets a clear message instead of a bare failure.
-      mapfile -t devices < <(
-        brightnessctl --class=backlight --machine-readable --list 2>/dev/null | cut -d, -f1
-      )
+      # Two acquisitions, because the two kinds of caller want opposite things
+      # from a busy lock. A key press is one of a stream and the stream is
+      # worth more than any single press, so `-n` drops it and the backlog
+      # can't keep applying for seconds after the key is released. The idle
+      # timer's dim and restore arrive once and have no successor to correct
+      # them, so they wait — a dropped `restore` is a screen left dim with
+      # nothing else coming to undo it.
+      exec 9>"''${XDG_RUNTIME_DIR:-/tmp}/brightness.lock"
+      lock_now()  { flock -n 9; }
+      lock_wait() { flock -w 15 9; }
+      unlock()    { flock -u 9; }
+
+      # Every backlight device, in a stable order.
+      #
+      # A glob rather than `brightnessctl --list`, which is readdir order and
+      # so is whatever the kernel's directory hashing gives that boot. That
+      # order decides which display speaks for the rest when none is pinned,
+      # and a reading that moved between monitors from one boot to the next
+      # would be worse than either answer.
+      devices=()
+      for path in "$sysfs"/*; do
+        [ -e "$path/brightness" ] || continue
+        devices+=("''${path##*/}")
+      done
 
       if [ ''${#devices[@]} -eq 0 ]; then
         echo "brightness: no backlight devices — see modules/nixos/ddcci.nix" >&2
         exit 1
       fi
 
-      # One monitor refusing a DDC/CI write shouldn't stop the others moving.
-      apply() {
-        local dev="$1"
-        shift
-        brightnessctl --class=backlight --device="$dev" --quiet "$@" || true
+      # The display the OSD quotes. `local.niri.brightness.device` pins it to
+      # the same one the bar reports (waybar.nix); unset leaves both to their
+      # own idea of "first", which is the old behaviour and is fine on a
+      # machine with one panel. See the option for how to find the name.
+      primary="''${devices[0]}"
+      configured=${lib.escapeShellArg primaryBacklight}
+      if [ -n "$configured" ]; then
+        if [ -e "$sysfs/$configured/brightness" ]; then
+          primary="$configured"
+        else
+          echo "brightness: no backlight device '$configured'; using $primary" >&2
+        fi
+      fi
+
+      # sysfs reads. Anything that isn't a plain number — a missing file, or a
+      # DDC/CI read the monitor didn't answer — is a failure rather than a 0.
+      read_int() {
+        local v
+        v="$(cat "$1" 2>/dev/null || true)"
+        case "$v" in
+          "" | *[!0-9]*) return 1 ;;
+        esac
+        printf '%s\n' "$v"
       }
 
-      each() {
-        local dev
+      # What the display is at, falling back to what was last written to it
+      # when the monitor won't say. See the header comment.
+      actual()   { read_int "$sysfs/$1/actual_brightness" || read_int "$sysfs/$1/brightness"; }
+      intended() { read_int "$sysfs/$1/brightness"; }
+      maximum()  { read_int "$sysfs/$1/max_brightness"; }
+
+      # One monitor refusing a write shouldn't stop the others moving.
+      #
+      # Raw values rather than brightnessctl's own `%`, `+n%` and `n%-`, so the
+      # arithmetic below can start from `actual` — brightnessctl's relative
+      # steps are computed from `brightness`, which is the number that goes
+      # wrong. Still brightnessctl and not a plain `echo > sysfs`: it falls
+      # back to logind's SetBrightness when the device isn't group-writable,
+      # which is the fallback the laptop ran on for a long time.
+      write() {
+        brightnessctl --class=backlight --device="$1" --quiet set "$2" >/dev/null 2>&1 || true
+      }
+
+      # A step is `step`% of each device's own range, which is brightnessctl's
+      # definition of `+5%` and keeps a 0–100 DDC monitor and a 0–96000 laptop
+      # panel moving by the same visible amount.
+      step_all() {
+        local dir="$1" dev cur max delta target
         for dev in "''${devices[@]}"; do
-          apply "$dev" "$@"
+          max="$(maximum "$dev")" || continue
+          cur="$(actual "$dev")" || continue
+
+          delta=$(( (step * max + 50) / 100 ))
+          if [ "$delta" -lt 1 ]; then
+            delta=1
+          fi
+
+          if [ "$dir" = up ]; then
+            target=$(( cur + delta ))
+          else
+            target=$(( cur - delta ))
+          fi
+
+          # Clamping is ours now that the target is, and it has to be: a
+          # monitor reporting 100 when the script thinks it is at 20 would
+          # otherwise be asked for 105.
+          if [ "$target" -lt 0 ]; then
+            target=0
+          elif [ "$target" -gt "$max" ]; then
+            target="$max"
+          fi
+
+          write "$dev" "$target"
         done
       }
 
-      # The on-screen display, drawn from a fresh reading of the device rather
-      # than from a level computed here. Nothing in this script has to know
-      # what a step did — including the clamping at 0% and 100%, which is
-      # brightnessctl's, and which a predicted number would get wrong at both
-      # ends of the range.
-      #
-      # The first device speaks for all of them. That is brightnessctl's own
-      # no-`--device` semantics, it is the only device there is on the laptop,
-      # and on the desk every display has just taken the same step. They can
-      # still drift apart — a monitor that refused a write, or one adjusted
-      # from its own buttons — in which case this shows the first display's
-      # level rather than an average, which is at least a number that belongs
-      # to something real.
-      #
-      # awk rather than `head -1`: this runs under `set -o pipefail`, and a
-      # reader that closes the pipe early would make brightnessctl die of
-      # SIGPIPE and take the whole script with it.
-      show_osd() {
-        local pct
-        pct="$(
-          brightnessctl --class=backlight --machine-readable --list 2>/dev/null \
-            | awk -F, 'NR == 1 { sub(/%$/, "", $4); print $4 }' || true
-        )"
+      set_all() {
+        local pct="$1" dev max
+        for dev in "''${devices[@]}"; do
+          max="$(maximum "$dev")" || continue
+          write "$dev" "$(( (pct * max + 50) / 100 ))"
+        done
+      }
 
-        osd progress display-brightness-symbolic "$pct"
+      # The on-screen display, read back off the device rather than predicted
+      # from the step — including the clamping above, which a predicted number
+      # would get wrong at both ends of the range.
+      #
+      # One display speaks for all of them, and `round` matches waybar's
+      # `round(actual * 100 / max)` so the pop-up and the bar can't disagree
+      # by a percent. They can still each be right about a *different* number
+      # if the monitors have drifted apart — one refused a write, or was
+      # adjusted from its own buttons — which is what pinning `primary` is
+      # for: at least it is always the same screen being quoted.
+      show_osd() {
+        local cur max
+        max="$(maximum "$primary")" || return 0
+        cur="$(actual "$primary")" || return 0
+        [ "$max" -gt 0 ] || return 0
+
+        osd progress display-brightness-symbolic "$(( (cur * 100 + max / 2) / max ))"
+      }
+
+      # Make the displays agree with what has been written to them.
+      #
+      # This is the repair for a write the monitor never took: ask it what it
+      # is actually at, and write again if the answer disagrees. A monitor
+      # coming out of DPMS needs a second or two before it will answer at all,
+      # which is what the attempts are for, and a monitor that simply rounds
+      # differently is why a unit of slack is close enough.
+      #
+      # The re-write is also the only thing that tells the bar to look. The
+      # backlight class emits a uevent on every write to `brightness`,
+      # including one that changes nothing, and waybar's backlight module
+      # otherwise re-reads on its own poll interval — which is deliberately
+      # slow (waybar.nix) precisely because each poll is a DDC/CI read.
+      #
+      # The lock is dropped between attempts on purpose. This can run for
+      # several seconds while a monitor wakes up, and holding it throughout
+      # would make every brightness key pressed in the meantime hit `flock -n`
+      # and be thrown away. A press that lands in a gap changes `brightness`,
+      # and the next attempt re-asserts that instead — the person at the
+      # keyboard wins the argument.
+      settle() {
+        local dev want got diff pending attempt=0 attempts=6
+
+        while [ "$attempt" -lt "$attempts" ]; do
+          attempt=$(( attempt + 1 ))
+          pending=0
+
+          for dev in "''${devices[@]}"; do
+            want="$(intended "$dev")" || continue
+            got="$(actual "$dev")" || got=""
+
+            if [ -n "$got" ]; then
+              diff=$(( want - got ))
+              if [ "''${diff#-}" -le 1 ]; then
+                continue
+              fi
+            fi
+
+            pending=1
+            write "$dev" "$want"
+          done
+
+          if [ "$pending" -eq 0 ]; then
+            return 0
+          fi
+
+          if [ "$attempt" -lt "$attempts" ]; then
+            unlock
+            sleep 1
+            lock_wait || return 0
+          fi
+        done
+      }
+
+      # Record where every display is and drop them all to <percent>. This is
+      # the swayidle dim warning; `restore` is its other half.
+      #
+      # The levels are kept here rather than through brightnessctl's --save
+      # and --restore, because that pair has no idea whether it has already
+      # saved. A second dim with no restore in between overwrote the saved
+      # level with the *dimmed* one, and from then on every restore returned
+      # the screen to 20% and stayed there until a key was pressed. That is a
+      # latch rather than a glitch, and one dropped restore was enough to arm
+      # it. The file's existence is the "already dimmed" flag that closes it.
+      #
+      # No OSD on either half: the dim is what happens when you have stopped
+      # touching the machine, and the restore is what happens the instant you
+      # touch it again. A pop-up on the second would fire on every return to
+      # the desk, reporting a level that hasn't changed from what it was
+      # before the timer ran.
+      dim() {
+        local pct="$1" dev cur
+
+        if [ -e "$state" ]; then
+          return 0
+        fi
+
+        : > "$state.new"
+        for dev in "''${devices[@]}"; do
+          cur="$(actual "$dev")" || continue
+          printf '%s %s\n' "$dev" "$cur" >> "$state.new"
+        done
+        mv "$state.new" "$state"
+
+        set_all "$pct"
+      }
+
+      restore() {
+        local dev want
+
+        if [ ! -e "$state" ]; then
+          return 0
+        fi
+
+        while read -r dev want; do
+          case "$want" in
+            "" | *[!0-9]*) continue ;;
+          esac
+          write "$dev" "$want"
+        done < "$state"
+
+        rm -f "$state"
+        settle
       }
 
       case "''${1:-}" in
-        up)   each set "+''${step}%" ; show_osd ;;
-        down) each set "''${step}%-" ; show_osd ;;
-        set)
-          [ -n "''${2:-}" ] || { echo "usage: brightness set <percent>" >&2; exit 2; }
-          each set "$2%"
+        up)
+          lock_now || exit 0
+          step_all up
           show_osd
           ;;
-        # Save the current level and drop to <percent>. This is the swayidle
-        # dim warning; `restore` is its resumeCommand.
-        #
-        # No OSD on either: the dim is what happens when you have stopped
-        # touching the machine, and the restore is what happens the instant you
-        # touch it again. A pop-up on the second one would fire on every return
-        # to the desk, reporting a level that hasn't changed from what it was
-        # before the timer ran.
-        dim)
-          [ -n "''${2:-}" ] || { echo "usage: brightness dim <percent>" >&2; exit 2; }
-          each --save set "$2%"
+        down)
+          lock_now || exit 0
+          step_all down
+          show_osd
           ;;
-        restore) each --restore ;;
+        set)
+          case "''${2:-}" in
+            "" | *[!0-9]*) echo "usage: brightness set <percent>" >&2; exit 2 ;;
+          esac
+          lock_now || exit 0
+          set_all "$2"
+          show_osd
+          ;;
+        dim)
+          case "''${2:-}" in
+            "" | *[!0-9]*) echo "usage: brightness dim <percent>" >&2; exit 2 ;;
+          esac
+          lock_wait || exit 0
+          dim "$2"
+          ;;
+        restore)
+          lock_wait || exit 0
+          restore
+          ;;
+        # Re-assert every display's level and wait for it to take. For the
+        # moments a monitor was in no state to listen — coming out of DPMS,
+        # coming out of suspend — where sysfs, the bar and the panel in front
+        # of you can otherwise sit at three different answers. See lock.nix.
+        sync)
+          lock_wait || exit 0
+          settle
+          ;;
         *)
-          echo "usage: brightness [up|down|set <pct>|dim <pct>|restore]" >&2
+          echo "usage: brightness [up|down|set <pct>|dim <pct>|restore|sync]" >&2
           exit 2
           ;;
       esac

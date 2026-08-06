@@ -76,9 +76,21 @@ in
       before-sleep = "${lock} --grace 0";
 
       # Restart Dunst shortly after resume so any stale layer-shell
-      # notification surface left over from before suspend is discarded.
-      after-resume = "${pkgs.coreutils}/bin/sleep 1; "
-        + "${pkgs.systemd}/bin/systemctl --user restart dunst.service";
+      # notification surface left over from before suspend is discarded, and
+      # put the monitors' brightness back in agreement with what the machine
+      # thinks it is.
+      #
+      # The second half is the same repair as the blank's resumeCommand below
+      # and for the same reason — a suspend is a longer, harder version of the
+      # screen going dark, and the displays lost power rather than just their
+      # signal. Detached for the same reason too: swayidle's `-w` waits, and
+      # this one already spends a second not doing anything.
+      after-resume = lib.concatStringsSep " " [
+        "${pkgs.coreutils}/bin/sleep 1;"
+        "${pkgs.systemd}/bin/systemctl --user restart dunst.service;"
+        "${pkgs.systemd}/bin/systemd-run --user --quiet --collect --"
+        "${whenActive} ${lib.getExe niriScripts.brightness} sync"
+      ];
 
       # Handles `loginctl lock-session` from elsewhere. Someone asked for the
       # lock, so no grace either.
@@ -111,11 +123,17 @@ in
     timeouts = [
       # Dim first as a warning, restore on activity.
       #
-      # Through `brightness` (scripts.nix) so this covers every display, not
-      # just whichever backlight device brightnessctl happened to enumerate
-      # first. On the desk that's one device per monitor — before ddcci
-      # existed there were none at all, so this dim was silently a no-op
-      # there and the screen went straight from full brightness to locked.
+      # Through `brightness` (scripts.nix) so this covers every display rather
+      # than whichever backlight device happens to come first. On the desk
+      # that's one device per monitor — before ddcci existed there were none
+      # at all, so this dim was silently a no-op there and the screen went
+      # straight from full brightness to locked.
+      #
+      # The pre-dim levels are recorded by the helper rather than by
+      # brightnessctl's --save, which had no idea whether it had already
+      # saved: a second dim with no restore between overwrote the saved level
+      # with the dimmed one, and every restore after that returned the screen
+      # to 20%. See `dim` in scripts.nix.
       #
       # Through `when-active` because a monitor's brightness belongs to the
       # seat, not to the session that set it: on the desk this is a DDC/CI
@@ -145,9 +163,47 @@ in
       # has handed its DRM devices back, so this can't blank anything while the
       # session is in the background anyway — it would only queue the outputs
       # up to come back dark on the way in.
+      #
+      # **Undo the dim first, while the monitors can still hear it.** This is
+      # the fix for the desk coming back out of blank at the wrong brightness.
+      # The dim is a warning that the screen is about to go; once it has gone
+      # there is nothing left for it to warn about, so putting the level back
+      # before the outputs go dark costs nothing you can see. What it buys is
+      # that no DDC/CI write is left owed across a DPMS off. Left to the
+      # dim's own resumeCommand, that write goes out at the moment input
+      # returns — racing niri turning the outputs back on, and landing on a
+      # monitor that is still re-establishing its link and in no state to
+      # answer. The driver doesn't notice it was ignored (see `brightness` in
+      # scripts.nix), so sysfs said 100%, the panel sat at 20%, and the keys
+      # then stepped from 100 and appeared dead until they had come back down
+      # past 20. Restoring here, five minutes earlier, means the monitor takes
+      # the write while it is awake and there is nothing pending when it
+      # sleeps.
+      #
+      # `restore` is a no-op if the dim never ran, and the resumeCommand above
+      # is then a no-op in turn — whichever of the two gets there first clears
+      # the state and the other has nothing to do.
       {
         timeout = 600;
-        command = "${whenActive} ${pkgs.niri}/bin/niri msg action power-off-monitors";
+        command = lib.concatStringsSep " " [
+          "${whenActive} ${lib.getExe niriScripts.brightness} restore;"
+          "${whenActive} ${pkgs.niri}/bin/niri msg action power-off-monitors"
+        ];
+
+        # And on the way back, check rather than assume. A monitor that came
+        # back on its own stored level instead of the one it was sent, or that
+        # was polled while asleep and answered nonsense, is put right here; if
+        # everything already agrees this reads each display once and stops.
+        #
+        # Detached through systemd-run because swayidle runs with `-w` and
+        # waits for each command — see the comment on `lock` at the top of
+        # this file. `brightness sync` deliberately keeps trying for a few
+        # seconds while a monitor wakes up, and blocking swayidle's event loop
+        # for that long is the exact mistake `lock-now` exists to avoid.
+        resumeCommand = lib.concatStringsSep " " [
+          "${pkgs.systemd}/bin/systemd-run --user --quiet --collect --"
+          "${whenActive} ${lib.getExe niriScripts.brightness} sync"
+        ];
       }
     ];
   };

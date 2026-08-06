@@ -387,11 +387,29 @@ in
 
       # The active power profile, immediately right of the charge.
       #
-      # Left click steps forward through the profiles the daemon offers, right
-      # click steps back. That is the module's own handler and it replaces the
-      # generic one outright, so unlike `pulseaudio` and `backlight` there is
-      # no `on-click` here to keep in step with anything — and no way to add
-      # one either.
+      # Click and scroll both step through the profiles, and the two halves of
+      # that arrive by different routes.
+      #
+      # Clicking is the module's own: left click forward through the profiles
+      # the daemon offers, right click back. It overrides waybar's generic
+      # button handler rather than adding to it, so there is no `on-click`
+      # here — unlike `pulseaudio` and `backlight`, setting one would change
+      # nothing, and there is no way to point the click at the same script the
+      # scroll uses.
+      #
+      # Scrolling is not built in and is wired up here, which is what makes
+      # this module behave like the two other things on the bar that can be
+      # scrolled. Up goes toward performance and down toward saving, matching
+      # "up is more" next door; the script's own list is in the daemon's
+      # order, so up and left click move the same way. See powerProfile in
+      # scripts.nix for the stepping, and for why a run is deliberately not
+      # cheap — it is the rate limit that keeps a touchpad flick from
+      # spinning through the profiles faster than they can be read.
+      #
+      # No OSD, where the volume and brightness scrolls raise one. Those are
+      # levels you change from a media key with your eyes elsewhere; this only
+      # moves when the pointer is on the widget, and the widget has already
+      # changed glyph and colour by the time a pop-up would appear.
       #
       # power-profiles-daemon is enabled for every graphical host in
       # modules/nixos/desktop.nix; without it this module draws nothing at
@@ -424,6 +442,8 @@ in
           performance = "󰓅";
         };
         tooltip-format = "Power profile: {profile}\nDriver: {driver}";
+        on-scroll-up = "${lib.getExe niriScripts.powerProfile} up";
+        on-scroll-down = "${lib.getExe niriScripts.powerProfile} down";
       };
 
       # Caps lock, between the battery and the idle inhibitor — and only while

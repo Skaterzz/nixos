@@ -293,12 +293,35 @@ brightness, which is the trap in the name.
 
 **The power profile** sits immediately right of the charge, and the two are
 one widget rather than two neighbours: a leaf for power-saver, a pair of
-scales for balanced, a dial for performance. Left click steps forward through
-the profiles the daemon offers and right click steps back — that's the
-module's own handler, so unlike the volume and brightness modules there's no
-`on-click` here keeping a script in step, and no way to add one. The tooltip
-names the profile and the driver actually carrying it, which is the part worth
-knowing: a profile the daemon accepts but has no driver for changes nothing.
+scales for balanced, a dial for performance. Click it or scroll it to step
+through them — up and left click go toward performance, down and right click
+toward saving. The tooltip names the profile and the driver actually carrying
+it, which is the part worth knowing: a profile the daemon accepts but has no
+driver for changes nothing.
+
+The two halves of that arrive by different routes, which is worth knowing
+before changing either. Clicking is the module's own handler and it *replaces*
+waybar's generic one, so an `on-click` in `waybar.nix` would do nothing and
+there's no way to point the click at a script. Scrolling isn't built in at
+all, and is the `power-profile` helper in `scripts.nix` wired to
+`on-scroll-up`/`on-scroll-down` — the same shape as the volume and brightness
+scrolls next door. They agree on direction because the script's list is in the
+daemon's own order, which is the order the click steps through.
+
+That helper takes the same `flock -n` guard as the brightness script, and here
+it earns it twice over: a touchpad flick is tens of scroll events a second,
+and without it two runs read the same profile and both step off it. It also
+reads the profile back after setting it rather than trusting the exit status,
+which is what makes scrolling wrap correctly on hardware that has no
+`performance` profile — otherwise scrolling up from balanced there would
+appear to do nothing, for ever. A run is a few hundred milliseconds because
+`powerprofilesctl` is a Python program talking over D-Bus, and that is what
+rate-limits the scroll to a speed you can follow.
+
+There's no OSD on it, where the volume and brightness scrolls raise one. Those
+are levels you change from a media key with your eyes somewhere else; this
+only moves when the pointer is on the widget, and the widget has already
+changed glyph and colour by the time a pop-up could appear.
 
 Three different silhouettes rather than one needle in three positions,
 because a dial a few degrees further round isn't something you read out of the

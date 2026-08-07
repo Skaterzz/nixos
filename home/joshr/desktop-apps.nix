@@ -141,56 +141,56 @@ in
     "mimeapps.list".force = true;
   };
 
-  # Use private entry IDs rather than overriding KDE's upstream files. This
-  # avoids D-Bus activation metadata and launches the exact Nix-store binary.
-  xdg.desktopEntries = {
-    "${entryPrefix}-gwenview" = {
-      name = "Gwenview";
-      genericName = "Image Viewer";
-      comment = "Open images with Gwenview";
-      exec = "${pkgs.kdePackages.gwenview}/bin/gwenview %U";
-      icon = "gwenview";
-      terminal = false;
-      categories = [
-        "Graphics"
-        "Viewer"
-      ];
-      mimeType = imageMimes;
-      settings.DBusActivatable = "false";
-    };
+  # # Use private entry IDs rather than overriding KDE's upstream files. This
+  # # avoids D-Bus activation metadata and launches the exact Nix-store binary.
+  # xdg.desktopEntries = {
+  #   "${entryPrefix}-gwenview" = {
+  #     name = "Gwenview";
+  #     genericName = "Image Viewer";
+  #     comment = "Open images with Gwenview";
+  #     exec = "${pkgs.kdePackages.gwenview}/bin/gwenview %U";
+  #     icon = "gwenview";
+  #     terminal = false;
+  #     categories = [
+  #       "Graphics"
+  #       "Viewer"
+  #     ];
+  #     mimeType = imageMimes;
+  #     settings.DBusActivatable = "false";
+  #   };
 
-    "${entryPrefix}-haruna" = {
-      name = "Haruna";
-      genericName = "Video Player";
-      comment = "Open videos with Haruna";
-      exec = "${pkgs.haruna}/bin/haruna %U";
-      icon = "haruna";
-      terminal = false;
-      categories = [
-        "AudioVideo"
-        "Video"
-        "Player"
-      ];
-      mimeType = videoMimes;
-      settings.DBusActivatable = "false";
-    };
+  #   "${entryPrefix}-haruna" = {
+  #     name = "Haruna";
+  #     genericName = "Video Player";
+  #     comment = "Open videos with Haruna";
+  #     exec = "${pkgs.haruna}/bin/haruna %U";
+  #     icon = "haruna";
+  #     terminal = false;
+  #     categories = [
+  #       "AudioVideo"
+  #       "Video"
+  #       "Player"
+  #     ];
+  #     mimeType = videoMimes;
+  #     settings.DBusActivatable = "false";
+  #   };
 
-    "${entryPrefix}-elisa" = {
-      name = "Elisa";
-      genericName = "Music Player";
-      comment = "Open audio with Elisa";
-      exec = "${pkgs.kdePackages.elisa}/bin/elisa %U";
-      icon = "elisa";
-      terminal = false;
-      categories = [
-        "AudioVideo"
-        "Audio"
-        "Player"
-      ];
-      mimeType = audioMimes;
-      settings.DBusActivatable = "false";
-    };
-  };
+  #   "${entryPrefix}-elisa" = {
+  #     name = "Elisa";
+  #     genericName = "Music Player";
+  #     comment = "Open audio with Elisa";
+  #     exec = "${pkgs.kdePackages.elisa}/bin/elisa %U";
+  #     icon = "elisa";
+  #     terminal = false;
+  #     categories = [
+  #       "AudioVideo"
+  #       "Audio"
+  #       "Player"
+  #     ];
+  #     mimeType = audioMimes;
+  #     settings.DBusActivatable = "false";
+  #   };
+  # };
 
   xdg.mimeApps = {
     enable = true;

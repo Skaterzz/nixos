@@ -33,25 +33,28 @@
     # `homeModules.default` from here on every niri host and leaves it inert
     # unless that option asks for it.
     #
-    # Not in nixpkgs, and pinned here for the usual reason: the shell reads a
-    # TOML schema that moves with the program, and this config generates that
-    # TOML from Nix. A `noctalia` that updated independently of the settings
-    # written against it would be a session that lost a setting silently. The
-    # home-manager module validates the generated config against the pinned
-    # binary at build time, which only means anything while the two are locked
-    # together.
+    # **This input is here for the home-manager module, not the package.**
+    # The shell itself is `pkgs.noctalia` — it is in nixpkgs, and nixpkgs
+    # builds it on the binary cache where this flake publishes no substituter
+    # (its cachix cache name is a CI secret). noctalia.nix therefore sets
+    # `programs.noctalia.package = pkgs.noctalia` and nothing here gets built.
     #
-    # **This is v5**, and that matters more than the usual "pin your inputs".
-    # `main` is the current major — meson.build says 5.0.0 — and upstream
-    # parks the previous one on a branch of its own, `legacy-v4` today. So
-    # this ref becomes v6 the day v6 lands, and v4's config schema is
-    # different enough that noctalia.nix would be writing the wrong file.
+    # The module cannot come from either of those places. home-manager ships no
+    # `programs.noctalia`, and nixpkgs ships only the binary, so without this
+    # input the config.toml, the 29 palette files and — the part that matters —
+    # the build-time `noctalia config validate` would all have to be hand-rolled
+    # out of `xdg.configFile`, which is how a renamed key becomes a setting that
+    # silently stops applying.
     #
-    # There is deliberately no tag here to pin to instead: the v5 tags are all
-    # `v5.0.0-beta.*` and sit behind main, so pinning to one would be a
-    # downgrade to a beta. flake.lock holds the commit, and
-    # home/joshr/niri/noctalia.nix asserts the major is 5 so an update past it
-    # fails the build with instructions rather than switching quietly.
+    # **v5.** Watch the attribute names in nixpkgs, which are a trap: `noctalia`
+    # is the v5 line and `noctalia-shell` is 4.7.7, having kept the repository's
+    # old name from before upstream renamed it at v5. Here, `main` is the
+    # current major (meson.build says 5.0.0) and upstream parks the previous one
+    # on a branch of its own — `legacy-v4` today — so this ref becomes v6 the
+    # day v6 lands. There is deliberately no tag to pin to instead: every v5 tag
+    # is `v5.0.0-beta.*` and sits behind main. flake.lock holds the commit, and
+    # noctalia.nix asserts the major is 5 so any of these going wrong is a build
+    # failure with instructions rather than a session that comes up subtly wrong.
     noctalia = {
       url = "github:noctalia-dev/noctalia";
       inputs.nixpkgs.follows = "nixpkgs";

@@ -81,6 +81,31 @@ in
     programs.noctalia = {
       enable = true;
 
+      # The binary comes from nixpkgs; only the module comes from the flake.
+      #
+      # nixpkgs carries two attributes and the names are a trap. `noctalia` is
+      # 5.0.0-beta.7 — the v5 line, and what this file is written for.
+      # `noctalia-shell` is 4.7.7: it kept the repository's *old* name, which
+      # upstream changed to `noctalia` at v5, so the more official-looking name
+      # is the stale one. The assertion at the bottom of this file exists in
+      # part to make picking the wrong one a build error instead of a session
+      # that comes up with half its settings ignored.
+      #
+      # Why nixpkgs' build rather than the flake's: upstream's flake exposes a
+      # package but publishes no substituter for it — the cachix workflow's
+      # cache name is a CI secret and there is no `nixConfig` block naming one
+      # — so `packages.default` means compiling a Qt/C++ project locally on
+      # every machine. nixpkgs' build is on the usual binary cache.
+      #
+      # What that costs: the module is from the flake's `main` (5.0.0) and the
+      # binary is the beta.7 tag, where `validateConfig` is the flake module
+      # running *this* binary over the config generated from `settings` below.
+      # `settings` is written against main's schema, so a key added after
+      # beta.7 fails the build. That is a loud failure naming the key, and the
+      # fix is one line — put `inputs.noctalia.packages.${pkgs.stdenv.hostPlatform.system}.default`
+      # here and take the local compile until nixpkgs catches up.
+      package = pkgs.noctalia;
+
       # As a user service rather than a niri `spawn-at-startup`, matching how
       # waybar was run and for a better reason than waybar had: the upstream
       # unit carries `X-Restart-Triggers` naming the generated config and every

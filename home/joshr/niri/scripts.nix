@@ -1,6 +1,5 @@
 {
   config,
-  inputs,
   lib,
   osConfig,
   pkgs,
@@ -100,18 +99,23 @@ let
 
   # And what that needs on PATH.
   #
-  # From `inputs` rather than from `config.programs.noctalia.package`, which
-  # is the more obvious spelling and is a module-system cycle. This file
-  # publishes `_module.args.niriScripts`, and ./noctalia.nix takes that as a
-  # formal argument — so it has to be callable before this attribute set
-  # exists. Reading an *option* here would mean needing the full module list
-  # to collect its definitions, and the full module list needs noctalia.nix
-  # called, which needs niriScripts, which is this. `inputs` is a specialArg
-  # and resolves without any of that.
+  # `pkgs.noctalia` rather than `config.programs.noctalia.package`, which is
+  # the more obvious spelling and is a module-system cycle. This file publishes
+  # `_module.args.niriScripts`, and ./noctalia.nix takes that as a formal
+  # argument — so it has to be callable before this attribute set exists.
+  # Reading an *option* here would mean needing the full module list to collect
+  # its definitions, and the full module list needs noctalia.nix called, which
+  # needs niriScripts, which is this. A package from `pkgs` resolves without
+  # any of that.
+  #
+  # It is the same derivation either way: ./noctalia.nix sets
+  # `programs.noctalia.package = pkgs.noctalia`, so this is that binary and not
+  # a second copy. Change one and change the other — there is no assertion
+  # tying them together, because writing one would reintroduce the cycle.
   #
   # ./niri.nix does read the option, and is fine doing so: it publishes no
   # module args, so nothing has to evaluate it to decide what the modules are.
-  shellApplyInputs = lib.optional useNoctalia inputs.noctalia.packages.${pkgs.stdenv.hostPlatform.system}.default;
+  shellApplyInputs = lib.optional useNoctalia pkgs.noctalia;
 
   # The backlight device the `brightness` helper reads back for the OSD. Empty
   # when unset, which the script treats as "whichever sorts first". Shared with

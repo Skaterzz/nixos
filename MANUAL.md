@@ -280,6 +280,40 @@ is written against noctalia's v5 schema — `[bar.<name>]` with `start`/`center`
 `palettes/<name>.json`. v4 spelled several of those differently; colour
 schemes in particular lived in `colorschemes/<name>/<name>.json`.
 
+**Watch the attribute name.** nixpkgs carries both majors, and the names run
+backwards from what you'd guess:
+
+| attribute | version | |
+|---|---|---|
+| `pkgs.noctalia` | 5.0.0-beta.7 | the v5 line — what this config uses |
+| `pkgs.noctalia-shell` | 4.7.7 | v4; kept the repo's old name |
+
+Upstream renamed the repository from `noctalia-shell` to `noctalia` at v5, so
+the more official-looking `noctalia-shell` is the stale one. Putting it in
+`environment.systemPackages` gets you v4 and a session that ignores most of
+this config.
+
+**The package is nixpkgs'; only the module comes from the flake.** Upstream's
+flake publishes no substituter — its cachix cache name is a CI secret — so
+`packages.default` means compiling a Qt/C++ project locally on every machine,
+where nixpkgs' build is on the ordinary binary cache. So `noctalia.nix` sets
+`programs.noctalia.package = pkgs.noctalia` and nothing from the flake is
+built.
+
+The module can't come from nixpkgs, though: home-manager ships no
+`programs.noctalia` and nixpkgs ships only the binary. Without the flake
+input, `config.toml`, the 29 palette files and the build-time
+`noctalia config validate` would all have to be hand-rolled out of
+`xdg.configFile` — which is exactly how a renamed key becomes a setting that
+quietly stops applying.
+
+That split has one consequence worth knowing: the module is from `main`
+(5.0.0) and the binary is the beta.7 tag, and `validateConfig` is the module
+running *that binary* over the config generated here. A key added upstream
+after beta.7 fails the build, naming the key. The fix is one line — put
+`inputs.noctalia.packages.<system>.default` back as the `package` and take the
+local compile until nixpkgs catches up.
+
 The flake input follows the repo's `main` branch, which is where the current
 major lives — upstream parks the previous one on a branch of its own, and
 `legacy-v4` is there now. So `main` becomes v6 the day v6 lands. `flake.lock`

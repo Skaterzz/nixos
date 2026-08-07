@@ -47,8 +47,81 @@ let
         }''
   ) workspaceNames;
 
+  # The binds that address the shell rather than the compositor.
+  #
+  # Everything in this block is a command that exists in two versions: a
+  # helper from ./scripts.nix driving one of the stack's daemons, or a line of
+  # noctalia IPC. `shellBind` picks between them once so the keymap below can
+  # stay a flat list of keys and not a list of conditionals.
+  #
+  # Only the binds that talk to the shell are here. Window management, the
+  # workspace keys and the screenshot binds are the compositor's own actions
+  # and are the same under both — as are Mod+Shift+T and Mod+Ctrl+T, which go
+  # through `theme-apply` either way (it is the switcher that knows how to
+  # tell each shell; see scripts.nix).
+  useNoctalia = config.local.niri.shell == "noctalia";
+  noctalia = lib.getExe config.programs.noctalia.package;
+  shellBind = stack: ipc: if useNoctalia then "${noctalia} msg ${ipc}" else stack;
+
   terminal = "${pkgs.kitty}/bin/kitty";
-  launcher = "${pkgs.wofi}/bin/wofi --show drun";
+
+  launcher = shellBind "${pkgs.wofi}/bin/wofi --show drun" "panel-toggle launcher";
+
+  # noctalia has no separate emoji picker: emoji are a launcher provider,
+  # reached by opening it pre-filled with that provider's trigger. So the key
+  # still opens "the emoji picker" and there is one less program to keep a
+  # database for — see ./emoji.nix for the bemoji one it replaces, which stays
+  # installed and usable from a terminal.
+  emojiPicker = shellBind (bin niriEmoji.emojiPicker) "panel-toggle launcher /emo";
+
+  clipboardHistory = shellBind (bin niriClipboard.clipboardHistory) "panel-toggle clipboard";
+  sessionMenu = shellBind (bin niriScripts.sessionMenu) "panel-toggle session";
+  wallpaperMenu = shellBind (bin niriScripts.wallpaperMenu) "panel-toggle wallpaper";
+  wallpaperRandom = shellBind (bin niriScripts.wallpaperRandom) "wallpaper-random";
+  lockNow = shellBind (bin niriScripts.lockNow) "session lock";
+  idleInhibit = shellBind "${bin niriScripts.idleInhibit} toggle" "caffeine-toggle";
+
+  # Lock and blank in one key. `lock-blank` is a script under the stack
+  # because it has to wait for swaylock to actually be up before powering the
+  # outputs off; noctalia's lock is in-process, so the two IPC calls can just
+  # be sequenced.
+  lockBlank = shellBind (bin niriScripts.lockBlank) "session lock && ${noctalia} msg dpms-off";
+
+  # Volume and brightness move wholesale, and the reason is the OSD rather
+  # than the level.
+  #
+  # The `volume` and `brightness` helpers exist because niri has no OSD: each
+  # makes its change and then calls swayosd-client to draw the result (see the
+  # note on `osd` in ./scripts.nix). Under noctalia swayosd is not running, so
+  # those helpers would still move the level and then draw nothing. noctalia
+  # watches the devices itself and pops its own OSD for whatever moved them.
+  #
+  # Brightness in particular loses nothing by moving. The helper steps *every*
+  # backlight device because plain brightnessctl moves only the first, which is
+  # wrong on the desk where ddcci-backlight registers one device per monitor;
+  # noctalia enumerates them all and `brightness-up` with no target steps the
+  # focused monitor, which is the more useful answer to the same problem.
+  #
+  # The helpers are still built, still on PATH, and still what the idle dim
+  # runs — `dim`/`restore` record the pre-dim level, which noctalia has no
+  # equivalent for. See the `idle` block in ./noctalia.nix.
+  volumeUp = shellBind "${bin niriScripts.volume} up" "volume-up";
+  volumeDown = shellBind "${bin niriScripts.volume} down" "volume-down";
+  volumeMute = shellBind "${bin niriScripts.volume} mute" "volume-mute";
+  micMute = shellBind "${bin niriScripts.volume} mic-mute" "mic-mute";
+  brightnessUp = shellBind "${bin niriScripts.brightness} up" "brightness-up";
+  brightnessDown = shellBind "${bin niriScripts.brightness} down" "brightness-down";
+
+  # Put back the wallpaper the picker last chose, at login.
+  #
+  # Only under the waybar stack. awww starts empty and `wallpaper-set` writes
+  # the choice to a state file for this to read back; noctalia owns the
+  # wallpaper and remembers the selection itself, so there is nothing to
+  # restore and the spawn would be a second program fighting it for the
+  # background. An empty string here leaves the line out of config.kdl.
+  wallpaperRestoreSpawn = lib.optionalString (
+    !useNoctalia
+  ) ''spawn-at-startup "${bin niriScripts.wallpaperRestore}"'';
   # finalPackage rather than pkgs.firefox: that's the wrapper home-manager
   # actually installs, carrying whatever ../firefox.nix declares beyond plain
   # prefs. Naming the raw package here would launch a second, unwrapped build.
@@ -214,9 +287,11 @@ ${workspaceBlocks}
         zoom 0.5
     }
 
-    // waybar runs as a systemd user service (see waybar.nix) so the theme
-    // switcher can restart it; starting it here as well would give two bars.
-    spawn-at-startup "${bin niriScripts.wallpaperRestore}"
+    // Neither shell is started here. waybar and noctalia both run as systemd
+    // user services — waybar so the theme switcher can restart it (waybar.nix),
+    // noctalia so a config change restarts it on its own (noctalia.nix) —
+    // and starting either here as well would give two bars.
+    ${wallpaperRestoreSpawn}
 
     // nm-applet is deliberately not started. Its tray icon duplicates the
     // waybar `network` module, and that module's click already opens
@@ -300,14 +375,14 @@ ${workspaceBlocks}
         // Mod+V and Mod+Shift+V are both window management already, so the
         // history lands on the third one in the V family rather than
         // somewhere unrelated. See clipboard.nix.
-        Mod+Ctrl+V hotkey-overlay-title="Clipboard history" { spawn "${bin niriClipboard.clipboardHistory}"; }
+        Mod+Ctrl+V hotkey-overlay-title="Clipboard history" { spawn-sh "${clipboardHistory}"; }
 
         // --- emoji ------------------------------------------------------
         // Mod+. because that is what opens the emoji picker on Windows, and
         // that reflex is the whole reason it's here. It cost this key's old
         // binding, `expel-window-from-column`, which moved down to
         // Mod+Shift+Period among the sizing binds. See emoji.nix.
-        Mod+Period hotkey-overlay-title="Emoji" { spawn "${bin niriEmoji.emojiPicker}"; }
+        Mod+Period hotkey-overlay-title="Emoji" { spawn-sh "${emojiPicker}"; }
 
         // --- session ---------------------------------------------------
         // Lock is Mod+L, matching the Windows/KDE reflex. That costs the
@@ -319,7 +394,7 @@ ${workspaceBlocks}
         // button, the session menu, switch-user and swayidle — so a second
         // request while already locked is a no-op instead of a second locker.
         // See scripts.nix.
-        Mod+L hotkey-overlay-title="Lock" { spawn "${bin niriScripts.lockNow}"; }
+        Mod+L hotkey-overlay-title="Lock" { spawn-sh "${lockNow}"; }
 
         // Lock *and* turn the displays off, in one key.
         //
@@ -330,7 +405,7 @@ ${workspaceBlocks}
         //
         // Any input powers the monitors back on and lands on the lock screen,
         // the same as the 600s idle blank in lock.nix.
-        Mod+Shift+L hotkey-overlay-title="Lock and blank" { spawn "${bin niriScripts.lockBlank}"; }
+        Mod+Shift+L hotkey-overlay-title="Lock and blank" { spawn-sh "${lockBlank}"; }
 
         // Blank the monitors now, from the lock screen or from the desktop.
         // Any input wakes them; on the lock screen that leaves swaylock
@@ -359,8 +434,8 @@ ${workspaceBlocks}
         // allow-when-locked, allow-inhibiting and hotkey-overlay-title.
         Mod+Escape hotkey-overlay-title="Blank monitors" { power-off-monitors; }
 
-        Mod+Shift+Escape hotkey-overlay-title="Session menu" { spawn "${bin niriScripts.sessionMenu}"; }
-        Ctrl+Alt+Delete hotkey-overlay-title="Session menu" { spawn "${bin niriScripts.sessionMenu}"; }
+        Mod+Shift+Escape hotkey-overlay-title="Session menu" { spawn-sh "${sessionMenu}"; }
+        Ctrl+Alt+Delete hotkey-overlay-title="Session menu" { spawn-sh "${sessionMenu}"; }
 
         // Niri permits its built-in `quit` action through a session lock.
         // Spawn actions are blocked while locked unless they explicitly opt
@@ -376,7 +451,7 @@ ${workspaceBlocks}
         // The title names the inhibitor as well as what it does, because the
         // hotkey overlay (Mod+Shift+/) is where you go looking for this key,
         // and "idle" is the word you would search it for.
-        Mod+Shift+I hotkey-overlay-title="Stay awake — toggle idle inhibitor" { spawn "${bin niriScripts.idleInhibit}" "toggle"; }
+        Mod+Shift+I hotkey-overlay-title="Stay awake — toggle idle inhibitor" { spawn-sh "${idleInhibit}"; }
 
         // --- theming ---------------------------------------------------
         // Random theme, or pick one / a wallpaper from a menu. Mod+Shift is
@@ -384,8 +459,8 @@ ${workspaceBlocks}
         // `theme-cycle` still exists on PATH if you want the ordered walk.
         Mod+Shift+T hotkey-overlay-title="Random theme" { spawn "${bin niriScripts.themeRandom}"; }
         Mod+Ctrl+T  hotkey-overlay-title="Choose theme" { spawn "${bin niriScripts.themeMenu}"; }
-        Mod+Shift+W hotkey-overlay-title="Random wallpaper" { spawn "${bin niriScripts.wallpaperRandom}"; }
-        Mod+Ctrl+W  hotkey-overlay-title="Choose wallpaper" { spawn "${bin niriScripts.wallpaperMenu}"; }
+        Mod+Shift+W hotkey-overlay-title="Random wallpaper" { spawn-sh "${wallpaperRandom}"; }
+        Mod+Ctrl+W  hotkey-overlay-title="Choose wallpaper" { spawn-sh "${wallpaperMenu}"; }
 
         // --- screenshots -----------------------------------------------
         // Region capture goes through satty for annotation; the plain
@@ -414,10 +489,10 @@ ${workspaceBlocks}
         // above every layer-shell surface, which is the whole point of it —
         // but `allow-when-locked` still matters, because the volume itself
         // has to keep moving there.
-        XF86AudioRaiseVolume allow-when-locked=true { spawn "${bin niriScripts.volume}" "up"; }
-        XF86AudioLowerVolume allow-when-locked=true { spawn "${bin niriScripts.volume}" "down"; }
-        XF86AudioMute        allow-when-locked=true { spawn "${bin niriScripts.volume}" "mute"; }
-        XF86AudioMicMute     allow-when-locked=true { spawn "${bin niriScripts.volume}" "mic-mute"; }
+        XF86AudioRaiseVolume allow-when-locked=true { spawn-sh "${volumeUp}"; }
+        XF86AudioLowerVolume allow-when-locked=true { spawn-sh "${volumeDown}"; }
+        XF86AudioMute        allow-when-locked=true { spawn-sh "${volumeMute}"; }
+        XF86AudioMicMute     allow-when-locked=true { spawn-sh "${micMute}"; }
 
         XF86AudioPlay allow-when-locked=true { spawn "${bin pkgs.playerctl}" "play-pause"; }
         XF86AudioStop allow-when-locked=true { spawn "${bin pkgs.playerctl}" "stop"; }
@@ -433,8 +508,8 @@ ${workspaceBlocks}
         // panel, but the desk has one device per monitor (see
         // modules/nixos/ddcci.nix) and only one of them would move. It also
         // draws the OSD afterwards, the same as `volume` above.
-        XF86MonBrightnessUp   allow-when-locked=true { spawn "${bin niriScripts.brightness}" "up"; }
-        XF86MonBrightnessDown allow-when-locked=true { spawn "${bin niriScripts.brightness}" "down"; }
+        XF86MonBrightnessUp   allow-when-locked=true { spawn-sh "${brightnessUp}"; }
+        XF86MonBrightnessDown allow-when-locked=true { spawn-sh "${brightnessDown}"; }
 
         // --- window management -----------------------------------------
         Mod+Q repeat=false { close-window; }

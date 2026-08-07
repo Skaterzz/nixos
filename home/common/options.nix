@@ -17,11 +17,48 @@
   };
 
 
+  options.local.niri.shell = lib.mkOption {
+    type = lib.types.enum [
+      "waybar"
+      "noctalia"
+    ];
+    default = "waybar";
+    description = ''
+      Which desktop shell the niri session runs.
+
+      "waybar" is the assembled stack: waybar, dunst, swayosd, wofi, cliphist,
+      swayidle and hyprlock, each configured by its own module under
+      home/joshr/niri/ and themed by theming.nix rendering themes.nix into
+      seven different config formats.
+
+      "noctalia" replaces all seven with one Quickshell process reading one
+      TOML file — home/joshr/niri/noctalia.nix — which disables the daemons it
+      subsumes. themes.nix stays the source of colour either way: the palettes
+      are rendered into noctalia's own format by noctalia-palettes.nix, and
+      `theme-apply` remains the switcher, so kitty, Dolphin and VS Code follow
+      a theme change exactly as they do under waybar.
+
+      Not everything survives the crossing, and both losses are indicators
+      that were rarely on screen: the gamemode pad has no noctalia widget
+      (its waybar module was a polled script, and custom_button has no exec),
+      and the lock screen loses the album art, media buttons, battery readout
+      and greetings that `lock-session` builds hyprlock configs for. The
+      `local.niri.lock*` options are therefore only read under "waybar".
+    '';
+  };
+
   options.local.waybar.cavaInBar = lib.mkOption {
     type = lib.types.bool;
     default = false;
     description = ''
-      Enable cava in waybar in niri
+      Whether the bar carries an audio visualiser.
+
+      Named for waybar because that is where it started, and still read by
+      both shells — it answers the same question either way. Under waybar it
+      adds the `custom/cava` module, a script feeding the bar one frame of
+      glyphs per line (cavaBar in home/joshr/niri/scripts.nix); under noctalia
+      it adds the `audio_visualizer` widget, which reads PipeWire directly and
+      needs no helper.
     '';
   };
 

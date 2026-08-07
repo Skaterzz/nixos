@@ -12,6 +12,7 @@ the machine.
 - [What's here](#whats-here)
 - [niri (alternative to Plasma)](#niri-alternative-to-plasma)
   - [Layout](#layout)
+  - [The shell: waybar or noctalia](#the-shell-waybar-or-noctalia)
   - [The bar](#the-bar)
   - [The on-screen display](#the-on-screen-display)
   - [Theme switching](#theme-switching)
@@ -218,12 +219,116 @@ home/joshr/niri/
   themes.nix                  # the palettes — edit colours here
   theming.nix                 # renders each palette into per-tool configs
   niri.nix                    # config.kdl: binds, layout, window rules
+  noctalia.nix                # the one-process shell (see below)
+  noctalia-palettes.nix       # renders each palette into noctalia's format
   waybar.nix                  # bar layout + style
   notifications.nix           # dunst + wofi
   osd.nix                     # swayosd: the volume/brightness pop-up
   lock.nix                    # swayidle timers
   scripts.nix                 # theme/wallpaper/screenshot/session helpers
 ```
+
+### The shell: waybar or noctalia
+
+niri is a compositor and nothing else, so everything around it — the bar,
+notifications, the volume pop-up, the launcher, clipboard history, the idle
+timers, the lock screen, the wallpaper — has to come from somewhere else.
+There are two answers here, picked per host:
+
+```nix
+# home/joshr/gamestation-niri.nix
+local.niri.shell = "noctalia";   # or "waybar"
+```
+
+Both niri hosts are on `"noctalia"`. Setting it back to `"waybar"` is the
+whole way back; nothing else needs editing, and the previous generation is
+still in the boot menu regardless.
+
+**`"waybar"`** is the assembled stack, and it is eight programs:
+
+| | |
+|---|---|
+| waybar | the bar |
+| dunst | notifications |
+| swayosd | the volume/brightness pop-up |
+| wofi | launcher and every menu |
+| cliphist | clipboard history |
+| swayidle | idle timers |
+| swaylock/hyprlock | lock screen |
+| awww | wallpaper |
+
+Eight config formats, and a theme switcher whose job is largely to restart
+them all in the right order.
+
+**`"noctalia"`** is all eight in one Quickshell process reading one TOML file,
+generated from `home/joshr/niri/noctalia.nix`. The mapping is one-for-one:
+
+| waybar stack | noctalia |
+|---|---|
+| waybar | `[bar.main]` + the widget list |
+| dunst | `[notification]` |
+| swayosd | `[osd]` |
+| wofi | `[shell.launcher]` |
+| cliphist | `[shell]` `clipboard_*` |
+| swayidle | `[idle.behavior.*]` |
+| hyprlock | `[lockscreen]` |
+| awww | `[wallpaper]` |
+
+The bar comes across slot for slot — same order, same geometry (34px tall, 4px
+between widgets, 12px corners, 88% opaque), with three additions that had no
+waybar equivalent: a notification history, a clipboard panel, and a control
+centre. That last one is where wifi, bluetooth, audio devices and the power
+profile get real panels, which is most of what the old right-click actions on
+those modules were reaching for — `nm-connection-editor`, `blueman-manager`,
+`pavucontrol`.
+
+**Colour does not move.** `themes.nix` stays the single source of truth under
+both shells. Under waybar, `theming.nix` renders each palette into the seven
+config formats those daemons read; under noctalia, `noctalia-palettes.nix`
+renders the same palettes into noctalia's own colour-scheme format and drops
+one JSON file per theme into `~/.config/noctalia/palettes/`, named for the
+theme id. Either way `theme-apply` is the switcher — see
+[Theme switching](#theme-switching) — and kitty, Dolphin and VS Code follow a
+theme change exactly as they did before.
+
+That last part is the reason noctalia's own template system is turned off in
+`noctalia.nix`. noctalia can push its palette into other apps' configs, and so
+can this repo; both would be writing the same files, and on a NixOS machine
+only one of them can, because `~/.config/kitty/kitty.conf` and
+`~/.config/kdeglobals` are home-manager symlinks into the store and a template
+hook editing them would fail read-only on every theme change. So `theming.nix`
+keeps that job and there is one switcher rather than two.
+
+The visible cost: changing the colour scheme from noctalia's own Settings
+window moves the shell and nothing else. `theme-apply`, and the `Mod+Shift+T`
+/ `Mod+Ctrl+T` binds that call it, are the supported route.
+
+**What is lost crossing over.** Two things, both indicators that were rarely
+on screen:
+
+- **The gamemode pad.** waybar's was a script polled on an interval and poked
+  by the start/end hooks in `modules/nixos/gaming.nix`. noctalia's
+  `custom_button` draws a fixed label and has no `exec`, so there is nothing
+  to poll with; the equivalent would be a Luau plugin. The hooks in
+  `gaming.nix` are left alone — their `pkill` finds no waybar and exits into a
+  `|| true`.
+- **Most of the lock screen.** `lock-session` builds a hyprlock config per
+  invocation carrying a blurred album-art background, the album cover, media
+  transport buttons, a battery readout and a time-aware greeting. noctalia's
+  lock screen has a blurred snapshot of the desktop and no widgets, which is
+  the one thing hyprlock was being fed album art to approximate. The
+  `local.niri.lockAlbumArt*`, `.lockBatteryIndicator` and greeting options are
+  therefore only read under `"waybar"`, and are left set on both hosts so that
+  going back restores the screen that was there.
+
+`local.niri.brightness.device` is also unread under noctalia, but nothing is
+lost: it existed because waybar's backlight module and the `brightness` helper
+each picked "the display" by a different rule and could disagree about which
+monitor the bar was quoting. noctalia reports the focused monitor's own
+backlight, which is the answer that option was approximating. DDC/CI still
+goes through the kernel driver — see [Brightness](#brightness) — and
+noctalia's own `enable_ddcutil` stays off so there is only one DDC/CI
+implementation on the machine.
 
 ### The bar
 
@@ -511,6 +616,34 @@ Each tool is pointed at a file under that symlink: niri via its `include` node
 `kitty.conf`. `theme-apply` moves the symlink, restarts waybar, dunst and
 swayosd, and sends kitty SIGUSR1 so open terminals repaint in place; wofi
 re-reads on each launch.
+
+**Under noctalia** the symlink and everything hanging off it work exactly the
+same way — kitty, kdeglobals, VS Code and the rest are unchanged, which is the
+point. Only the shell's half differs. The three restarts are replaced by one
+line of IPC:
+
+```
+noctalia msg color-scheme-set custom <name>
+```
+
+That works with nothing to translate because `noctalia-palettes.nix` files
+each generated palette under the theme's own id — `gruvbox.json`,
+`rose-pine-moon.json` — so the name `theme-apply` was handed is the name
+noctalia is given. It repaints in place rather than restarting.
+
+The palettes themselves are a translation between two ways of naming colour.
+`themes.nix` names them by the job they do here (`bg`, `accent`, `accentDim`,
+`fgDim`); noctalia uses Material 3 roles, which come in pairs — every `mX`
+surface has an `mOnX` that is the text drawn on it. Ten map straight across.
+The `mOn*` halves had no equivalent, because this config never wrote them
+down: it assumed `bg` was the text on top of `accent`, which is what kitty's
+`selection_foreground` and waybar's active workspace both do. That holds on
+the two dozen dark themes and inverts on the light ones, so instead of
+hard-coding it `noctalia-palettes.nix` picks whichever of the theme's own two
+text colours has the better WCAG contrast with the surface in question. On a
+dark theme that returns `bg` — the existing behaviour — and on `gruvbox-light`
+or `rose-pine-dawn` it returns `fg`, which is what the old assumption got
+wrong.
 
 **Dolphin and other KDE apps** read `~/.config/kdeglobals`, which is a symlink
 into the active theme. Two things have to be true for that to work, and the

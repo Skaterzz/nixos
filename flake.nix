@@ -25,6 +25,26 @@
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
+    # noctalia: a Wayland desktop shell — bar, notifications, OSD, launcher,
+    # clipboard, wallpaper, lock screen — in one Quickshell process.
+    #
+    # The alternative to the waybar stack on the niri hosts, selected per host
+    # with `local.niri.shell`. See home/joshr/niri/noctalia.nix, which imports
+    # `homeModules.default` from here on every niri host and leaves it inert
+    # unless that option asks for it.
+    #
+    # Not in nixpkgs, and pinned here for the usual reason: the shell reads a
+    # TOML schema that moves with the program, and this config generates that
+    # TOML from Nix. A `noctalia` that updated independently of the settings
+    # written against it would be a session that lost a setting silently. The
+    # home-manager module validates the generated config against the pinned
+    # binary at build time, which only means anything while the two are locked
+    # together.
+    noctalia = {
+      url = "github:noctalia-dev/noctalia";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+
     # keylase/nvidia-patch as a nixpkgs overlay: takes the concurrent-NVENC
     # session cap and the Quadro-only NvFBC check off a GeForce driver.
     #

@@ -15,6 +15,18 @@
 let
   inherit (niriTheming) activeDir;
 
+  # The whole file hangs off this. noctalia is the other shell and it draws
+  # its own bar, so waybar is not merely redundant there but a second layer
+  # surface reserving space at the top of every output.
+  #
+  # Gated here rather than force-disabled from ./noctalia.nix — the way the
+  # other daemons it subsumes are — because of the `ExecStart` override at the
+  # bottom of this file. A `systemd.user.services.<name>` attribute is written
+  # out as a unit whether or not the module that owns the service is enabled,
+  # so leaving that outside the guard would put a waybar.service on disk
+  # holding nothing but an ExecStart line.
+  useWaybar = config.local.niri.shell == "waybar";
+
   cavaEntry =
     if config.local.waybar.cavaInBar then
       "custom/cava"
@@ -28,7 +40,7 @@ let
   backlightDevice = if brightnessDevice == null then "" else brightnessDevice;
 in
 {
-  programs.waybar = {
+  programs.waybar = lib.mkIf useWaybar {
     enable = true;
 
     # Run as a user service rather than niri's spawn-at-startup, so the theme
@@ -564,7 +576,7 @@ in
 
   # Point waybar at the active theme's stylesheet. home-manager's generated
   # unit has no way to pass `-s`, so override ExecStart.
-  systemd.user.services.waybar.Service.ExecStart = lib.mkForce (
-    "${pkgs.waybar}/bin/waybar -s ${activeDir}/waybar.css"
-  );
+  systemd.user.services.waybar = lib.mkIf useWaybar {
+    Service.ExecStart = lib.mkForce "${pkgs.waybar}/bin/waybar -s ${activeDir}/waybar.css";
+  };
 }

@@ -899,10 +899,10 @@ let
         min_length = 0;
         title_scroll = "always";
         hide_when_no_media = true;
-        actions = {
-          scroll_up = "media volume-up";
-          scroll_down = "media volume-down";
-        };
+        # actions = {
+        #   scroll_up = "media volume-up";
+        #   scroll_down = "media volume-down";
+        # };
       };
 
       network = {

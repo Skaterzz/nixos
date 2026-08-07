@@ -178,12 +178,16 @@ let
     lib.mapAttrsToList (n: d: ''${n}) target="${d}" ;;'') themeDirs
   );
 
-  # Noctalia's builtin dark/light variants are internal sync targets, not
-  # duplicate entries for the manual custom-theme menu. They remain in
-  # themeCases so the colors_changed hook can apply them directly.
-  themeNames = lib.concatStringsSep "\n" (
-    lib.filter (name: !(lib.hasPrefix "noctalia-" name)) (lib.attrNames themes)
-  );
+  # Every palette in themes.nix, one per line, for the menu and the cycle.
+  #
+  # This used to filter out a `noctalia-*` prefix: theme-set.nix carried a
+  # hand-transcribed copy of noctalia's own builtin palettes, so that the
+  # greeter and the boot menu could be given a prebuilt match when the shell
+  # was switched to one of them. Nothing ever selected them — the shell writes
+  # `noctalia-live` to `current`, not a builtin's name — and both consumers
+  # read the shell's resolved manifest now, so the copy and the filter are
+  # gone together.
+  themeNames = lib.concatStringsSep "\n" (lib.attrNames themes);
 
   # Apply a theme by name: repoint the symlink, then reload consumers.
   #
@@ -222,13 +226,29 @@ let
   #   VS Code nothing to send. Extensions, and therefore colour themes, are
   #           scanned once at startup; the editor picks the new palette up
   #           the next time it starts.
-  #   SDDM    picked up by a system path unit watching the file written
-  #           below; applies at the next greeter start. See
-  #           modules/nixos/niri.nix.
-  #   Limine  picked up by its own system path unit watching that same file;
-  #           rewrites the boot menu colours. See modules/nixos/boot.nix.
-  #   Spotify picked up by its user path unit watching the same state file;
-  #           restarts an already-running themed client. See ../spicetify.nix.
+  #   SDDM    under waybar, picked up by a system path unit watching the file
+  #           written below; applies at the next greeter start. Under noctalia
+  #           it follows the shell's palette manifest instead and this script
+  #           is not in the chain at all. See modules/nixos/niri.nix.
+  #   Limine  the same, for the boot menu. See modules/nixos/boot.nix.
+  #   Spotify nothing under waybar — a Spicetify build is immutable and its
+  #           colours are baked in, so the palette it was built with is the
+  #           palette it has. Under noctalia it follows the shell's live CSS
+  #           without this script's involvement. See ../spicetify.nix.
+  #
+  # --- what this does *not* do under noctalia ----------------------------
+  #
+  # Repoint `active`, or write `current`. Both belong to the shell there: its
+  # templates render the live directory and its `colors_changed` hook
+  # publishes it, so anything written here would be overwritten moments later
+  # by the hook this very script triggers. Worse, in the window between the
+  # two the symlink names a build-time palette, which is the state Dolphin or
+  # VS Code would read if either happened to start in it.
+  #
+  # This is also where an `NIRI_THEME_FROM_NOCTALIA` guard used to live,
+  # against a hook that called back into this script. No such hook exists —
+  # noctalia's hooks run `noctalia-theme-resync` directly — so the variable
+  # was never set by anything and the branch it guarded was dead.
   themeApply = pkgs.writeShellApplication {
     name = "theme-apply";
     runtimeInputs =
@@ -253,24 +273,29 @@ let
         *) echo "unknown theme: $name" >&2; exit 1 ;;
       esac
 
-      from_noctalia="''${NIRI_THEME_FROM_NOCTALIA:-0}"
-      previous="$(cat "${stateDir}/current" 2>/dev/null || true)"
+      ${
+        if useNoctalia then
+          ''
+            # The prebuilt directory is not read under this shell, so the case
+            # above is doing double duty as the check that `$name` names a
+            # palette at all — `color-scheme-set` would otherwise take an id
+            # noctalia has no file for and repaint with nothing.
+            [ -n "$target" ] || exit 1
+          ''
+        else
+          ''
+            mkdir -p "${stateDir}"
+            ln -sfn "$target" "${activeDir}"
+            current_tmp="$(mktemp "${stateDir}/current.XXXXXX")"
+            trap 'rm -f "$current_tmp"' EXIT
+            printf %s "$name" > "$current_tmp"
+            mv -f "$current_tmp" "${stateDir}/current"
+            trap - EXIT
+          ''
+      }
 
-      mkdir -p "${stateDir}"
-      ln -sfn "$target" "${activeDir}"
-      current_tmp="$(mktemp "${stateDir}/current.XXXXXX")"
-      trap 'rm -f "$current_tmp"' EXIT
-      printf %s "$name" > "$current_tmp"
-      mv -f "$current_tmp" "${stateDir}/current"
-      trap - EXIT
+      ${shellApplyTheme}
 
-      # A Noctalia colors_changed hook is already downstream of the shell
-      # palette change. Do not echo it back into Noctalia and recursively fire
-      # the hook; all other consumers, including both system path units and
-      # Spotify's user path unit, still update below.
-      if [ "$from_noctalia" != 1 ]; then
-        ${shellApplyTheme}
-      fi
       # -x so this matches the kitty process and not, say, an editor that
       # happens to have "kitty" in its command line. Non-zero simply means no
       # terminal is open.
@@ -288,10 +313,8 @@ let
         /KGlobalSettings org.kde.KGlobalSettings.notifyChange \
         int32:0 int32:0 >/dev/null 2>&1 || true
 
-      if [ "$from_noctalia" != 1 ] || [ "$name" != "$previous" ]; then
-        notify-send -a theme -i preferences-desktop-theme \
-          "Theme" "Switched to $name — Some apps may need to be restarted for $name to apply." || true
-      fi
+      notify-send -a theme -i preferences-desktop-theme \
+        "Theme" "Switched to $name — Some apps may need to be restarted for $name to apply." || true
     '';
   };
 

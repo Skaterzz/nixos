@@ -6,17 +6,28 @@
 # This replaces modules/nixos/desktop.nix on a host — importing both would
 # enable two desktop sessions and two display managers.
 let
-  themeSet = import ../../home/joshr/niri/theme-set.nix {
-    inherit lib;
-    # The shell choice is a Home Manager option, not a NixOS option. Build
-    # these finite variants here so the system path unit can resolve whatever
-    # the user's Noctalia session writes to `current`.
-    includeNoctaliaBuiltins = true;
-  };
+  themeSet = import ../../home/joshr/niri/themes.nix { inherit lib; };
   inherit (themeSet) themes;
 
-  # The palette renderer lives with the home modules so both sides agree on
-  # the colours. Only the SDDM part is needed here.
+  # The palette the greeter is *built* with, and nothing more.
+  #
+  # This used to be a whole table: one sddm-astronaut derivation per palette in
+  # themes.nix plus one per Noctalia builtin, with an /etc drop-in naming
+  # whichever of them `~/.local/state/niri-theme/current` selected. That shape
+  # came from the waybar stack, where the theme really was one of a finite list
+  # and the greeter could be pointed at a prebuilt match.
+  #
+  # Under Noctalia it cannot work, and it did not: the palette can be derived
+  # from a wallpaper or downloaded from api.noctalia.dev, so there is no Nix
+  # derivation for it and `current` reads `noctalia-live` — a name no arm of
+  # that case ever matched, which left the login screen wearing the default
+  # palette regardless of what the desktop was wearing.
+  #
+  # So there is one theme package now, its colours come from a file under
+  # /var/lib written at runtime, and this is only what that file is seeded
+  # with before Noctalia has ever run.
+  seedTheme = themes.${themeSet.default};
+
   # The user's current wallpaper, copied somewhere the greeter can read it.
   # See sddm-theme-sync below — the path is fixed so the theme config can name
   # it from the store while the image behind it changes at runtime.
@@ -112,20 +123,47 @@ let
       FontSize = "12";
     };
 
-  # One sddm-astronaut instance per palette. They're cheap — the derivation
-  # only copies the upstream theme and writes a .conf — and having all of
-  # them installed is what lets the greeter follow a runtime theme switch
-  # without a rebuild.
+  # Where the greeter's colours actually live.
   #
-  # Each is renamed so the themes don't collide in the SDDM theme directory.
-  mkSddmTheme =
-    name: t:
+  # `Themes/<embeddedTheme>.conf.user`, and getting that path wrong is what
+  # kept the login screen off the desktop's palette. SDDM reads a theme's
+  # config in two halves — `ThemeConfig::setTo` opens the file named by
+  # `ConfigFile=` in metadata.desktop, then opens the same path with `.user`
+  # appended and lets every non-empty value there win. nixpkgs' sddm-astronaut
+  # builds on exactly that: `themeConfig` is written to
+  # `Themes/${embeddedTheme}.conf.user`.
+  #
+  # The previous version replaced `theme.conf` in the theme's root directory
+  # instead. Nothing reads that file — metadata.desktop points at
+  # `Themes/black_hole.conf` — so the symlink to /var/lib was inert and the
+  # greeter kept rendering the store `.conf.user` nixpkgs had written from the
+  # build-time palette. Every other part of the runtime path worked; the
+  # colours were being delivered to a file SDDM never opened.
+  sddmEmbeddedTheme = "black_hole";
+  sddmRuntimeConfig = "/var/lib/sddm-theme/theme.conf";
+
+  iniFormat = pkgs.formats.ini { };
+
+  # What the sync starts from and rewrites the colours of. Everything that is
+  # *not* a colour — the background path, the form's position, the clock's
+  # format strings, the font — is settled here at build time and never touched
+  # at runtime, so the sync script only has to know about the palette.
+  sddmRuntimeSeed = iniFormat.generate "sddm-noctalia-live.conf" {
+    General = sddmThemeConfig seedTheme;
+  };
+
+  # One theme package, whose only mutable part is that one symlink.
+  #
+  # `themeConfig` is deliberately not passed to the override: it would write a
+  # store file to the very path this replaces, and two writers for one file is
+  # the confusion that produced the bug above. The seed reaches the greeter
+  # through the sync instead, which copies it and substitutes the palette.
+  sddmTheme =
     (pkgs.sddm-astronaut.override {
-      embeddedTheme = "black_hole";
-      themeConfig = sddmThemeConfig t;
+      embeddedTheme = sddmEmbeddedTheme;
     }).overrideAttrs
       (old: {
-        pname = "sddm-astronaut-${name}";
+        pname = "sddm-astronaut-niri";
         postInstall = (old.postInstall or "") + ''
           themeDir="$out/share/sddm/themes/sddm-astronaut-theme"
           chmod -R u+w "$themeDir"
@@ -159,48 +197,33 @@ let
           # The form and wallpaper therefore render on every display, which is
           # sddm-astronaut's stock behaviour.
 
-          mv "$themeDir" "$out/share/sddm/themes/niri-${name}"
+          # The one line that makes the greeter follow the desktop. A dangling
+          # symlink is a valid state here and not an error: QSettings on a path
+          # that does not resolve simply contributes nothing, and the greeter
+          # falls back to upstream's own black_hole colours rather than
+          # failing to start. sddm-theme-sync runs before display-manager, so
+          # that window is a first boot and nothing else.
+          ln -sfn ${sddmRuntimeConfig} \
+            "$themeDir/Themes/${sddmEmbeddedTheme}.conf.user"
+
+          mv "$themeDir" "$out/share/sddm/themes/${sddmThemeName}"
         '';
       });
 
-  sddmThemes = lib.mapAttrs mkSddmTheme themes;
+  # Fixed, because there is nothing left for it to vary with. The /etc drop-in
+  # that used to rewrite it per palette is gone; see the `themeDropIn` note.
+  sddmThemeName = "niri-noctalia";
 
-  # A fourth kind of SDDM theme beside the finite Nix palettes: its QML stays
-  # immutable, but theme.conf is a symlink to a validated file under /var/lib.
-  # That lets Noctalia's wallpaper/community palettes reach the greeter
-  # without trying to manufacture derivations at runtime.
-  sddmRuntimeConfig = "/var/lib/sddm-theme/theme.conf";
-  iniFormat = pkgs.formats.ini { };
-  sddmRuntimeSeed = iniFormat.generate "sddm-noctalia-live.conf" {
-    General = sddmThemeConfig themes.${themeSet.default};
-  };
-  sddmRuntimeTheme =
-    (pkgs.sddm-astronaut.override {
-      embeddedTheme = "black_hole";
-      themeConfig = sddmThemeConfig themes.${themeSet.default};
-    }).overrideAttrs
-      (old: {
-        pname = "sddm-astronaut-noctalia-live";
-        postInstall = (old.postInstall or "") + ''
-          themeDir="$out/share/sddm/themes/sddm-astronaut-theme"
-          chmod -R u+w "$themeDir"
-          substituteInPlace "$themeDir/Components/Input.qml" \
-            --replace-fail \
-              'passwordMaskDelay: config.HideCompletePassword == "true" ? undefined : 1000' \
-              'passwordMaskDelay: 0'
-          rm -f "$themeDir/theme.conf"
-          ln -s ${sddmRuntimeConfig} "$themeDir/theme.conf"
-          mv "$themeDir" "$out/share/sddm/themes/niri-noctalia-live"
-        '';
-      });
-
-  defaultSddmTheme = "niri-${themeSet.default}";
-
-  # Watches the user's theme *and* wallpaper choices and mirrors both to the
+  # Watches the user's palette *and* wallpaper choices and mirrors both to the
   # login screen. SDDM only reads its config when the greeter starts, so both
   # take effect at the next logout/reboot rather than immediately.
+  #
+  # `noctalia-resolved` is the manifest Noctalia renders from its colour roles
+  # (the `system_palette` user template in home/joshr/niri/noctalia.nix). It is
+  # the only palette input here, and that is the point: it describes a custom,
+  # builtin, wallpaper-derived or community scheme in the same twenty-six
+  # lines, where a palette *name* only ever described the first of those.
   niriStateDir = "/home/${config.local.desktop.primaryUser}/.local/state/niri-theme";
-  themeStateFile = "${niriStateDir}/current";
   wallpaperStateFile = "${niriStateDir}/wallpaper";
   resolvedThemeFile = "${niriStateDir}/noctalia-resolved";
 
@@ -214,10 +237,20 @@ let
   # the sync service deletes it unconditionally.
   kwinOutputSddm = "/var/lib/sddm/.config/kwinoutputconfig.json";
 
+  # An /etc drop-in this module no longer writes, and still has to delete.
+  #
+  # It used to carry `[Theme] Current=niri-<palette>`, rewritten by the sync
+  # to select one of the per-palette theme packages. There is one package now
+  # and `services.displayManager.sddm.theme` names it declaratively, so the
+  # drop-in has nothing left to say — but /etc is only pruned of files NixOS
+  # itself declares, and this was never one of them. Left behind on an
+  # already-deployed machine it would keep pointing SDDM at a theme directory
+  # that is no longer in the store, which is a black login screen rather than
+  # a stale one. So the sync deletes it, under both greeters, forever.
   themeDropIn = "/etc/sddm.conf.d/99-niri-active-theme.conf";
 
-  # A solid image in each palette's background colour, so sddmWallpaper always
-  # exists.
+  # A solid image in the seed palette's background colour, so sddmWallpaper
+  # always exists.
   #
   # This is the leading suspect for the black greeter. The theme config points
   # Background at a fixed runtime path, and that file only appears once the
@@ -232,18 +265,10 @@ let
   #
   # Unproven — the greeter's own QML warnings were never captured — but it is
   # the only path here that referenced a file that might not exist, it costs
-  # a few KB per palette, and it makes the themed greeter safe to retry.
-  fallbackWallpapers = lib.mapAttrs (
-    name: t:
-    pkgs.runCommand "sddm-fallback-${name}.png" { } ''
-      ${pkgs.imagemagick}/bin/magick -size 1920x1080 "xc:${t.bg}" "png:$out"
-    ''
-  ) themes;
-
-  # `name) fallback="/nix/store/..." ;;` arms for the script's case.
-  wallpaperCaseArms = lib.concatStringsSep "\n" (
-    lib.mapAttrsToList (n: p: ''            ${n}) fallback="${p}" ;;'') fallbackWallpapers
-  );
+  # a few KB, and it makes the themed greeter safe to retry.
+  fallbackWallpaper = pkgs.runCommand "sddm-fallback-wallpaper.png" { } ''
+    ${pkgs.imagemagick}/bin/magick -size 1920x1080 "xc:${seedTheme.bg}" "png:$out"
+  '';
 
   syncSddmTheme = pkgs.writeShellScript "sddm-theme-sync" ''
     set -eu
@@ -253,7 +278,6 @@ let
       sed -n "s/^$1=\\(#[0-9A-Fa-f]\\{6\\}\\)$/\\1/p" ${resolvedThemeFile} | head -n1 || true
     }
 
-    fallback="${fallbackWallpapers.${themeSet.default}}"
     live_bg=""
 
     # --- palette ------------------------------------------------------
@@ -268,13 +292,22 @@ let
           accent_dim="$(read_colour accent_dim)"
           err="$(read_colour err)"
 
+          install -d -m 0755 /var/lib/sddm-theme
+          conf_tmp="${sddmRuntimeConfig}.tmp"
+
+          # `install` rather than `cp`: the seed is a store file and comes
+          # with the store's read-only mode, which would then be the mode the
+          # greeter's own config ends up with.
+          install -m 0644 ${sddmRuntimeSeed} "$conf_tmp"
+
+          # Substitute the palette, or don't. Either way the seed is published
+          # — a greeter reading the build-time colours is a themed greeter,
+          # where a `.conf.user` that never appears is upstream's black_hole.
+          # All seven or none, so a half-read manifest can't produce a form
+          # with the desktop's background and the seed's text on it.
           if [ -n "$bg" ] && [ -n "$bg_alt" ] && [ -n "$fg" ] \
              && [ -n "$fg_dim" ] && [ -n "$accent" ] \
              && [ -n "$accent_dim" ] && [ -n "$err" ]; then
-            install -d -m 0755 /var/lib/sddm-theme
-            conf_tmp="${sddmRuntimeConfig}.tmp"
-            cp ${sddmRuntimeSeed} "$conf_tmp"
-
             replace_colour() {
               sed -i "s|^$1=.*|$1=$2|" "$conf_tmp"
             }
@@ -305,33 +338,19 @@ let
             replace_colour HoverUserIconColor "$fg"
             replace_colour HoverSystemButtonsIconsColor "$fg"
 
-            mv -f "$conf_tmp" ${sddmRuntimeConfig}
-            chmod 0644 ${sddmRuntimeConfig}
-            name="noctalia-live"
             live_bg="$bg"
-          else
-            name="$(cat ${themeStateFile} 2>/dev/null || true)"
-            case "$name" in
-${wallpaperCaseArms}
-              *) name="${themeSet.default}" ;;
-            esac
           fi
 
-          mkdir -p /etc/sddm.conf.d
-          printf '[Theme]\nCurrent=niri-%s\n' "$name" > "${themeDropIn}"
+          mv -f "$conf_tmp" ${sddmRuntimeConfig}
+          chmod 0644 ${sddmRuntimeConfig}
         ''
       else
-        ''
-          # Stock greeter: drop the override naming a niri-<theme> package.
-          #
-          # This is not tidying, it is the difference between a login screen
-          # and a black one. The drop-in lives in /etc and NixOS only removes
-          # files it declares, so without this it would outlive the packages
-          # it names and point SDDM at a theme directory that is no longer in
-          # the store.
-          rm -f "${themeDropIn}"
-        ''
+        ""
     }
+
+    # See the themeDropIn note: unmanaged /etc state naming a theme package
+    # that no longer exists. Removed under both greeters.
+    rm -f "${themeDropIn}"
 
     # --- wallpaper ----------------------------------------------------
     # The greeter runs as the sddm user and can't read joshr's home, so the
@@ -363,17 +382,12 @@ ${wallpaperCaseArms}
       fi
 
       # Guarantee the file the theme names actually exists. See the
-      # fallbackWallpapers note: a missing background is not a cosmetic
+      # fallbackWallpaper note: a missing background is not a cosmetic
       # problem here, it feeds a blur shader and can take the whole greeter
       # down with it. Only used when nothing above produced an image — a
       # first boot, or before a wallpaper has ever been chosen.
       if [ ! -f "${sddmWallpaper}" ]; then
-        if [ -n "$live_bg" ]; then
-          ${pkgs.imagemagick}/bin/magick -size 1920x1080 "xc:$live_bg" "png:${sddmWallpaper}"
-          chmod 0644 "${sddmWallpaper}"
-        else
-          install -m 0644 "$fallback" "${sddmWallpaper}"
-        fi
+        install -m 0644 "${fallbackWallpaper}" "${sddmWallpaper}"
       fi
     ''}
 
@@ -452,31 +466,33 @@ in
     settings.Users.ReuseSession = true;
   }
   // lib.optionalAttrs useAstronaut {
-    theme = defaultSddmTheme;
-    extraPackages = (lib.attrValues sddmThemes) ++ [ sddmRuntimeTheme ];
+    theme = sddmThemeName;
+    extraPackages = [ sddmTheme ];
   };
 
-  # Every themed variant must be on the system so the greeter can switch
-  # between them without a rebuild.
-  environment.systemPackages = lib.optionals useAstronaut ((lib.attrValues sddmThemes) ++ [ sddmRuntimeTheme ]);
+  # The theme has to be on the system as well as in SDDM's own package set —
+  # `extraPackages` puts it on the greeter's QML import path, this is what puts
+  # the theme directory itself under /run/current-system/sw/share/sddm/themes,
+  # which is where SDDM looks the name up.
+  environment.systemPackages = lib.optionals useAstronaut [ sddmTheme ];
 
   # --- keep the login screen in step with the desktop ---------------------
   #
-  # Two things are mirrored: the palette (which of the per-theme SDDM packages
-  # to use) and the wallpaper (copied to a world-readable path the theme names
-  # from the store).
+  # Two things are mirrored, and neither is a theme *name* any more: the
+  # palette, substituted into the one theme's `.conf.user`, and the wallpaper,
+  # copied to a world-readable path the theme names from the store.
   #
   # The greeter runs as the sddm user before anyone logs in, so it can neither
-  # read joshr's home nor see the theme symlink, and /etc is store-managed.
-  # This writes one unmanaged drop-in under /etc/sddm.conf.d/ — NixOS only
-  # removes files it declares, so it survives activation.
+  # read joshr's home nor see anything under it. Both outputs therefore live in
+  # /var/lib/sddm-theme, which is unmanaged state rather than store-managed
+  # /etc, and survives activation.
   #
   # It runs under "stock" too, and has to: it removes the /etc drop-in naming
   # a theme package that no longer exists, and the abandoned display-sync
   # file. Both are unmanaged state that would otherwise outlive the code that
   # made them and keep pointing the greeter at things that aren't there.
   systemd.services.sddm-theme-sync = {
-    description = "Mirror the desktop theme and wallpaper to the SDDM greeter";
+    description = "Mirror the desktop palette and wallpaper to the SDDM greeter";
     wantedBy = [ "multi-user.target" ];
 
     # Must land before the greeter reads its config, or the first boot after
@@ -494,7 +510,6 @@ in
   systemd.paths.sddm-theme-sync = lib.mkIf useAstronaut {
     wantedBy = [ "multi-user.target" ];
     pathConfig.PathChanged = [
-      themeStateFile
       wallpaperStateFile
       resolvedThemeFile
     ];

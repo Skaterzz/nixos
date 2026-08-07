@@ -16,6 +16,7 @@ the machine.
   - [The bar](#the-bar)
   - [The on-screen display](#the-on-screen-display)
   - [Theme switching](#theme-switching)
+  - [Theme sync under noctalia](#theme-sync-under-noctalia)
   - [Keys](#keys)
   - [Clipboard history](#clipboard-history)
   - [Emoji picker](#emoji-picker)
@@ -222,6 +223,8 @@ home/joshr/niri/
   niri.nix                    # config.kdl: binds, layout, window rules
   noctalia.nix                # the one-process shell (see below)
   noctalia-palettes.nix       # renders each palette into noctalia's format
+  noctalia-templates/         # what noctalia renders the live palette into
+  fastfetch-config.json       # strict-JSON seed the fastfetch template needs
   waybar.nix                  # bar layout + style
   notifications.nix           # dunst + wofi
   osd.nix                     # swayosd: the volume/brightness pop-up
@@ -353,18 +356,34 @@ cluster is four slots shorter here, so the gap goes back up (`widget_spacing`
 8, `padding` 16) and the controls read as separate things again rather than
 one run-on strip.
 
-**Four widgets are gone**, each because something else already did the job:
+**Three widgets are gone**, each because something else already did the job:
 
 | dropped | because |
 |---|---|
 | `lock` | the session panel next door offers it, and `Mod+L` is the reflex |
 | `clipboard` | `Mod+Ctrl+V`, and the launcher's own clipboard provider |
-| `caffeine` | a control-centre shortcut, and `Mod+Shift+I` |
 | `lock_keys` | the caps-lock OSD says it louder, and only while a key is on |
 
-What stays is either a live reading (weather, brightness, volume, network,
-bluetooth, battery, power profile) or an indicator that means something by
-being present at all (privacy, notifications).
+What stays is either a live reading (brightness, volume, network, bluetooth,
+battery) or an indicator that means something by being present at all
+(privacy, notifications, gamemode, caffeine).
+
+**The left cluster is deliberately quiet**: one icon, one row of pills, one
+line of text. The user button is a glyph with the username in its tooltip
+rather than beside it — the one person who can read this bar already knows
+whose session it is — and it opens the launcher, which is the entry point
+wofi never had a bar slot for. Workspaces label only the occupied ones, so
+the empty workspace niri always keeps at the end of the row is a plain dot
+instead of a number standing in for nothing. The window title draws nothing
+at all when nothing is focused (`show_empty_label = false`, `min_length = 0`),
+so the cluster ends where its content does rather than reserving a slot.
+
+**`max_length` is a width in pixels**, on both the window title and the now
+playing widget, capped at 800 by the widgets themselves — not a count of
+glyphs, which is the natural reading of the name. Both also take
+`title_scroll = "on_hover"`, which is the more useful half of the answer to a
+long title: no fixed width fits every track, so the overflow scrolls under the
+pointer instead of being lost to an ellipsis.
 
 **Privacy hides itself when idle.** noctalia draws all three of its glyphs —
 microphone, camera, screen-share — greyed out by default, which is three
@@ -389,21 +408,32 @@ cluster means the right-hand side. The launcher is deliberately excluded: it's
 a search box rather than a menu belonging to a widget, it's opened from the
 keyboard as often as the bar, and centred is where a search box belongs.
 
-**Colour does not move.** `themes.nix` stays the single source of truth under
-both shells. Under waybar, `theming.nix` renders each palette into the seven
-config formats those daemons read; under noctalia, `noctalia-palettes.nix`
-renders the same palettes into noctalia's own colour-scheme format and drops
-one JSON file per theme into `~/.config/noctalia/palettes/`, named for the
-theme id. Either way `theme-apply` is the switcher — see
-[Theme switching](#theme-switching).
+**`themes.nix` stays the source of the 29 palettes**, under both shells. Under
+waybar, `theming.nix` renders each into the seven config formats those daemons
+read; under noctalia, `noctalia-palettes.nix` renders the same palettes into
+noctalia's own colour-scheme format and drops one JSON file per theme into
+`~/.config/noctalia/palettes/`, named for the theme id, so `theme-apply` and
+`color-scheme-set custom <name>` speak the same string.
+
+What it is **not** under noctalia is the only source of colour. The shell can
+also take a palette from its own builtins, derive one from the wallpaper, or
+download a community scheme, and none of those three has a name this repo
+could have prebuilt anything for. That is why the fan-out to everything
+outside the session goes through a rendered manifest rather than a palette
+name — see [Theme sync under noctalia](#theme-sync-under-noctalia), which is
+also where the three things that were quietly broken by assuming otherwise are
+written up.
 
 Two mechanisms share the rest of that job, and the split is not arbitrary.
 
 `theming.nix` renders all 29 palettes into the config formats this repo
 already had to speak — niri's KDL, kitty's include, `kdeglobals` for Dolphin
 and the KDE file dialogs, VS Code, firefox, wofi — and `theme-apply` moves the
-symlink they all point at. That machinery predates noctalia, works under both
-shells, and is what the SDDM greeter reads too.
+symlink they all point at. That machinery predates noctalia and is what runs
+under `"waybar"`. Under `"noctalia"` the shell's own templates render the same
+set of files into `~/.local/state/niri-theme/noctalia-live` and its hook
+points that symlink there instead, so the consumers are unchanged and only the
+writer differs.
 
 noctalia's **templates** fill the gap it left, which is GTK. Nothing in
 `theming.nix` ever wrote a GTK stylesheet, so GTK apps — and every portal and
@@ -470,19 +500,23 @@ desktop to `wallpaper.default.path` on every `home-manager switch`.
 
 **`kcolorscheme` stays off.** Its post-action writes `~/.config/kdeglobals`
 unconditionally, and `default.nix` points that at the active theme as an
-out-of-store symlink — two writers for one file that `theming.nix` already
-keeps correct.
+out-of-store symlink — two writers for one file. A *user* template writes the
+same content inside `noctalia-live` instead, so repointing `active` moves
+Dolphin and VS Code together and nothing fights over `kdeglobals`.
 
 Kitty is single-writer per shell: under `"waybar"` the include points at the
 active theme directory, under `"noctalia"` at the template's output. Carrying
 both would mean two `include` lines setting the same colours with the winner
 decided by the merge order of two `mkAfter`s.
 
-Changing the colour scheme from noctalia's own Settings window used to move
-the shell and nothing else. It doesn't any more: a `colors_changed` hook calls
-`theme-apply` with whatever scheme noctalia reports. That can't loop, because
-`theme-apply` writes the state file *before* it tells noctalia, so its own
-call finds the name already current and returns.
+Changing the colour scheme from noctalia's own Settings window moves
+everything, not just the shell. A `colors_changed` hook runs
+`noctalia-theme-resync`, which validates the rendered outputs, points `active`
+at the live directory and touches the sentinel the system path units wake on.
+It deliberately does **not** call back into `theme-apply`: an earlier version
+did, which is how `theme-apply` came to carry a `NIRI_THEME_FROM_NOCTALIA`
+guard against re-entering the hook it had just fired. The hook is gone and so
+is the guard.
 
 **The wallpaper reaches the greeter the same way.** `modules/nixos/niri.nix`
 watches `~/.local/state/niri-theme/wallpaper` with a systemd path unit and
@@ -1038,10 +1072,10 @@ to be QSettings.
 The login screen does **not** follow, by default. It uses SDDM's built-in
 greeter, because the themed one left the primary display black — see "The
 login screen" below. `local.sddm.theme = "astronaut"` turns the themed
-version back on, which builds one `sddm-astronaut` instance per palette and
-has a system path unit rewrite an SDDM drop-in when the selection changes.
-SDDM only reads its config when the greeter starts, so that lands at the next
-logout or reboot rather than immediately.
+version back on. Under noctalia it reads the shell's palette manifest rather
+than a palette name; see "Theme sync under noctalia" next. SDDM only reads its
+config when the greeter starts, so a change lands at the next logout or reboot
+rather than immediately.
 
 Wallpapers use `awww` (the renamed `swww`) over `~/.local/share/wallpapers`:
 `Mod+Ctrl+W` picks one. The choice is remembered and
@@ -1060,6 +1094,111 @@ pick a theme deciding what the machine looks like at boot. Naming one owner
 is the honest version. Pointing it at an account that never opens a niri
 session isn't an error either: the sync services find no state file and leave
 the greeter and boot menu on the default palette.
+
+### Theme sync under noctalia
+
+Everything above describes a palette that is **one of a finite list**. That is
+true under the waybar stack, where a theme is a directory of rendered config
+files built ahead of time and `theme-apply` moves a symlink between them.
+
+It is not true under noctalia, and that mismatch is what this section is
+about. Noctalia has four palette sources — the custom palettes generated from
+`themes.nix`, its own ten builtins, a scheme derived from the current
+wallpaper, and community schemes downloaded from `api.noctalia.dev` — and
+only the first has a name a Nix derivation could have been built against. Pick
+any of the other three and there is nothing prebuilt to point at.
+
+**So the thing that travels is a palette, not a name.** Noctalia renders a
+twenty-six line manifest of resolved colour roles to
+
+```
+~/.local/state/niri-theme/noctalia-resolved
+```
+
+on every colour-scheme change, and everything outside the session reads its
+colours out of that file. It describes a wallpaper-derived scheme in exactly
+the same lines it describes `gruvbox`.
+
+| Follows | How |
+|---|---|
+| kitty, btop, cava, GTK, Qt, niri, starship | noctalia's own builtin templates |
+| Dolphin and every Qt app | `kdeglobals`, via the `active` symlink |
+| VS Code | a generated one-theme extension, via the same symlink |
+| Vencord / Vesktop | a theme CSS written straight into their theme directories |
+| Spotify | live CSS over loopback — see below |
+| SDDM | `noctalia-resolved`, substituted into the greeter's config |
+| limine | `noctalia-resolved`, rewritten into the boot menu's theme block |
+| OBS, Discord, Papirus, PrismLauncher, Spicetify, zellij, Zen, Inkscape, Blender, fastfetch | community templates |
+
+**Three of those were quietly broken**, all for the same reason, and the fix
+is the reason this section exists.
+
+`theme-apply` and home-manager's activation both used to write a palette name
+into `~/.local/state/niri-theme/current` and repoint `active` at a prebuilt
+directory. Under noctalia the shell writes `noctalia-live` there instead —
+deliberately, because there is no name to write. Every `home-manager switch`
+therefore ran that name through a `case` that could not match it and fell
+through to the default: `active` came off the live directory, and `current`
+was rewritten with a `themes.nix` name. The greeter, the boot menu and Spotify
+were each keying off exactly that string, so all three went to the built-in
+default while the desktop stayed on whatever noctalia was holding in memory.
+
+What changed:
+
+- Activation no longer touches `current` under noctalia, and points `active`
+  at `noctalia-live` rather than at a prebuilt palette.
+- The greeter is **one** `sddm-astronaut` package instead of one per palette,
+  and its colours come from a runtime file. The `/etc/sddm.conf.d` drop-in
+  that used to select between packages is gone (the sync still deletes it, so
+  an already-deployed machine doesn't keep a stale one).
+- The boot menu keeps a single build-time block as its fallback, and reads the
+  manifest for everything else.
+- Spotify is one Spicetify build instead of thirty. Its colours arrive at
+  runtime: noctalia renders `--spice-*` custom properties to a file, a
+  loopback-only service on `127.0.0.1:38471` exposes it, and the theme's
+  `theme.js` swaps one `<style>` element. It has to be HTTP rather than a file
+  read because that JavaScript runs in Spotify's renderer, where `fetch` on a
+  `file://` URL is blocked outright.
+- `noctalia-builtin-themes.nix` — a 500-line hand transcription of noctalia's
+  own builtin palettes, kept so the greeter and boot menu could be given a
+  prebuilt match — is deleted. Nothing could ever select it.
+
+**Community templates** are on, listed by catalog id in
+`home/joshr/niri/noctalia.nix`. They come from `noctalia-dev/community-templates`,
+are fetched from `api.noctalia.dev` on first use and cached under
+`~/.cache/noctalia`. That is a runtime fetch in a config that otherwise pins
+every input in `flake.lock`, and the tradeoff is taken on purpose: these are
+apps whose theming would otherwise have to be reimplemented here one renderer
+at a time, against config formats upstream already tracks. Nothing in the
+session depends on them — the shell, the terminal, GTK, Qt and the greeter are
+all builtin or user templates — so a failed fetch costs those apps their
+colours and nothing else.
+
+Three of them need something on this side to work at all, and each is a
+seed-if-missing activation step rather than a store symlink, because the
+template's hook edits the file in place:
+
+- **OBS** uses the community `matugen.obt`, selected by id
+  (`com.obsproject.matugen`) in `~/.config/obs-studio/user.ini`. This replaces
+  a local `.ovt` child theme that extended OBS's bundled `System` theme and
+  inferred its colours from `kdeglobals` — three indirections to arrive at a
+  palette OBS was only ever guessing at, plus an icon override to undo one
+  consequence of the guess.
+- **fastfetch** refuses to apply without `~/.config/fastfetch/config.jsonc`,
+  and then refuses again if it is JSONC rather than strict JSON. A strict-JSON
+  seed is installed if that file is absent. This is deliberately *not* the
+  fish greeting's config — that one is `~/.smallfetch.jsonc`, is shared with
+  root and the servers, and has comments in it.
+- **Papirus** recolours folder icons in place, and looks for a writable copy at
+  `~/.local/share/icons/Papirus` — failing over to `/usr/share/icons/Papirus`,
+  which does not exist on NixOS. Papirus, Papirus-Dark and Papirus-Light are
+  copied there once, which is a hundred megabytes or so of home directory and
+  the price of that template working.
+
+`spicetify` is enabled and renders the Comfy and Colorful `color.ini` files,
+but its post-hook runs `spicetify apply`, which is inert here — that patches a
+mutable Spotify install and this one is a read-only store path. Spotify's
+actual colours come from the route described above.
 
 ### Keys
 
@@ -1682,8 +1821,32 @@ The stock greeter confirmed the diagnosis: it comes up fine on both displays,
 so the theme was indeed the thing at fault.
 
 **`local.sddm.theme = "astronaut"`** brings the themed greeter back — one
-`sddm-astronaut` build per palette, following the desktop's theme and
-wallpaper — with the leading suspect now fixed.
+`sddm-astronaut` build, following the desktop's palette and wallpaper — with
+the leading suspect now fixed.
+
+**Where the greeter's colours actually come from**, because getting this wrong
+is what kept the login screen off the desktop's palette for the whole of the
+noctalia migration. SDDM reads a theme's config in two halves:
+`ThemeConfig::setTo` opens the file named by `ConfigFile=` in
+`metadata.desktop`, then opens *that same path with `.user` appended* and lets
+every non-empty value there win. nixpkgs' `sddm-astronaut` is built on that —
+its `themeConfig` argument is written to `Themes/<embeddedTheme>.conf.user`.
+
+The runtime override was being written to `theme.conf` in the theme's root
+directory instead. Nothing reads that file; `metadata.desktop` points at
+`Themes/black_hole.conf`. So the symlink to `/var/lib` was inert and the
+greeter went on rendering the store `.conf.user` that nixpkgs had written from
+the build-time palette. Every other part of the path worked — the sync ran,
+the manifest was read, the colours were substituted — and delivered to a file
+SDDM never opened.
+
+Now `Themes/black_hole.conf.user` *is* the symlink, to
+`/var/lib/sddm-theme/theme.conf`, and `sddm-theme-sync` writes that file: it
+copies a build-time seed carrying everything that isn't a colour (background
+path, form position, clock formats, font) and substitutes the palette from
+`noctalia-resolved`. A dangling symlink is a valid state — QSettings on a path
+that doesn't resolve simply contributes nothing, and the greeter falls back to
+upstream's own colours rather than failing to start.
 
 That suspect is the background. The theme config points `Background` at a
 fixed runtime path, `/var/lib/sddm-theme/wallpaper.png`, and that file only
@@ -1696,21 +1859,24 @@ already logged the greeter as started and connected, and identical behaviour
 on every display server, because none of them were involved.
 
 The fix is that the sync service now guarantees the file exists, seeding a
-solid image in the palette's background colour when there's no wallpaper to
-convert. A few KB per palette.
+solid image in the seed palette's background colour when there's no wallpaper
+to convert. A few KB.
 
 This is unproven — the greeter's own QML warnings were never captured — but it
 was the only path in the theme referencing a file that might not exist. If the
-themed greeter is still black, go back to `"stock"` and the next thing to
-strip is the per-palette directory rename.
+themed greeter is still black, go back to `"stock"`.
 
-One thing that has to happen on the way to stock: the sync service deletes
-`/etc/sddm.conf.d/99-niri-active-theme.conf`. That drop-in names a
-`niri-<palette>` theme package, it lives in `/etc` where NixOS only removes
-what it declares, and left behind it would point SDDM at a theme directory
-that is no longer in the store. The service is ordered before
-`display-manager.service` so this lands before the greeter reads it, rather
-than one boot late.
+One thing that happens under **both** greeters: the sync service deletes
+`/etc/sddm.conf.d/99-niri-active-theme.conf`. That drop-in used to carry
+`[Theme] Current=niri-<palette>`, selecting between the per-palette theme
+packages. There is one package now and `services.displayManager.sddm.theme`
+names it declaratively, so the drop-in has nothing left to say — but it lives
+in `/etc`, where NixOS only removes what it declares, and left behind on an
+already-deployed machine it would point SDDM at a theme directory that is no
+longer in the store. That is a black login screen rather than a stale one, so
+the deletion is unconditional and permanent. The service is ordered before
+`display-manager.service` so it lands before the greeter reads its config,
+rather than one boot late.
 
 **The greeter's cursor** comes from `settings.Theme.CursorTheme`. SDDM ships
 no cursor of its own — it exports `XCURSOR_THEME`/`XCURSOR_SIZE` into the
@@ -2791,9 +2957,16 @@ local.boot.scanAllEsps = false;          # this machine's ESP only
 ### How the boot menu ends up wearing the desktop's colours
 
 The menu is drawn before any of the desktop exists, from a text file on the
-EFI System Partition. So the palette and wallpaper are *pushed* there ahead of
-time, the same way the SDDM greeter is fed, and for the same reason: the thing
-being themed can't read your home directory.
+EFI System Partition. So the palette is *pushed* there ahead of time, the same
+way the SDDM greeter is fed, and for the same reason: the thing being themed
+can't read your home directory.
+
+What gets pushed is noctalia's resolved palette manifest, not the name of a
+theme — see "Theme sync under noctalia". A name only ever described one of
+noctalia's four palette sources, and this module used to carry a whole
+directory of prebuilt colour blocks indexed by it, which under noctalia could
+never match. One build-time block remains as the fallback for the first boot
+and for the Plasma hosts, which write no manifest at all.
 
 The NixOS limine module regenerates `<esp>/limine/limine.conf` on every
 rebuild, so a runtime edit can't just go anywhere in it. What makes it work is
@@ -2801,9 +2974,11 @@ that the module emits two verbatim blocks at known ends of the file —
 `extraConfig` first, `extraEntries` last. Each gets a sentinel-delimited
 region, filled at build time with the default palette and no detected systems.
 `limine-theme-sync` then rewrites the *inside* of each region, running at
-boot, whenever you pick a theme or wallpaper, and at the end of every
-bootloader install. If it never runs, the menu is still valid and still
-themed, just with the default palette.
+boot, whenever the session's palette changes, and at the end of every
+bootloader install. That last one matters: the install rewrites `limine.conf`
+from `extraConfig`, so without it every rebuild would put the menu back on the
+build-time palette until something else woke the sync. If it never runs, the
+menu is still valid and still themed, just with the default palette.
 
 The regions sit where they do because limine's config has no separator between
 global options and menu entries: an entry is opened by a line starting with
@@ -2823,6 +2998,12 @@ are enforced in the module:
 - **The config never names a wallpaper that isn't there.** Both the build-time
   block and the sync emit the `wallpaper:` line only alongside a file that
   exists.
+
+The session's wallpaper is **not** mirrored to the ESP. `local.boot.wallpaper`
+still seeds an image at build time and the sync still names it if it is there,
+but a fresh 1080p PNG written to a FAT partition shared with the firmware on
+every wallpaper change is a lot of churn for a screen that is up for two
+seconds.
 
 `style.wallpapers` and the `style.graphicalTerminal.*` options are deliberately
 left alone — they'd write the same keys from build-time values, duplicating

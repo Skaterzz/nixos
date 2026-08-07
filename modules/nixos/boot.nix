@@ -1,4 +1,4 @@
-{ config, lib, pkgs, ... }:
+{ config, inputs, lib, pkgs, ... }:
 
 # Bootloader: which one is installed, how it finds other operating systems,
 # and — for limine — how the boot menu follows the desktop's theme.
@@ -103,6 +103,15 @@ let
   inherit (themeSet) themes;
 
   esp = config.boot.loader.efi.efiSysMountPoint;
+
+  # Limine keeps the familiar NixOS image unless a host deliberately replaces
+  # it. This is independent of Noctalia's runtime wallpaper; only the colour
+  # block below follows the session.
+  limineWallpaper =
+    if cfg.wallpaper != null then
+      cfg.wallpaper
+    else
+      inputs.dotfiles + "/dot_local/share/wallpapers/nixos.png";
 
   # The palette manifest Noctalia renders from its colour roles (the
   # `system_palette` user template in home/joshr/niri/noctalia.nix). The same
@@ -241,12 +250,12 @@ let
 
       # --- wallpaper ----------------------------------------------------
       #
-      # Left off. `local.boot.wallpaper` still seeds an image onto the ESP at
-      # build time (`additionalFiles` below) and the sync still names it if it
-      # is there, but the session's own wallpaper is no longer mirrored: on a
-      # FAT partition shared with the firmware, a fresh 1080p PNG written on
-      # every wallpaper change is a lot of churn for a screen that is up for
-      # two seconds.
+      # Left off. `limineWallpaper` seeds a fixed image onto the ESP at build
+      # time (`additionalFiles` below) and the sync still names it if it is
+      # there, but the session's own wallpaper is never mirrored: on a FAT
+      # partition shared with the firmware, a fresh 1080p PNG written on every
+      # wallpaper change is a lot of churn for a screen that is up for two
+      # seconds.
       #
       # The `install -d` that used to stand here is gone with it. Nothing after
       # this point writes into that directory, and `install -d` also chmods —
@@ -333,9 +342,9 @@ let
         cp ${defaultBlock} "$body"
       fi
 
-      # Only name the image if it is actually there — on a host that has never
-      # picked a wallpaper and sets no local.boot.wallpaper, there is nothing
-      # to point at and limine should be left to draw the backdrop colour.
+      # Only name the image if it is actually there. New generations always
+      # seed the fixed Limine wallpaper, but keeping this guard makes the sync
+      # safe while switching from an older generation or repairing an ESP.
       if [ -f "${espWallpaper}" ]; then
         printf '%s\n' ${lib.escapeShellArg wallpaperLines} >> "$body"
       fi
@@ -548,7 +557,7 @@ in
         extraConfig = ''
           ${themeBegin}
           ${themeBlock defaultTheme}
-          ${lib.optionalString (cfg.wallpaper != null) wallpaperLines}
+          ${wallpaperLines}
           ${themeEnd}
         '';
 
@@ -557,12 +566,12 @@ in
           ${entriesEnd}
         '';
 
-        # Seeds the image the boot menu falls back to before niri has ever
-        # written a wallpaper. Copied to the ESP but outside <esp>/limine, so
-        # the installer's cleanup pass leaves it alone — and so the sync can
-        # overwrite the same path later.
-        additionalFiles = lib.optionalAttrs (cfg.wallpaper != null) {
-          "${espSubdir}/wallpaper.png" = cfg.wallpaper;
+        # Pins the boot menu's fixed image. Copied to the ESP but outside
+        # <esp>/limine so the installer's cleanup pass leaves it alone. The
+        # copy on every rebuild is also what replaces a session wallpaper left
+        # at this path by an older generation of the sync service.
+        additionalFiles = {
+          "${espSubdir}/wallpaper.png" = limineWallpaper;
         };
 
         # Re-theme immediately after an install rather than at the next boot,
@@ -571,7 +580,7 @@ in
       };
 
       systemd.services.limine-theme-sync = {
-        description = "Mirror the desktop theme and wallpaper to the limine boot menu";
+        description = "Mirror the desktop palette to the limine boot menu";
         wantedBy = [ "multi-user.target" ];
 
         # The ESP is usually mounted early, but it is not guaranteed to be up

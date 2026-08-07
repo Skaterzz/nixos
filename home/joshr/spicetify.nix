@@ -203,8 +203,11 @@ let
   # `<link href='colors.css'>` into xpui/index.html. Under Noctalia, replace
   # that one file with the live template output in a private mount namespace.
   # `--bind / /` preserves the host filesystem and permissions; this is only a
-  # mount view, not a sandbox. The second bind is read-only from Spotify's side
-  # and does not mutate the Nix store.
+  # mount view, not a sandbox. A normal bind is deliberately `nodev`, though,
+  # so /dev has to be overlaid with a device-enabled bind afterwards. Without
+  # that, Spotify reaches /dev/urandom but gets EACCES and aborts before opening
+  # a window. The final bind is read-only from Spotify's side and does not
+  # mutate the Nix store.
   spotifyLauncher = pkgs.writeShellApplication {
     name = "spotify";
     runtimeInputs = lib.optionals useNoctalia [
@@ -227,6 +230,7 @@ let
           exec bwrap \
             --die-with-parent \
             --bind / / \
+            --dev-bind /dev /dev \
             --ro-bind "$palette" "$target" \
             -- ${lib.getExe spicedSpotify} "$@"
         fi

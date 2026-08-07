@@ -1103,9 +1103,9 @@ restored at login.
 
 **Whose theme the machine follows** is `local.desktop.primaryUser`, which
 defaults to `joshr`. Three things live outside any session and have to be
-dressed from *someone's* choices: the SDDM greeter and the limine boot menu
-both read the theme and wallpaper out of that user's
-`~/.local/state/niri-theme`, and plasmalogin copies Plasma's settings out of
+dressed from *someone's* choices: the SDDM greeter reads the theme and
+wallpaper out of that user's `~/.local/state/niri-theme`, the limine boot menu
+reads only the theme there, and plasmalogin copies Plasma's settings out of
 their `~/.config`.
 
 Each of those is a singleton — one login screen, one boot menu — so this
@@ -1148,7 +1148,7 @@ the same lines it describes `gruvbox`.
 | Vencord / Vesktop | a theme CSS written straight into their theme directories |
 | Spotify | Noctalia CSS mounted over xpui's same-origin `colors.css` — see below |
 | SDDM | `noctalia-resolved`, substituted into the greeter's config |
-| limine | `noctalia-resolved`, rewritten into the boot menu's theme block |
+| limine | `noctalia-resolved`, rewritten into the boot menu's colour block; its NixOS wallpaper stays fixed |
 | OBS, Discord, Papirus, PrismLauncher, zellij, Zen, Inkscape, Blender, fastfetch | community templates |
 
 **Three of those were quietly broken**, all for the same reason, and the fix
@@ -2987,14 +2987,14 @@ not be listed in `firefox.nix`.
 
 | | themed | finds other OSes by |
 |---|---|---|
-| `limine` (default) | wallpaper + full palette, follows runtime switches | scanning every ESP on the machine for other loaders |
+| `limine` (default) | fixed NixOS wallpaper + full palette; colours follow runtime switches | scanning every ESP on the machine for other loaders |
 | `grub` | palette + fixed splash, build time only | `os-prober` |
 | `systemd-boot` | not at all | itself, no setting needed |
 
-limine is the default because it's the only one that can put the desktop's
-wallpaper and colours on the boot menu. grub is the fallback for anything it
-can't handle — BIOS/MBR, odd partition layouts, firmware that dislikes
-limine's EFI binary — and it still detects *more*, since os-prober looks
+limine is the default because it's the only one that can put the configured
+wallpaper and the desktop's live colours on the boot menu. grub is the fallback
+for anything it can't handle — BIOS/MBR, odd partition layouts, firmware that
+dislikes limine's EFI binary — and it still detects *more*, since os-prober looks
 inside other partitions rather than only at EFI System Partitions.
 systemd-boot is the escape hatch and what this repo used before the module
 existed:
@@ -3098,11 +3098,13 @@ are enforced in the module:
   block and the sync emit the `wallpaper:` line only alongside a file that
   exists.
 
-The session's wallpaper is **not** mirrored to the ESP. `local.boot.wallpaper`
-still seeds an image at build time and the sync still names it if it is there,
-but a fresh 1080p PNG written to a FAT partition shared with the firmware on
-every wallpaper change is a lot of churn for a screen that is up for two
-seconds.
+The session's wallpaper is **not** mirrored to the ESP. When
+`local.boot.wallpaper` is null, limine uses the familiar `nixos.png` from the
+dotfiles input; setting it replaces that fixed image. The sync keeps naming the
+build-time copy, and a rebuild replaces any old session wallpaper that an
+earlier generation left at the same ESP path. Writing a fresh 1080p PNG to a
+FAT partition shared with the firmware on every wallpaper change was a lot of
+churn for a screen that is up for two seconds.
 
 `style.wallpapers` and the `style.graphicalTerminal.*` options are deliberately
 left alone — they'd write the same keys from build-time values, duplicating
@@ -3116,7 +3118,7 @@ wins — it's what boots under Secure Boot and hands over to grub itself).
 
 ```nix
 local.boot.detectOtherSystems = false;   # skip the scan entirely
-local.boot.wallpaper = ./some.png;       # menu image before niri picks one
+local.boot.wallpaper = ./some.png;       # replace the default NixOS menu image
 local.boot.branding = "gamestation";     # text above the menu
 local.boot.menuTransparency = "50";      # TT of limine's TTRRGGBB
 ```
@@ -4032,9 +4034,9 @@ so there is nothing per-host to say about it.
 
 `joshr` being the primary user is one option, `local.desktop.primaryUser`, and
 it is about the surfaces that exist outside any session: the SDDM/plasmalogin
-greeter and the limine boot menu take their theme and wallpaper from that
-account's `~/.local/state/niri-theme` and `~/.config`, and the OpenRGB
-after-resume service runs as it.
+greeter takes its theme and wallpaper from that account's
+`~/.local/state/niri-theme` and `~/.config`, the limine boot menu takes only its
+colours from there, and the OpenRGB after-resume service runs as it.
 
 Each of those is a singleton — one login screen, one boot menu, one set of
 lights — so they follow one named account rather than whoever logged in last.

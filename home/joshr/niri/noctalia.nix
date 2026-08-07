@@ -71,6 +71,8 @@ let
   # Limine, and Spotify syncs — see the hooks below.
   stateDir = "${config.home.homeDirectory}/.local/state/niri-theme";
   resolvedThemeFile = "${stateDir}/noctalia-resolved";
+  liveThemeDir = "${stateDir}/noctalia-live";
+  activeThemeDir = "${stateDir}/active";
   spotifyThemeDir = "${config.home.homeDirectory}/.local/state/noctalia-spotify";
   wallpaperDir = "${config.home.homeDirectory}/.local/share/wallpapers";
   screenshotDir = "${config.home.homeDirectory}/Pictures/Screenshots";
@@ -122,11 +124,11 @@ let
   # from theming.nix even when Noctalia changes to a builtin, wallpaper, or
   # community palette that has no corresponding theme directory.
   #
-  # Run after the builtin templates, read the resolved surface colour back
-  # from their niri fragment, and add the one node they omit. This works for
-  # every palette source without trying to reproduce Noctalia's colour
-  # resolution. Replacing the file atomically also gives niri one complete
-  # config change to live-reload instead of a partially appended KDL block.
+  # Run after the templates and read the same manifest SDDM and Limine read.
+  # It is rendered directly from Noctalia's colour roles, so this no longer
+  # depends on the formatting of the builtin niri template. Replacing the
+  # file atomically gives niri one complete config change to live-reload
+  # instead of a partially appended KDL block.
   niriOverviewSync = pkgs.writeShellApplication {
     name = "noctalia-niri-overview-sync";
     runtimeInputs = [
@@ -138,8 +140,8 @@ let
       [ -f "$fragment" ] || exit 0
 
       surface="$(sed -n \
-        's/^[[:space:]]*inactive-color[[:space:]]*"\(#[0-9A-Fa-f]\{6\}\)".*/\1/p' \
-        "$fragment" | head -n1)"
+        's/^bg=\(#[0-9A-Fa-f]\{6\}\)$/\1/p' \
+        ${lib.escapeShellArg resolvedThemeFile} | head -n1 || true)"
       [ -n "$surface" ] || exit 0
 
       tmp="$(mktemp)"
@@ -162,107 +164,113 @@ let
     '';
   };
 
+  # Make the generated Vencord theme active without replacing any other local
+  # themes. Vencord and Vesktop use the same settings schema but keep separate
+  # data directories. Their theme watcher repaints a running client when the
+  # enabled file changes; the first deployment needs one client restart so its
+  # in-memory settings pick up the added filename.
+  vencordThemeEnable = pkgs.writeShellApplication {
+    name = "noctalia-vencord-theme-enable";
+    runtimeInputs = [
+      pkgs.coreutils
+      pkgs.jq
+    ];
+    text = ''
+      config_home="''${XDG_CONFIG_HOME:-${config.xdg.configHome}}"
+
+      for data_dir in "$config_home/Vencord" "$config_home/vesktop"; do
+        settings="$data_dir/settings/settings.json"
+        mkdir -p "$(dirname "$settings")"
+
+        if [ -s "$settings" ]; then
+          if ! updated="$(jq '
+            if type == "object" then . else {} end
+            | .enabledThemes = (((.enabledThemes // []) + ["noctalia.theme.css"]) | unique)
+          ' "$settings")"; then
+            echo "noctalia: not changing invalid Vencord settings: $settings" >&2
+            continue
+          fi
+        else
+          updated='{"enabledThemes":["noctalia.theme.css"]}'
+        fi
+
+        tmp="$(mktemp "$(dirname "$settings")/.settings.json.XXXXXX")"
+        printf '%s\n' "$updated" > "$tmp"
+        if [ -f "$settings" ] && cmp -s "$settings" "$tmp"; then
+          rm -f "$tmp"
+        else
+          mv -f "$tmp" "$settings"
+        fi
+      done
+    '';
+  };
+
   # Colour scheme -> everything that is not the shell.
   #
-  # `theme-apply` is the switcher: it repoints ~/.local/state/niri-theme/active
-  # at the chosen theme's rendered configs, reloads kitty, tells KDE its
-  # palette changed, writes the state file the greeter watches, and — under
-  # noctalia — sets the palette. That covers every route through the keybinds.
-  # It does not cover the colour scheme being changed from noctalia's own
-  # Settings window, which is the case this closes.
+  # The previous version reverse-engineered Kitty, btop and niri output. That
+  # made three unrelated builtin templates an accidental API, and one missing
+  # or slightly reformatted value prevented the manifest from being written at
+  # all. Noctalia now renders the manifest and each app file directly from its
+  # colour roles. This post-hook only validates those outputs and publishes the
+  # completed live directory.
   #
-  # **Why this does not loop.** The environment flag below tells `theme-apply`
-  # that noctalia is already the source of the change, so it applies every
-  # non-shell consumer but does not send `color-scheme-set` back to noctalia.
-  # Running the switcher even when the name is unchanged is intentional: it
-  # atomically replaces `current`, which reliably wakes the SDDM and Limine
-  # system path units and Spotify's user path unit after a missed or
-  # late-starting sync.
-  #
-  # The important distinction here is resolved colours, not palette names.
-  # Noctalia's builtin templates have already expanded builtin, custom,
-  # wallpaper-derived and community schemes into ordinary colour files when
-  # this hook runs. Reading those files means system consumers follow all four
-  # sources, including a wallpaper palette that did not exist at build time.
+  # Repointing `active` matters: kdeglobals (and therefore OBS) plus the local
+  # VS Code theme extension already follow that symlink. Merely writing
+  # `current=noctalia-live`, as the old hook did, woke the system path units
+  # while leaving those applications on a prebuilt Nix palette.
   themeResync = pkgs.writeShellApplication {
     name = "noctalia-theme-resync";
     runtimeInputs = [
-      pkg
       pkgs.coreutils
-      pkgs.gawk
       pkgs.gnugrep
-      pkgs.gnused
+      pkgs.dbus
+      vencordThemeEnable
     ];
     text = ''
-      kitty=${lib.escapeShellArg "${config.xdg.configHome}/kitty/themes/noctalia.conf"}
-      btop=${lib.escapeShellArg "${config.xdg.configHome}/btop/themes/noctalia.theme"}
-      niri=${lib.escapeShellArg "${config.xdg.configHome}/niri/noctalia.kdl"}
+      manifest=${lib.escapeShellArg resolvedThemeFile}
 
-      [ -f "$kitty" ] && [ -f "$btop" ] && [ -f "$niri" ] || exit 0
+      required_outputs=(
+        "$manifest"
+        ${lib.escapeShellArg "${liveThemeDir}/kdeglobals"}
+        ${lib.escapeShellArg "${liveThemeDir}/vscode-extension/package.json"}
+        ${lib.escapeShellArg "${liveThemeDir}/vscode-extension/themes/niri-color-theme.json"}
+        ${lib.escapeShellArg "${spotifyThemeDir}/colors.css"}
+        ${lib.escapeShellArg "${config.xdg.configHome}/Vencord/themes/noctalia.theme.css"}
+        ${lib.escapeShellArg "${config.xdg.configHome}/vesktop/themes/noctalia.theme.css"}
+      )
 
-      from_space_file() {
-        sed -n "s/^[[:space:]]*$1[[:space:]]\\+\\(#[0-9A-Fa-f]\\{6\\}\\).*/\\1/p" "$2" | head -n1 || true
-      }
-      from_equals_file() {
-        sed -n "s/^[[:space:]]*$1[[:space:]]*=[[:space:]]*['\"]\\(#[0-9A-Fa-f]\\{6\\}\\)['\"].*/\\1/p" "$2" | head -n1 || true
-      }
-      valid_colour() {
-        printf '%s\n' "$1" | grep -Eq '^#[0-9A-Fa-f]{6}$'
-      }
-
-      bg="$(from_space_file background "$kitty")"
-      fg="$(from_space_file foreground "$kitty")"
-      accent="$(from_space_file active_border_color "$kitty")"
-      bg_alt="$(from_space_file inactive_border_color "$kitty")"
-      fg_dim="$(from_space_file inactive_tab_foreground "$kitty")"
-      accent_dim="$(from_equals_file proc_misc "$btop")"
-      warn="$(from_equals_file hi_fg "$btop")"
-      border="$(from_equals_file cpu_box "$btop")"
-      err="$(sed -n 's/^[[:space:]]*urgent-color[[:space:]]*"\\(#[0-9A-Fa-f]\\{6\\}\\)".*/\\1/p' "$niri" | head -n1 || true)"
-
-      for key in bg fg accent bg_alt fg_dim accent_dim warn border err; do
-        eval "value=\''${$key}"
-        valid_colour "$value" || exit 0
+      for output in "''${required_outputs[@]}"; do
+        if [ ! -s "$output" ]; then
+          echo "noctalia: refusing to publish an incomplete theme; missing $output" >&2
+          exit 1
+        fi
       done
 
-      colours=""
-      for number in $(seq 0 15); do
-        value="$(from_space_file "color$number" "$kitty")"
-        valid_colour "$value" || exit 0
-        colours="$colours
-color$number=$value"
+      for key in bg bg_alt fg fg_dim accent accent_dim warn err border \
+                 color0 color1 color2 color3 color4 color5 color6 color7 \
+                 color8 color9 color10 color11 color12 color13 color14 color15; do
+        if ! grep -Eq "^$key=#[0-9A-Fa-f]{6}$" "$manifest"; then
+          echo "noctalia: invalid or missing '$key' in $manifest" >&2
+          exit 1
+        fi
       done
 
-      mkdir -p ${lib.escapeShellArg stateDir} ${lib.escapeShellArg spotifyThemeDir}
+      mkdir -p ${lib.escapeShellArg stateDir}
+      ln -sfn ${lib.escapeShellArg liveThemeDir} ${lib.escapeShellArg activeThemeDir}
+      noctalia-vencord-theme-enable
 
-      resolved_tmp="${resolvedThemeFile}.tmp"
-      {
-        printf 'bg=%s\nbg_alt=%s\nfg=%s\nfg_dim=%s\n' "$bg" "$bg_alt" "$fg" "$fg_dim"
-        printf 'accent=%s\naccent_dim=%s\nwarn=%s\nerr=%s\nborder=%s\n' \
-          "$accent" "$accent_dim" "$warn" "$err" "$border"
-        printf '%s\n' "$colours" | sed '/^$/d'
-      } > "$resolved_tmp"
-      mv -f "$resolved_tmp" ${lib.escapeShellArg resolvedThemeFile}
-
-      spotify_tmp=${lib.escapeShellArg "${spotifyThemeDir}/colors.css.tmp"}
-      {
-        printf ':root {\n'
-        printf '  --spice-accent: %s;\n  --spice-accent-active: %s;\n' "$accent" "$accent"
-        printf '  --spice-accent-inactive: %s;\n  --spice-banner: %s;\n' "$bg_alt" "$accent"
-        printf '  --spice-border-active: %s;\n  --spice-border-inactive: %s;\n' "$accent" "$border"
-        printf '  --spice-header: %s;\n  --spice-highlight: %s;\n' "$bg_alt" "$bg_alt"
-        printf '  --spice-main: %s;\n  --spice-notification: %s;\n' "$bg" "$accent"
-        printf '  --spice-notification-error: %s;\n  --spice-subtext: %s;\n' "$err" "$fg_dim"
-        printf '  --spice-text: %s;\n}\n' "$fg"
-      } > "$spotify_tmp"
-      mv -f "$spotify_tmp" ${lib.escapeShellArg "${spotifyThemeDir}/colors.css"}
-
-      # This sentinel is deliberately a stable name. It wakes the system and
-      # Spotify path units on every palette change without pretending a
-      # wallpaper/community palette is one of the finite Nix theme names.
-      current_tmp="${stateDir}/current.tmp"
+      # A fresh inode wakes SDDM, Limine and Spotify even though the sentinel
+      # value is deliberately stable for arbitrary wallpaper/community names.
+      current_tmp="$(mktemp ${lib.escapeShellArg "${stateDir}/current.XXXXXX"})"
       printf '%s\n' noctalia-live > "$current_tmp"
       mv -f "$current_tmp" "${stateDir}/current"
+
+      # OBS uses Qt's System palette and the KDE platform integration. This is
+      # the same palette-changed broadcast Plasma sends; clients that listen
+      # repaint now, while the rest read the file on their next launch.
+      dbus-send --session --type=signal \
+        /KGlobalSettings org.kde.KGlobalSettings.notifyChange \
+        int32:0 int32:0 >/dev/null 2>&1 || true
     '';
   };
 
@@ -363,9 +371,9 @@ color$number=$value"
         loginH = 72;
         loginCy = h - 84 - (loginH / 2);
 
-        mediaW = lib.min 420 (w - 48);
+        mediaW = lib.min 360 (w - 48);
         mediaH = 132;
-        mediaCy = loginCy - (loginH / 2) - 18 - (mediaH / 2);
+        mediaCy = loginCy - (loginH / 2) - 32 - (mediaH / 2);
 
         buttonW = 170;
         buttonH = 42;
@@ -783,26 +791,19 @@ color$number=$value"
 
       # --- and how it reaches everything that is not the shell -------------
       #
-      # Two mechanisms share this job, and the split is not arbitrary.
+      # Noctalia is now the source of the live system palette, not merely the
+      # shell consumer of a finite Nix theme. Its user templates write one
+      # complete live directory plus the files consumed directly by Spotify
+      # and Vencord. The final manifest template publishes that directory and
+      # wakes SDDM and Limine. This works unchanged for custom, builtin,
+      # wallpaper-derived and community palettes because the templates see
+      # resolved colour roles rather than a palette name.
       #
-      # theming.nix renders all 29 palettes into the config formats this repo
-      # already had to speak — niri's KDL, kitty's include, kdeglobals for
-      # Dolphin and the KDE file dialogs, VS Code, firefox, wofi — and hands
-      # each app a path under ~/.local/state/niri-theme/active. `theme-apply`
-      # moves that symlink. That machinery predates noctalia, works under both
-      # shells, and feeds SDDM, Limine, and the themed Spotify launcher too.
-      #
-      # noctalia's templates now cover the rest, including the gap theming.nix
-      # left: **GTK**. Nothing in theming.nix ever wrote a GTK stylesheet, so
-      # GTK apps and every portal/file-chooser dialog they open kept the stock
-      # Adwaita palette while the rest of the session changed colour.
-      #
-      # `kcolorscheme` is the one still left off. Its post-action writes
-      # ~/.config/kdeglobals unconditionally, and ./default.nix points that at
-      # the active theme as an out-of-store symlink — so the two would be
-      # fighting over one file that theming.nix already keeps correct. Every
-      # other builtin that touches something home-manager owns is handled by
-      # pre-declaring what its hook looks for; see below.
+      # The builtin kcolorscheme remains off. Its post-action writes
+      # ~/.config/kdeglobals itself, while ./default.nix deliberately owns that
+      # path as a symlink. The user template below instead writes the target
+      # inside `noctalia-live`; repointing `active` switches KDE, OBS and VS
+      # Code together without two writers fighting over kdeglobals.
       #
       # --- and how it reaches everything that is not the shell -------------
       #
@@ -850,6 +851,46 @@ color$number=$value"
         # Community templates are a runtime fetch from api.noctalia.dev, which
         # is against the grain of a config that pins every input in flake.lock.
         enable_community_templates = false;
+
+        # These are local user templates, so Noctalia itself resolves every
+        # palette source and writes all downstream formats. Indices make the
+        # state manifest last: its post-hook can only publish a complete set.
+        user = {
+          kde = {
+            input_path = "${config.xdg.configHome}/noctalia/templates/kdeglobals";
+            output_path = "${liveThemeDir}/kdeglobals";
+            index = 100;
+          };
+          vscode_package = {
+            input_path = "${config.xdg.configHome}/noctalia/templates/vscode-package.json";
+            output_path = "${liveThemeDir}/vscode-extension/package.json";
+            index = 110;
+          };
+          vscode = {
+            input_path = "${config.xdg.configHome}/noctalia/templates/vscode.json";
+            output_path = "${liveThemeDir}/vscode-extension/themes/niri-color-theme.json";
+            index = 120;
+          };
+          spotify = {
+            input_path = "${config.xdg.configHome}/noctalia/templates/spotify.css";
+            output_path = "${spotifyThemeDir}/colors.css";
+            index = 130;
+          };
+          vencord = {
+            input_path = "${config.xdg.configHome}/noctalia/templates/vencord.css";
+            output_path = [
+              "${config.xdg.configHome}/Vencord/themes/noctalia.theme.css"
+              "${config.xdg.configHome}/vesktop/themes/noctalia.theme.css"
+            ];
+            index = 140;
+          };
+          system_palette = {
+            input_path = "${config.xdg.configHome}/noctalia/templates/system-palette.conf";
+            output_path = resolvedThemeFile;
+            post_hook = "${lib.getExe themeResync} && ${lib.getExe niriOverviewSync}";
+            index = 900;
+          };
+        };
       };
     };
 
@@ -868,7 +909,9 @@ color$number=$value"
       directory = wallpaperDir;
 
       fill_mode = "crop";
+      transition = [ "disc" ];
       transition_duration = 1500;
+      transition_on_startup = true;
 
       # Recursive, and this is what makes the wallhaven set pickable rather
       # than only shufflable: the same flag drives the picker's scan and the
@@ -1290,6 +1333,12 @@ in
       "starship.toml".enable = lib.mkForce false;
 
       "noctalia/config.toml".source = validatedConfig;
+      "noctalia/templates/kdeglobals".source = ./noctalia-templates/kdeglobals;
+      "noctalia/templates/spotify.css".source = ./noctalia-templates/spotify.css;
+      "noctalia/templates/system-palette.conf".source = ./noctalia-templates/system-palette.conf;
+      "noctalia/templates/vencord.css".source = ./noctalia-templates/vencord.css;
+      "noctalia/templates/vscode-package.json".source = ./noctalia-templates/vscode-package.json;
+      "noctalia/templates/vscode.json".source = ./noctalia-templates/vscode.json;
     }
     // lib.mapAttrs' (
       name: palette:

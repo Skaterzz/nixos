@@ -473,9 +473,9 @@ let
           box_height = h;
 
           settings = {
-            bands = 128;
+            bands = 64;
             mirrored = true;
-            centered = true;
+            centered = false;
             show_when_idle = false;
             color_1 = "primary";
             color_2 = "secondary";

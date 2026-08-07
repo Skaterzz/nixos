@@ -455,12 +455,12 @@ let
       };
 
       active_window = {
-        max_length = 70;
+        max_length = 170;
         display = "icon_and_text";
       };
 
       media = {
-        max_length = 30;
+        max_length = 100;
         hide_when_no_media = true;
       };
 

@@ -465,7 +465,7 @@ ${workspaceBlocks}
         // silently replaced whatever you had chosen. `theme-random`,
         // `theme-cycle` and `wallpaper-random` are all still on PATH for when
         // that is actually what you want.
-        Mod+Ctrl+T  hotkey-overlay-title="Choose theme" { spawn "${bin niriScripts.themeMenu}"; }
+        // Mod+Ctrl+T  hotkey-overlay-title="Choose theme" { spawn "${bin niriScripts.themeMenu}"; }
         Mod+Ctrl+W  hotkey-overlay-title="Choose wallpaper" { spawn-sh "${wallpaperMenu}"; }
 
         // --- screenshots -----------------------------------------------

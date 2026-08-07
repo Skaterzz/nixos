@@ -963,20 +963,6 @@ in
     # theme picked once.
     programs.btop.settings.color_theme = lib.mkForce "noctalia";
 
-    # cava/apply.sh wants a `[color]` section already naming the theme, and
-    # exits 1 with an error if the config file is missing entirely. cava is
-    # installed for the bar visualiser (see ./default.nix) but its config was
-    # never managed, so this is both the file it needs and the line it checks.
-    xdg.configFile."cava/config".text = ''
-      # Managed by home/joshr/niri/noctalia.nix.
-      #
-      # The palette is not here: noctalia renders it to
-      # ~/.config/cava/themes/noctalia and this points cava at it. The theme
-      # file is rewritten on every colour-scheme change.
-      [color]
-      theme = "noctalia"
-    '';
-
     # starship is the exception, and the only place a declarative file has to
     # become a mutable one.
     #
@@ -991,8 +977,6 @@ in
     # real one instead. `home/common/files/starship.toml` stays the source of
     # truth — the activation below re-seeds whenever it changes — and the hook
     # owns only what is between its markers.
-    xdg.configFile."starship.toml".enable = lib.mkForce false;
-
     home.activation.noctaliaStarshipSeed = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
       starshipTarget="${config.xdg.configHome}/starship.toml"
       starshipSeed=${../../common/files/starship.toml}
@@ -1024,7 +1008,33 @@ in
     # rather than crashing the shell on the way in. See reconcileOverrides.
     home.activation.noctaliaReconcileOverrides = lib.hm.dag.entryAfter [ "writeBoundary" ] reconcileOverrides;
 
+    # One assignment, because these cannot be split.
+    #
+    # `xdg.configFile."a".text = …` and `xdg.configFile = { … }` are two
+    # definitions of the same attribute as far as the Nix language is
+    # concerned — not the module system, which would merge them — so writing
+    # the static entries in path form and the generated ones as a set is
+    # "attribute 'xdg.configFile' already defined". The palettes have to be
+    # built with `mapAttrs'`, so everything joins them in the set.
     xdg.configFile = {
+      # cava/apply.sh wants a `[color]` section already naming the theme, and
+      # exits 1 with an error if the config file is missing entirely. cava is
+      # installed for the bar visualiser (see ./default.nix) but its config was
+      # never managed, so this is both the file it needs and the line it checks.
+      "cava/config".text = ''
+        # Managed by home/joshr/niri/noctalia.nix.
+        #
+        # The palette is not here: noctalia renders it to
+        # ~/.config/cava/themes/noctalia and this points cava at it. The theme
+        # file is rewritten on every colour-scheme change.
+        [color]
+        theme = "noctalia"
+      '';
+
+      # Hand starship.toml over to the activation step below, which seeds a
+      # real file the template hook can splice into.
+      "starship.toml".enable = lib.mkForce false;
+
       "noctalia/config.toml".source = validatedConfig;
     }
     // lib.mapAttrs' (

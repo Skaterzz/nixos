@@ -384,10 +384,11 @@ reserving a slot.
 
 **`max_length` is a width in pixels**, on both the window title and the now
 playing widget, capped at 800 by the widgets themselves — not a count of
-glyphs, which is the natural reading of the name. Both also take
-`title_scroll = "on_hover"`, which is the more useful half of the answer to a
-long title: no fixed width fits every track, so the overflow scrolls under the
-pointer instead of being lost to an ellipsis.
+glyphs, which is the natural reading of the name. The window title scrolls on
+hover; now playing is capped at 270px and scrolls continuously, so a long track
+never needs a wider permanent slot. Scrolling the now-playing widget itself
+changes the active MPRIS player's own volume by 5% per notch instead of
+skipping tracks; system output volume remains the separate volume widget.
 
 **Privacy hides itself when idle.** noctalia draws all three of its glyphs —
 microphone, camera, screen-share — greyed out by default, which is three
@@ -566,15 +567,19 @@ on screen:
 
 #### The lock screen under noctalia
 
-noctalia draws the login box itself, centred and near the bottom, and it
-already carries most of what a lock screen is asked for: who is logging in,
-what is playing, caps lock, the keyboard layout and the session buttons.
-Nothing in this config places it — a `login_box` entry in `lockscreen_widgets`
-only *overrides* its position, so leaving it out is what keeps the layout
-right on a display whose resolution the config doesn't know.
+The config places one compact login box near the bottom of every output and an
+auto-hiding media player above its prompt. The login box's shared session row
+is disabled; Suspend and Switch user are explicit lock-safe buttons beneath
+it, so the desktop session menu can keep its complete action list without
+putting reboot and shutdown on the locked screen.
 
-The one thing it has no equivalent for is the time, so that is what
-`noctalia.nix` adds — as **two** widgets, not one. A clock widget has a single
+An `audio_visualizer` is the first entry in the explicit `widget_order`, which
+also makes it the backmost custom widget. Its box is the full logical width
+and height of the output, with no panel or padding, while the login panel is a
+later root layer. `show_when_idle = false` fades the 128-band spectrum away
+when playback stops, so the wallpaper remains clean when there is no media.
+
+Time is **two** widgets, not one. A clock widget has a single
 font size, so "time bigger than the date" can't be done inside one `format`
 string, and the only size control a lock screen widget has is its box: with
 `box_width` and `box_height` both set, the widget scales its content to fill
@@ -598,15 +603,10 @@ the laptop — and the position falls back to a 1080p centre. noctalia clamps
 widget coordinates to the output, so on a panel that isn't 1080p the clock
 lands off-centre rather than off-screen.
 
-**Two session actions, and they are the lock screen's buttons too.** The lock
-screen doesn't have a button list of its own — it draws `[shell.session]`'s
-actions — so cutting that list to sleep and switch-user is what makes the lock
-screen carry only those two. The default set is lock, logout, suspend, reboot
-and shutdown; lock is meaningless *on* the lock screen, and reboot and shutdown
-are one mis-click from throwing away a session you only meant to step away
-from. Switch-user is a `command` action rather than a verb of its own — the
-vocabulary is lock, logout, suspend, lock_and_suspend, reboot, shutdown and
-command — running the same `switch-user` script the waybar session menu called.
+**Two explicit lock-screen buttons.** Suspend calls systemd directly and
+Switch user runs the same `switch-user` script the waybar session menu called.
+They sit outside `[shell.session]`, whose complete Lock / suspend / switch /
+logout / reboot / power-off list remains available from the desktop panel.
 
 Two choices are about cost rather than looks. Neither clock has a background,
 which drops a rounded rect and an alpha layer per widget per output per frame
@@ -1146,7 +1146,7 @@ the same lines it describes `gruvbox`.
 | VS Code | a generated one-theme extension, via the same symlink |
 | wofi | `wofi.css` and `wofi-emoji.css`, via the same symlink |
 | Vencord / Vesktop | a theme CSS written straight into their theme directories |
-| Spotify | live CSS over loopback — see below |
+| Spotify | Noctalia CSS mounted over xpui's same-origin `colors.css` — see below |
 | SDDM | `noctalia-resolved`, substituted into the greeter's config |
 | limine | `noctalia-resolved`, rewritten into the boot menu's theme block |
 | OBS, Discord, Papirus, PrismLauncher, zellij, Zen, Inkscape, Blender, fastfetch | community templates |
@@ -1175,12 +1175,11 @@ What changed:
 - The boot menu keeps a single build-time block as its fallback, and reads the
   manifest for everything else.
 - Spotify is one Spicetify build instead of thirty. Its colours arrive at
-  runtime: noctalia renders `--spice-*` custom properties to a file, a
-  loopback-only service on `127.0.0.1:38471` exposes it, and the theme's
-  `theme.js` applies it. It has to be HTTP rather than a file read because
-  that JavaScript runs in Spotify's renderer, where `fetch` on a `file://` URL
-  is blocked outright. See "Spotify" below — the network gate and Spicetify's
-  two colour families are the non-obvious parts.
+  runtime: noctalia renders `--spice-*` custom properties to a file, and the
+  launcher bind-mounts it over Spicetify's own `xpui/colors.css` inside a
+  private mount namespace. Spotify therefore loads it from its existing
+  same-origin stylesheet link. See "Spotify" below — the mount and
+  Spicetify's two colour families are the non-obvious parts.
 - `noctalia-builtin-themes.nix` — a 500-line hand transcription of noctalia's
   own builtin palettes, kept so the greeter and boot menu could be given a
   prebuilt match — is deleted. Nothing could ever select it.
@@ -1250,45 +1249,34 @@ anyway is that the Text theme's stylesheet is written entirely in
 `var(--spice-*)` custom properties, with no hardcoded colours at all: redefine
 those on `:root` at runtime and the whole UI moves.
 
-The chain is five links, and each one had to be checked before this worked:
+The chain is four links:
 
 1. noctalia's `spotify` user template renders the properties to
    `~/.local/state/noctalia-spotify/colors.css` on every colour-scheme change
-2. `noctalia-spotify-palette`, a loopback-only HTTP service, exposes that file
-3. Spicetify's `inject_theme_js` copies the theme's `theme.js` to
+2. Spicetify generates `share/spotify/Apps/xpui/colors.css` and adds a relative
+   `<link rel="stylesheet" href="colors.css">` to `xpui/index.html`
+3. the `spotify` launcher gives the process a private mount namespace and
+   mounts noctalia's file over that generated stylesheet
+4. Spicetify's `inject_theme_js` copies the theme's `theme.js` to
    `xpui/extensions/theme.js` and adds `<script defer>` for it to `index.html`
-4. the `spotify` launcher disables Chromium's Local Network Access check for
-   this process only
-5. the injected script installs the CSS
 
-**Link 2 was returning `501` to the preflight.** Spotify's UI is a document on
-`https://xpui.app.spotify.com`, which Chromium classes as a *public* address
-space, and `127.0.0.1` is the *loopback* one. Private Network Access makes
-that pairing preflighted even for a plain `GET`: the renderer sends `OPTIONS`
-with `Access-Control-Request-Private-Network: true` and will not issue the
-real request unless the response carries
-`Access-Control-Allow-Private-Network: true`. Python's
-`SimpleHTTPRequestHandler` implements `GET` and `HEAD` and nothing else, so
-the preflight was answered `501 Unsupported method ('OPTIONS')` — and a failed
-preflight means the `GET` never happens. The `Access-Control-Allow-Origin`
-header that was already being sent was correct and never got the chance to
-matter.
+The old design put a Python server on `127.0.0.1:38471` and fetched its CSS
+from the xpui renderer. That crossed from Spotify's public HTTPS origin into
+the loopback address space, so it depended on the embedded Chromium build's
+Private Network Access and Local Network Access behaviour. Adding preflight
+headers and then a Chromium feature flag still left Spotify on Nord — the
+build-time fallback — which is direct evidence that the live stylesheet was
+not becoming effective. There is no reason for palette transport to cross a
+browser security boundary at all.
 
-**Answering that preflight still was not sufficient on the current Spotify
-build.** Chromium 142 replaced this path with a Local Network Access permission
-for requests from a public origin to a private or loopback address, including
-`fetch` and stylesheet subresources. xpui is served from
-`https://xpui.app.spotify.com`; the palette service is on `127.0.0.1`. A normal
-browser can display the permission prompt. Spotify's embedded browser does not,
-so both ways of loading the stylesheet are denied before either reaches the
-server. The profile therefore installs a small `spotify` launcher that adds
-`--disable-features=LocalNetworkAccessChecks` to this Spotify process only. It
-does not use the much broader `--disable-web-security`; the service remains
-loopback-only and still serves one generated file. Older Chromium builds ignore
-the feature name and continue through the PNA/CORS route above.
+The launcher now uses bubblewrap only as a **mount namespace**, not as an
+application sandbox: `--bind / /` preserves the host filesystem and its
+permissions, and a second read-only bind replaces only xpui's `colors.css` in
+Spotify's view. The Nix store is not modified. No loopback service, CORS/PNA
+response, LNA permission or Chromium exception is involved.
 
-**Link 5 was also only half doing its job**, independently of that. Spicetify
-defines every scheme colour *twice* — `--spice-<name>` as a hex literal and
+**The colour variables also have two families.** Spicetify defines every
+scheme colour *twice* — `--spice-<name>` as a hex literal and
 `--spice-rgb-<name>` as a bare `r,g,b` triple, so a theme can write
 `rgba(var(--spice-rgb-main), 0.5)` and vary the alpha. The Text theme uses
 fifteen of the rgb variants; the template overrode none of them. Even with the
@@ -1297,14 +1285,19 @@ translucent one — backgrounds, hovers, shadows — on the palette the Nix buil
 was made with, which reads worse than not following at all. Both families are
 emitted now, from the same colour role.
 
-The script installs the CSS **two ways**. A `<link rel="stylesheet">` gets the
-palette in place as the window starts, without waiting for JavaScript to copy
-the response into a style element. The polling `fetch` is what makes an
-*already open* Spotify follow a change; it still uses ordinary CORS and uses the
-PNA preflight on older Chromium builds. It writes a `<style>` appended after
-the link, so when both work the later one wins and they agree anyway. Local
-Network Access applies to both mechanisms, which is why the launcher is a real
-link in this chain rather than a workaround for only the polling request.
+The existing `<link rel="stylesheet" href="colors.css">` gets the mounted
+palette in place as the window starts. The injected script polls
+`/colors.css` with `cache: "no-store"` so an *already open* Spotify follows a
+later palette change; because that URL is same-origin, the fetch needs no
+special browser permission. Noctalia rewrites the mounted source file in
+place, so the namespace continues to see each update.
+
+`~/.config/spicetify` is not runtime state for this profile and deleting it is
+safe. It is intentionally **not regenerated**: `mkSpicetify` performs the CLI
+work during the Nix build. The live input is
+`~/.local/state/noctalia-spotify/colors.css`; restart the noctalia user service
+to render it again, rebuild to replace the immutable Spotify package, and
+restart Spotify so the new launcher supplies the mount.
 
 ### Keys
 

@@ -104,9 +104,9 @@ let
   # noctalia enumerates them all and `brightness-up` with no target steps the
   # focused monitor, which is the more useful answer to the same problem.
   #
-  # The helpers are still built, still on PATH, and still what the idle dim
-  # runs — `dim`/`restore` record the pre-dim level, which noctalia has no
-  # equivalent for. See the `idle` block in ./noctalia.nix.
+  # The helpers are still built and still on PATH for the waybar shell. Under
+  # noctalia there is no helper-driven idle dim: the shell's own pre-action
+  # overlay owns that darkening and never writes a second physical brightness.
   volumeUp = shellBind "${bin niriScripts.volume} up" "volume-up";
   volumeDown = shellBind "${bin niriScripts.volume} down" "volume-down";
   volumeMute = shellBind "${bin niriScripts.volume} mute" "volume-mute";

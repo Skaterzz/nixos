@@ -33,10 +33,12 @@
 # No home-manager module, and no flake input
 # ------------------------------------------
 # The shell starts from `pkgs.noctalia` and everything below is written out
-# by hand. A small source patch adds lock-screen entrance/exit motion and lets
-# text OSDs grow to their content — two behaviours v5 does not expose as
-# settings — so the first rebuild after this change compiles Noctalia locally;
-# later builds reuse that store result.
+# by hand. Small source patches add lock-screen entrance/exit motion, let text
+# OSDs grow to their content, use username@host in the control centre, and
+# expose relative MPRIS volume actions — behaviours v5 does not expose as
+# settings —
+# so the first rebuild after this change compiles Noctalia locally; later
+# builds reuse that store result.
 # Upstream ships a home-manager module in its flake, and this used to use it,
 # but it only generates the three files at the bottom of this comment and its
 # flake publishes no substituter — so having it in `inputs` meant an extra
@@ -57,7 +59,10 @@ let
   useNoctalia = config.local.niri.shell == "noctalia";
 
   pkg = pkgs.noctalia.overrideAttrs (old: {
-    patches = (old.patches or [ ]) ++ [ ./noctalia-lock-transition.patch ];
+    patches = (old.patches or [ ]) ++ [
+      ./noctalia-lock-transition.patch
+      ./noctalia-user-media.patch
+    ];
   });
   noctalia = lib.getExe pkg;
 
@@ -267,8 +272,9 @@ let
       # `current` is a sentinel now and nothing more.
       #
       # Nothing selects anything from it: SDDM and Limine read the manifest,
-      # Spotify reads the live CSS over loopback, and none of the three can be
-      # described by a palette *name* in the first place. What is left is a
+      # Spotify reads the live CSS through its private mount namespace, and
+      # none of the three can be described by a palette *name* in the first
+      # place. What is left is a
       # marker that says which of the two shells last wrote this directory —
       # which is what keeps the waybar branch of theming.nix's activation from
       # mistaking a noctalia session for a stale prebuilt theme.
@@ -340,8 +346,8 @@ let
         scale = o.scale;
       }) config.local.niri.outputs;
 
-  # One compact login box, an auto-hiding media player, two lock-safe buttons,
-  # and two clock widgets per output.
+  # One full-output audio visualizer, a compact login box, an auto-hiding media
+  # player, two lock-safe buttons, and two clock widgets per output.
   #
   # A clock widget has one font size, so "time bigger than the date" cannot be
   # done inside a single `format` string — it needs two widgets sized
@@ -454,6 +460,29 @@ let
         };
       in
       [
+        # First in widget_order below, so it paints behind every other custom
+        # lock-screen widget. The login panel is a later root layer too. With
+        # no background or padding the spectrum fills the entire logical
+        # output, and show_when_idle=false fades it away when playback stops.
+        (lib.nameValuePair "audio_visualizer_${o.name}" {
+          type = "audio_visualizer";
+          output = o.name;
+          cx = cx;
+          cy = h / 2;
+          box_width = w;
+          box_height = h;
+
+          settings = {
+            bands = 128;
+            mirrored = true;
+            centered = true;
+            show_when_idle = false;
+            color_1 = "primary";
+            color_2 = "secondary";
+            background = false;
+            background_padding = 0;
+          };
+        })
         (lib.nameValuePair "login_box_${o.name}" {
           type = "login_box";
           output = o.name;
@@ -528,6 +557,19 @@ let
       ]
     ) (lib.filter (o: !o.off) lockOutputs)
   );
+
+  # This is paint order as well as editor order: the lock-screen host appends
+  # widget scene nodes in this sequence. Keep the full-screen visualizer first
+  # and list every widget, because an explicit order is authoritative.
+  lockWidgetOrder = lib.concatMap (o: [
+    "audio_visualizer_${o.name}"
+    "clock_time_${o.name}"
+    "clock_date_${o.name}"
+    "media_player_${o.name}"
+    "lock_suspend_${o.name}"
+    "lock_switch_user_${o.name}"
+    "login_box_${o.name}"
+  ]) (lib.filter (o: !o.off) lockOutputs);
 
   settings = {
     shell = {
@@ -848,13 +890,19 @@ let
       # costs that width only while something is playing.
       #
       # `title_scroll` is the other half of the answer and the more useful
-      # one: no fixed width fits every track, so anything past 420px scrolls
-      # under the pointer rather than being lost to an ellipsis.
+      # one: no fixed width fits every track, so anything past 270px scrolls
+      # continuously rather than being lost to an ellipsis. Scroll gestures
+      # replace the built-in track skipping with 5% changes to the active
+      # MPRIS player's own volume.
       media = {
-        max_length = 420;
+        max_length = 270;
         min_length = 0;
-        title_scroll = "on_hover";
+        title_scroll = "always";
         hide_when_no_media = true;
+        actions = {
+          scroll_up = "media volume-up";
+          scroll_down = "media volume-down";
+        };
       };
 
       network = {
@@ -1219,6 +1267,7 @@ let
     lockscreen_widgets = {
       enabled = lockWidgets != { };
       widget = lockWidgets;
+      widget_order = lockWidgetOrder;
     };
 
     # --- hooks ------------------------------------------------------------

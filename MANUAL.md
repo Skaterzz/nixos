@@ -1247,14 +1247,16 @@ anyway is that the Text theme's stylesheet is written entirely in
 `var(--spice-*)` custom properties, with no hardcoded colours at all: redefine
 those on `:root` at runtime and the whole UI moves.
 
-The chain is four links, and each one had to be checked before this worked:
+The chain is five links, and each one had to be checked before this worked:
 
 1. noctalia's `spotify` user template renders the properties to
    `~/.local/state/noctalia-spotify/colors.css` on every colour-scheme change
 2. `noctalia-spotify-palette`, a loopback-only HTTP service, exposes that file
 3. Spicetify's `inject_theme_js` copies the theme's `theme.js` to
    `xpui/extensions/theme.js` and adds `<script defer>` for it to `index.html`
-4. that script installs the CSS
+4. the `spotify` launcher disables Chromium's Local Network Access check for
+   this process only
+5. the injected script installs the CSS
 
 **Link 2 was returning `501` to the preflight.** Spotify's UI is a document on
 `https://xpui.app.spotify.com`, which Chromium classes as a *public* address
@@ -1269,7 +1271,20 @@ preflight means the `GET` never happens. The `Access-Control-Allow-Origin`
 header that was already being sent was correct and never got the chance to
 matter.
 
-**Link 4 was also only half doing its job**, independently of that. Spicetify
+**Answering that preflight still was not sufficient on the current Spotify
+build.** Chromium 142 replaced this path with a Local Network Access permission
+for requests from a public origin to a private or loopback address, including
+`fetch` and stylesheet subresources. xpui is served from
+`https://xpui.app.spotify.com`; the palette service is on `127.0.0.1`. A normal
+browser can display the permission prompt. Spotify's embedded browser does not,
+so both ways of loading the stylesheet are denied before either reaches the
+server. The profile therefore installs a small `spotify` launcher that adds
+`--disable-features=LocalNetworkAccessChecks` to this Spotify process only. It
+does not use the much broader `--disable-web-security`; the service remains
+loopback-only and still serves one generated file. Older Chromium builds ignore
+the feature name and continue through the PNA/CORS route above.
+
+**Link 5 was also only half doing its job**, independently of that. Spicetify
 defines every scheme colour *twice* — `--spice-<name>` as a hex literal and
 `--spice-rgb-<name>` as a bare `r,g,b` triple, so a theme can write
 `rgba(var(--spice-rgb-main), 0.5)` and vary the alpha. The Text theme uses
@@ -1279,14 +1294,14 @@ translucent one — backgrounds, hovers, shadows — on the palette the Nix buil
 was made with, which reads worse than not following at all. Both families are
 emitted now, from the same colour role.
 
-The script installs the CSS **two ways**, because they fail differently. A
-`<link rel="stylesheet">` is fetched in no-cors mode: no preflight, no CORS
-headers, no argument about address spaces. If the service is up when Spotify
-starts, the palette is right — and that is the case that matters, since a
-colour scheme changes far less often than Spotify is launched. The polling
-`fetch` is what makes an *already open* Spotify follow a change; it is the one
-subject to the preflight above, and it writes a `<style>` appended after the
-link, so when both work the later one wins and they agree anyway.
+The script installs the CSS **two ways**. A `<link rel="stylesheet">` gets the
+palette in place as the window starts, without waiting for JavaScript to copy
+the response into a style element. The polling `fetch` is what makes an
+*already open* Spotify follow a change; it still uses ordinary CORS and uses the
+PNA preflight on older Chromium builds. It writes a `<style>` appended after
+the link, so when both work the later one wins and they agree anyway. Local
+Network Access applies to both mechanisms, which is why the launcher is a real
+link in this chain rather than a workaround for only the polling request.
 
 ### Keys
 

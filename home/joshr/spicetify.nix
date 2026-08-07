@@ -33,13 +33,20 @@
 #     ~/.local/state/noctalia-spotify/colors.css as `--spice-*` custom
 #     properties, on every colour-scheme change (see niri/noctalia.nix).
 #   * A loopback-only HTTP service exposes that one file.
-#   * theme.js, appended to the Text theme below, polls it and swaps a single
-#     <style> element.
+#   * A tiny launcher opts this Spotify process out of Chromium's Local Network
+#     Access gate, which an embedded app cannot prompt the user to grant.
+#   * theme.js, appended to the Text theme below, polls the service and swaps a
+#     single <style> element.
 #
 # It has to be HTTP rather than a file read because that JavaScript runs in
-# Spotify's renderer, where `fetch` on a file:// URL is blocked outright. A
-# 127.0.0.1 origin is exempt from mixed-content blocking by specification, so
-# the request goes through unmodified.
+# Spotify's renderer, where `fetch` on a file:// URL is blocked outright.
+# Loopback HTTP is allowed as mixed content, but it is still a local-network
+# request; Chromium 142 and newer put both fetches and subresource loads behind
+# the Local Network Access permission. Spotify's embedded Chromium does not
+# expose that browser permission prompt, so the request is denied before CORS
+# or the server's PNA response can help. The launcher below disables exactly
+# that feature for this one Spotify process. The service remains bound to
+# 127.0.0.1 and serves only the generated stylesheet.
 #
 # The Spicetify community template is enabled too (`spicetify` in
 # `community_ids`) and renders the same palette into
@@ -100,18 +107,19 @@ let
     // shell's template; override the custom properties instead of rebuilding
     // Spotify.
     //
-    // Two mechanisms, because they fail differently.
+    // Two mechanisms, because they recover differently.
     //
-    // The <link> is the floor. A stylesheet subresource is fetched in no-cors
-    // mode, so it needs no preflight, no CORS headers and no agreement about
-    // address spaces — if the service is up when Spotify starts, the palette
-    // is right. That is the case that actually matters, because a colour
-    // scheme changes far less often than Spotify is launched.
+    // The <link> is the floor. If the service is up when Spotify starts, the
+    // palette is right without waiting for JavaScript to copy the response
+    // into a style element. Chromium's Local Network Access gate applies to
+    // stylesheet subresources too; the Spotify-only launcher below is what
+    // permits this load.
     //
     // The fetch is what makes an *already open* Spotify follow a change. It
-    // is the one subject to the Private Network Access preflight described in
-    // spicetify.nix, and it writes a <style> appended after the link, so when
-    // both work the later one wins and they agree anyway.
+    // still uses ordinary CORS and, on older Chromium builds, the Private
+    // Network Access preflight described in spicetify.nix. It writes a <style>
+    // appended after the link, so when both work the later one wins and they
+    // agree anyway.
     (() => {
       const endpoint = "http://127.0.0.1:38471/colors.css";
       const linkId = "noctalia-live-colors-link";
@@ -163,7 +171,7 @@ let
 
   # Serves exactly one file, to exactly one client, on the loopback interface.
   #
-  # **The preflight is the whole reason this needed fixing.** Spotify's UI is a
+  # On Chromium versions that still use PNA, Spotify's UI is a
   # document on `https://xpui.app.spotify.com`, which is a *public* address
   # space as far as Chromium is concerned, and 127.0.0.1 is the *loopback* one.
   # Private Network Access makes that pairing a preflighted request even for a
@@ -176,8 +184,9 @@ let
   # preflight was being answered `501 Unsupported method ('OPTIONS')` — and a
   # failed preflight means the GET never happens. The CORS header this already
   # sent was correct and never got the chance to matter. That is why Spotify
-  # sat on the palette it was built with while every other application in the
-  # session followed the shell.
+  # sat on the palette it was built with on those versions. Newer Chromium
+  # builds put the request behind Local Network Access first; spotifyLauncher
+  # below handles that separate gate.
   paletteServer = pkgs.writeText "noctalia-spotify-palette-server.py" ''
     from functools import partial
     from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
@@ -261,15 +270,52 @@ let
       }
     ];
   };
+
+  # Spotify 1.2.92 embeds a Chromium new enough to gate public-origin requests
+  # to loopback behind Local Network Access permission. xpui is served from
+  # https://xpui.app.spotify.com, so both the stylesheet <link> and polling
+  # fetch above qualify. A normal Chrome tab can ask the user for that
+  # permission; Spotify's embedded browser never surfaces the prompt, leaving
+  # the request blocked before it reaches the server.
+  #
+  # Keep the exception narrower than --disable-web-security: disable only the
+  # LNA feature, only for this Spotify process. Older Chromium versions ignore
+  # the unknown feature name and continue through the PNA/CORS path supported
+  # by paletteServer.
+  spotifyLauncher = pkgs.writeShellApplication {
+    name = "spotify";
+    text = ''
+      exec ${lib.getExe spicedSpotify} \
+        --disable-features=LocalNetworkAccessChecks \
+        "$@"
+    '';
+  };
 in
 {
-  # Straight into the profile, with the desktop entry the package ships.
-  #
-  # Both used to be indirected through a `spotify` wrapper that picked a build
-  # by palette name, which also meant an `xdg.desktopEntries.spotify` here to
-  # point launchers at the wrapper rather than at Spotify. With one build
-  # there is nothing to choose and both go away.
-  home.packages = [ spicedSpotify ];
+  # The launcher carries the immutable Spicetify package in its closure and is
+  # the one `spotify` placed on PATH. It does no palette selection; its only job
+  # is the process-local Local Network Access exception above.
+  home.packages = [ spotifyLauncher ];
+
+  # spicedSpotify is no longer installed directly, so publish its desktop entry
+  # against the launcher and keep the package's icon.
+  xdg.desktopEntries.spotify = {
+    name = "Spotify";
+    genericName = "Music Player";
+    comment = "Listen to music and podcasts";
+    exec = "${lib.getExe spotifyLauncher} %U";
+    icon = "${spicedSpotify}/share/icons/hicolor/256x256/apps/spotify-client.png";
+    terminal = false;
+    type = "Application";
+    categories = [
+      "Audio"
+      "Music"
+      "Player"
+      "AudioVideo"
+    ];
+    mimeType = [ "x-scheme-handler/spotify" ];
+    settings.StartupWMClass = "spotify";
+  };
 
   # A plain long-running service rather than a socket unit: it has to be up
   # before Spotify's first request and stay up for the life of the session,

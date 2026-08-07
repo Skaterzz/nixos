@@ -56,64 +56,64 @@ in
   # Absolute executable paths remove PATH ambiguity, and explicitly disabling
   # D-Bus activation makes KDE launch the process directly with Dolphin's
   # working niri/Wayland environment.
-  xdg.desktopEntries = {
-    "org.kde.gwenview" = {
-      name = "Gwenview";
-      genericName = "Image Viewer";
-      comment = "Open images with Gwenview";
-      exec = "${pkgs.kdePackages.gwenview}/bin/gwenview %U";
-      icon = "gwenview";
-      terminal = false;
-      categories = [
-        "Graphics"
-        "Viewer"
-      ];
-      mimeType = imageMimes;
-      settings.DBusActivatable = "false";
-    };
+  # xdg.desktopEntries = {
+  #   "org.kde.gwenview" = {
+  #     name = "Gwenview";
+  #     genericName = "Image Viewer";
+  #     comment = "Open images with Gwenview";
+  #     exec = "${pkgs.kdePackages.gwenview}/bin/gwenview %U";
+  #     icon = "gwenview";
+  #     terminal = false;
+  #     categories = [
+  #       "Graphics"
+  #       "Viewer"
+  #     ];
+  #     mimeType = imageMimes;
+  #     settings.DBusActivatable = "false";
+  #   };
 
-    "org.kde.haruna" = {
-      name = "Haruna";
-      genericName = "Video Player";
-      comment = "Open videos with Haruna";
-      exec = "${pkgs.haruna}/bin/haruna %U";
-      icon = "haruna";
-      terminal = false;
-      categories = [
-        "AudioVideo"
-        "Video"
-        "Player"
-      ];
-      mimeType = videoMimes;
-      settings.DBusActivatable = "false";
-    };
+  #   "org.kde.haruna" = {
+  #     name = "Haruna";
+  #     genericName = "Video Player";
+  #     comment = "Open videos with Haruna";
+  #     exec = "${pkgs.haruna}/bin/haruna %U";
+  #     icon = "haruna";
+  #     terminal = false;
+  #     categories = [
+  #       "AudioVideo"
+  #       "Video"
+  #       "Player"
+  #     ];
+  #     mimeType = videoMimes;
+  #     settings.DBusActivatable = "false";
+  #   };
 
-    "org.kde.elisa" = {
-      name = "Elisa";
-      genericName = "Music Player";
-      comment = "Open audio with Elisa";
-      exec = "${pkgs.kdePackages.elisa}/bin/elisa %U";
-      icon = "elisa";
-      terminal = false;
-      categories = [
-        "AudioVideo"
-        "Audio"
-        "Player"
-      ];
-      mimeType = audioMimes;
-      settings.DBusActivatable = "false";
-    };
-  };
+  #   "org.kde.elisa" = {
+  #     name = "Elisa";
+  #     genericName = "Music Player";
+  #     comment = "Open audio with Elisa";
+  #     exec = "${pkgs.kdePackages.elisa}/bin/elisa %U";
+  #     icon = "elisa";
+  #     terminal = false;
+  #     categories = [
+  #       "AudioVideo"
+  #       "Audio"
+  #       "Player"
+  #     ];
+  #     mimeType = audioMimes;
+  #     settings.DBusActivatable = "false";
+  #   };
+  # };
 
-  xdg.mimeApps = {
-    enable = true;
+  # xdg.mimeApps = {
+  #   enable = true;
 
-    defaultApplications = defaults;
+  #   defaultApplications = defaults;
 
-    # Also explicitly advertise these entries as MIME handlers to KDE's
-    # application trader, rather than relying solely on the desktop files.
-    associations.added = defaults;
-  };
+  #   # Also explicitly advertise these entries as MIME handlers to KDE's
+  #   # application trader, rather than relying solely on the desktop files.
+  #   associations.added = defaults;
+  # };
 
   # Dolphin reads KDE's KSycoca application database. Rebuild it after Home
   # Manager links the new desktop entries into ~/.local/share/applications.

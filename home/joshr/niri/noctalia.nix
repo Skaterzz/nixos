@@ -67,8 +67,10 @@ let
   jsonFormat = pkgs.formats.json { };
 
   # The same directories the scripts in ./scripts.nix use, spelled the same
-  # way. `stateDir` in particular is the fan-out point shared with the SDDM,
-  # Limine, and Spotify syncs — see the hooks below.
+  # way. `resolvedThemeFile` in particular is the fan-out point: the SDDM sync
+  # in modules/nixos/niri.nix and the Limine sync in modules/nixos/boot.nix
+  # both watch it and both read their palette out of it, and it is the one
+  # description of a colour scheme that survives leaving this user's session.
   stateDir = "${config.home.homeDirectory}/.local/state/niri-theme";
   resolvedThemeFile = "${stateDir}/noctalia-resolved";
   liveThemeDir = "${stateDir}/noctalia-live";
@@ -214,10 +216,11 @@ let
   # colour roles. This post-hook only validates those outputs and publishes the
   # completed live directory.
   #
-  # Repointing `active` matters: kdeglobals (and therefore OBS) plus the local
-  # VS Code theme extension already follow that symlink. Merely writing
-  # `current=noctalia-live`, as the old hook did, woke the system path units
-  # while leaving those applications on a prebuilt Nix palette.
+  # Repointing `active` is the load-bearing half: kdeglobals — and so Dolphin
+  # and every other Qt app in the session — plus the local VS Code theme
+  # extension follow that symlink. Merely writing `current=noctalia-live`, as
+  # an earlier hook did, woke the system path units while leaving those
+  # applications on a prebuilt Nix palette.
   themeResync = pkgs.writeShellApplication {
     name = "noctalia-theme-resync";
     runtimeInputs = [
@@ -259,15 +262,22 @@ let
       ln -sfn ${lib.escapeShellArg liveThemeDir} ${lib.escapeShellArg activeThemeDir}
       noctalia-vencord-theme-enable
 
-      # A fresh inode wakes SDDM, Limine and Spotify even though the sentinel
-      # value is deliberately stable for arbitrary wallpaper/community names.
+      # `current` is a sentinel now and nothing more.
+      #
+      # Nothing selects anything from it: SDDM and Limine read the manifest,
+      # Spotify reads the live CSS over loopback, and none of the three can be
+      # described by a palette *name* in the first place. What is left is a
+      # marker that says which of the two shells last wrote this directory —
+      # which is what keeps the waybar branch of theming.nix's activation from
+      # mistaking a noctalia session for a stale prebuilt theme.
       current_tmp="$(mktemp ${lib.escapeShellArg "${stateDir}/current.XXXXXX"})"
       printf '%s\n' noctalia-live > "$current_tmp"
       mv -f "$current_tmp" "${stateDir}/current"
 
-      # OBS uses Qt's System palette and the KDE platform integration. This is
-      # the same palette-changed broadcast Plasma sends; clients that listen
-      # repaint now, while the rest read the file on their next launch.
+      # KDE's palette-changed broadcast, which is what Plasma itself sends
+      # when a colour scheme is applied. Qt clients that listen — anything
+      # loading plasma-integration, which is everything in this session —
+      # repaint now, and the rest read kdeglobals on their next launch.
       dbus-send --session --type=signal \
         /KGlobalSettings org.kde.KGlobalSettings.notifyChange \
         int32:0 int32:0 >/dev/null 2>&1 || true
@@ -366,14 +376,27 @@ let
         timeCy = builtins.floor (h * 0.26);
 
         # The native compact layout is one control-height row plus padding.
-        # Keep its upstream 400px width cap and put media directly above it.
+        # Keep its upstream 400px width cap.
         loginW = lib.min 400 (w - 48);
         loginH = 72;
         loginCy = h - 84 - (loginH / 2);
 
-        mediaW = lib.min 360 (w - 48);
+        # The login box draws a prompt line — "Please enter your password" —
+        # *above* the row it declares, so that text is outside `loginH` and
+        # the box's own geometry says nothing about it. Media sitting a plain
+        # gap above `loginCy - loginH/2` therefore landed on top of the
+        # prompt. This clears the prompt's line box (body text plus its
+        # leading) and then leaves the same visual gap above it, which is what
+        # puts the player above the message rather than across it.
+        promptClearance = 30;
+
+        # Narrower than the login box below it rather than the same width.
+        # Two stacked panels of equal width read as one broken-up slab; the
+        # player being visibly inset makes the login box the thing the eye
+        # lands on, which is the one that wants attention.
+        mediaW = lib.min 320 (w - 48);
         mediaH = 132;
-        mediaCy = loginCy - (loginH / 2) - 32 - (mediaH / 2);
+        mediaCy = loginCy - (loginH / 2) - promptClearance - 32 - (mediaH / 2);
 
         buttonW = 170;
         buttonH = 42;
@@ -722,25 +745,55 @@ let
     };
 
     widget = {
-      # Who the session belongs to, first thing on the bar — the same
-      # `custom/user` slot, with the same glyph and the same name read out of
-      # `config.home.username` rather than written down, so a second user's
-      # generation renders their own.
+      # --- the left cluster -------------------------------------------------
       #
-      # It has gained a job: under waybar this was static text with no `exec`
-      # and no action, and here it opens the launcher, which is the entry
-      # point wofi had no bar slot for at all.
+      # One icon, one row of pills, one line of text, in that order, and each
+      # doing a different job. What it used to be was three text-bearing
+      # objects of three different weights sitting next to each other — a
+      # glyph with "joshr" beside it, pills scaled up 25% past everything else
+      # on the bar, and a window title with a placeholder standing in for it
+      # whenever nothing was focused. Elegance here is mostly subtraction:
+      # every one of the changes below removes something that was on screen
+      # permanently while saying nothing that changed.
+
+      # Who the session belongs to, first thing on the bar — the same
+      # `custom/user` slot with the same glyph.
+      #
+      # The username has moved from the label to the tooltip. It is still read
+      # from `config.home.username` rather than written down, so a second
+      # user's generation still renders their own name; it is simply not a
+      # thing that needs to be on screen at all times, because the one person
+      # who can read this bar already knows whose session it is. What is left
+      # is a round icon button, which is also what the four buttons at the
+      # other end of the bar are.
+      #
+      # It has gained a job since waybar, where this was static text with no
+      # `exec` and no action: it opens the launcher, which is the entry point
+      # wofi had no bar slot for at all.
       user = {
         type = "custom_button";
         glyph = "user";
-        label = config.home.username;
-        tooltip = "Applications";
+        tooltip = "Applications — ${config.home.username}";
         command = "noctalia msg panel-toggle launcher";
       };
 
-      # Make the numbered workspaces at the left edge easier to scan without
-      # increasing the height of the whole bar.
-      workspaces.scale = 1.25;
+      workspaces = {
+        # 1.25 made the pills the tallest thing on a 34px bar and left them
+        # visibly out of scale with the tray and the buttons either side.
+        # 1.1 still reads at a glance without becoming the loudest element in
+        # the session.
+        scale = 1.1;
+
+        # Numbers only where a number is worth having.
+        #
+        # niri creates and destroys workspaces as you use them, so the last
+        # one in the row is always the empty one waiting to be moved into.
+        # Numbering it is numbering a placeholder. With this, an occupied
+        # workspace is a labelled pill and an empty one is a plain dot, which
+        # says the same thing with less ink and makes "where are my windows"
+        # answerable without reading.
+        labels_only_when_occupied = true;
+      };
 
       clock = {
         format = "{:%I:%M %p   %a, %b %d}";
@@ -748,12 +801,50 @@ let
       };
 
       active_window = {
-        max_length = 300;
         display = "icon_and_text";
+        max_length = 300;
+
+        # Shrink to the title rather than reserving a slot for one.
+        #
+        # The default is 80px of floor, which on a short title leaves a gap
+        # between the workspaces and the centred clock that reads as something
+        # failing to render. At 0 the cluster is exactly as wide as what is in
+        # it.
+        min_length = 0;
+
+        # And draw nothing at all when nothing is focused, instead of a
+        # placeholder label. Together with `min_length` the widget disappears
+        # cleanly on an empty workspace.
+        show_empty_label = false;
+
+        # A truncated title is a title you cannot read. Scrolling it under the
+        # pointer costs nothing while the mouse is elsewhere — which is the
+        # whole time — and means `max_length` is a layout choice rather than
+        # an information limit.
+        title_scroll = "on_hover";
+
+        # The app icon at 16px against the 13px body text: enough that the
+        # icon leads and the title follows, which is the reading order the
+        # `icon_and_text` display implies.
+        icon_size = 16;
       };
 
+      # Now playing.
+      #
+      # `max_length` is a width in pixels, capped at 800 by the widget itself,
+      # and the same unit `active_window` above uses — not a count of glyphs.
+      # At 200 it was cutting "Artist · Title" down to about the artist. The
+      # bar's right-hand cluster lost four slots in the move off waybar, so
+      # there is room to let this run on, and `hide_when_no_media` means it
+      # costs that width only while something is playing.
+      #
+      # `title_scroll` is the other half of the answer and the more useful
+      # one: no fixed width fits every track, so anything past 420px scrolls
+      # under the pointer rather than being lost to an ellipsis.
       media = {
-        max_length = 200;
+        max_length = 420;
+        min_length = 0;
+        title_scroll = "on_hover";
         hide_when_no_media = true;
       };
 
@@ -802,10 +893,8 @@ let
       # The builtin kcolorscheme remains off. Its post-action writes
       # ~/.config/kdeglobals itself, while ./default.nix deliberately owns that
       # path as a symlink. The user template below instead writes the target
-      # inside `noctalia-live`; repointing `active` switches KDE, OBS and VS
-      # Code together without two writers fighting over kdeglobals.
-      #
-      # --- and how it reaches everything that is not the shell -------------
+      # inside `noctalia-live`; repointing `active` switches KDE, Dolphin and
+      # VS Code together without two writers fighting over kdeglobals.
       #
       # Every builtin template renders the palette into a *side* file the app
       # can include — `kitty/themes/noctalia.conf`, `btop/themes/noctalia.theme`
@@ -848,9 +937,66 @@ let
           "starship"
         ];
 
-        # Community templates are a runtime fetch from api.noctalia.dev, which
-        # is against the grain of a config that pins every input in flake.lock.
-        enable_community_templates = false;
+        # --- community templates ------------------------------------------
+        #
+        # noctalia-dev/community-templates, fetched from api.noctalia.dev on
+        # first use and cached under ~/.cache/noctalia. That is a runtime
+        # fetch, which is against the grain of a config that pins every input
+        # in flake.lock — the tradeoff is taken deliberately, because these
+        # are the apps whose theming would otherwise have to be reimplemented
+        # here one renderer at a time, and upstream maintains them against
+        # each app's actual config format.
+        #
+        # What it means in practice: the templates apply from the second run
+        # onwards on a machine with no network, and a template whose upstream
+        # entry changes shape changes what lands in `~/.config` without a
+        # rebuild. Nothing in the *session* depends on them — the shell, the
+        # terminal, GTK, Qt and the greeter are all builtin or user templates
+        # above — so a failed fetch costs these apps their colours and
+        # nothing else.
+        #
+        # `community_ids` takes catalog ids (the directory names in that
+        # repository), not the individual `[templates.*]` entry names: listing
+        # `spicetify` enables both its Comfy and Colorful entries, and
+        # `vscode` covers Code, Codium and Antigravity.
+        #
+        #   blender        renders a theme script and runs it headless;
+        #                  gated on ~/.config/blender existing
+        #   discord        Vencord/Vesktop/BetterDiscord variants. Extra
+        #                  selectable themes beside the `vencord` user
+        #                  template below, which stays the enabled one
+        #   fastfetch      merges colours into ~/.config/fastfetch/config.jsonc,
+        #                  which has to exist and be strict JSON — see the
+        #                  seed in the activation block
+        #   inkscape       ui/user.css; gated on ~/.config/inkscape existing
+        #   obs            the Matugen .obt theme, which ../obs.nix selects
+        #   papirus-icons  recolours the folder icons in place, which needs a
+        #                  writable copy of the icon theme — see the seed below
+        #   prismlauncher  a "Matugen" theme under its data directory
+        #   spicetify      Comfy/Colorful color.ini. Its post-hook runs
+        #                  `spicetify apply`, which is inert here: Spotify is
+        #                  an immutable Nix build and its colours arrive
+        #                  through the `spotify` user template instead
+        #   vscode         a NoctaliaTheme extension; ../vscode.nix ships the
+        #                  manifest the rendered theme file belongs to
+        #   zellij         a theme file; needs `theme "noctalia"` in zellij's
+        #                  own config, which is not managed here
+        #   zen-browser    userChrome/userContent, applied into every Zen
+        #                  profile it finds. A no-op with Zen not installed
+        enable_community_templates = true;
+        community_ids = [
+          "blender"
+          "discord"
+          "fastfetch"
+          "inkscape"
+          "obs"
+          "papirus-icons"
+          "prismlauncher"
+          "spicetify"
+          "vscode"
+          "zellij"
+          "zen-browser"
+        ];
 
         # These are local user templates, so Noctalia itself resolves every
         # palette source and writes all downstream formats. Indices make the
@@ -959,18 +1105,6 @@ let
       };
     };
 
-    # --- brightness -------------------------------------------------------
-    #
-    # ddcutil stays off, and that is the important line in this block.
-    #
-    # modules/nixos/ddcci.nix loads ddcci-backlight, an out-of-tree driver that
-    # speaks DDC/CI in the kernel and registers each external monitor as an
-    # ordinary /sys/class/backlight/ddcci* device. The whole point of taking
-    # that route was that everything driving the laptop's internal panel then
-    # works on the desk unchanged. So noctalia should reach the monitors the
-    # same way it reaches a laptop panel — through sysfs, which its automatic
-    # backend already finds — and `enable_ddcutil` would put a second, slower
-    # userspace DDC/CI implementation on top of the one already in the kernel.
     # --- brightness -------------------------------------------------------
     #
     # ddcutil is **on**, and the earlier reasoning for leaving it off was
@@ -1224,6 +1358,13 @@ in
       pkgs.ddcutil
       pkgs.procps
 
+      # The community fastfetch hook is jq from end to end — it parses the
+      # config, merges the rendered colours in and writes it back — and jq is
+      # not one of the tools NixOS puts in the system profile by default.
+      # Everything else those hooks reach for (bash, sed, awk, coreutils,
+      # findutils) already is.
+      pkgs.jq
+
       # Poppins, for the lock screen clock. A font referenced by family name
       # in a config file has to actually be installed for fontconfig to
       # resolve it — otherwise the clock silently falls back to the default
@@ -1301,9 +1442,100 @@ in
       fi
     '';
 
+    # --- satisfying the community template hooks ---------------------------
+    #
+    # The two that need something to exist before they can do anything. Both
+    # are seed-if-missing rather than store symlinks, for the starship reason
+    # above: the hook edits the file in place, and a symlink into the store
+    # cannot be written.
+
+    # fastfetch/apply.sh refuses to run without ~/.config/fastfetch/config.jsonc
+    # ("run fastfetch once to generate a default config first"), then parses it
+    # with `jq empty` and refuses again if it is JSONC rather than strict JSON.
+    # It merges the rendered `logo` and `display` objects into whatever else is
+    # there, so the seed only has to be a valid config — the colours arrive on
+    # the first theme change.
+    #
+    # Deliberately not the same file as the fish greeting's. That one is
+    # ~/.smallfetch.jsonc (home/common/shell.nix), it is shared with root and
+    # the servers where noctalia never runs, and it carries comments — all
+    # three of which rule it out as the thing this hook rewrites.
+    home.activation.noctaliaFastfetchSeed = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
+      fastfetchTarget="${config.xdg.configHome}/fastfetch/config.jsonc"
+
+      if [ ! -e "$fastfetchTarget" ]; then
+        $DRY_RUN_CMD ${pkgs.coreutils}/bin/install -Dm644 \
+          ${./fastfetch-config.json} "$fastfetchTarget"
+      fi
+    '';
+
+    # papirus-icons/apply.sh picks the palette entry closest to the accent and
+    # hands it to the bundled `papirus-folders`, which recolours the folder
+    # icons *in place*. It looks for a writable copy at
+    # ~/.local/share/icons/Papirus and, not finding one, copies /usr/share/icons
+    # /Papirus — a path that does not exist on NixOS, so the hook fails on every
+    # colour change with "Papirus Icons are not installed".
+    #
+    # This is the copy it is looking for. Three theme directories rather than
+    # one because papirus-folders recolours whichever of them it finds, and the
+    # session names Papirus-Dark (../niri/default.nix, and `[Icons] Theme` in
+    # the kdeglobals template); a recoloured Papirus with an untouched
+    # Papirus-Dark beside it would be work nothing ever displays.
+    #
+    # -R rather than -a: the -Dark and -Light trees are almost entirely
+    # relative symlinks into Papirus, and dereferencing them would turn a
+    # hundred megabytes into several times that. --no-preserve=mode because
+    # the store is read-only and the whole point is a tree that can be written.
+    #
+    # Only when missing. This runs on every activation and re-copying an icon
+    # theme each time would be minutes of I/O for nothing — and it would also
+    # throw away the recolouring the hook has already done.
+    home.activation.noctaliaPapirusSeed = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
+      iconRoot="${config.xdg.dataHome}/icons"
+
+      for variant in Papirus Papirus-Dark Papirus-Light; do
+        if [ ! -d "$iconRoot/$variant" ]; then
+          $DRY_RUN_CMD ${pkgs.coreutils}/bin/mkdir -p "$iconRoot"
+          $DRY_RUN_CMD ${pkgs.coreutils}/bin/cp -R --no-preserve=mode \
+            "${pkgs.papirus-icon-theme}/share/icons/$variant" "$iconRoot/$variant"
+          $DRY_RUN_CMD ${pkgs.coreutils}/bin/chmod -R u+w "$iconRoot/$variant"
+        fi
+      done
+    '';
+
     # Before the unit is (re)started, so a stale overrides file is dealt with
     # rather than crashing the shell on the way in. See reconcileOverrides.
     home.activation.noctaliaReconcileOverrides = lib.hm.dag.entryAfter [ "writeBoundary" ] reconcileOverrides;
+
+    # The extension manifest the community VS Code template's output belongs
+    # to. That template renders only the colour theme —
+    # `~/.vscode/extensions/noctalia.noctaliatheme-0.0.5/themes/NoctaliaTheme-color-theme.json`
+    # — because upstream assumes the matching marketplace extension is
+    # installed. Without a package.json beside it that directory is not an
+    # extension at all, and VS Code logs a parse failure for it on every start.
+    #
+    # Fifteen lines of manifest is cheaper than the marketplace round trip, and
+    # it is also what makes the id in `community_ids` mean something: with this
+    # here, "NoctaliaTheme" is a theme that can be picked from the palette.
+    # ./vscode.nix keeps "Niri" — the local template, which follows
+    # `theme.mode` into a light uiTheme where this one is fixed dark — as the
+    # one actually selected.
+    home.file.".vscode/extensions/noctalia.noctaliatheme-0.0.5/package.json".text = builtins.toJSON {
+      name = "noctaliatheme";
+      displayName = "Noctalia Theme";
+      description = "The live Noctalia palette, rendered by the community VS Code template.";
+      version = "0.0.5";
+      publisher = "noctalia";
+      engines.vscode = "^1.70.0";
+      categories = [ "Themes" ];
+      contributes.themes = [
+        {
+          label = "NoctaliaTheme";
+          uiTheme = "vs-dark";
+          path = "./themes/NoctaliaTheme-color-theme.json";
+        }
+      ];
+    };
 
     # One assignment, because these cannot be split.
     #

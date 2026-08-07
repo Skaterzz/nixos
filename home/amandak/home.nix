@@ -9,11 +9,10 @@
 # here too, which is the point of importing rather than copying.
 #
 # It works because nothing under home/joshr/ writes the name "joshr" into a
-# path. The home directory, the Firefox profile directory, the private
-# desktop-entry IDs and the OBS theme ID are all built from
-# `config.home.username` or `config.home.homeDirectory` — so setting the name
-# below is what redirects all of them. See the comment on `home.username` in
-# home/joshr/home.nix.
+# path. The home directory, the Firefox profile directory and the private
+# desktop-entry IDs are all built from `config.home.username` or
+# `config.home.homeDirectory` — so setting the name below is what redirects
+# all of them. See the comment on `home.username` in home/joshr/home.nix.
 #
 # The system side of the account — groups, shell, password — is
 # modules/nixos/users.nix. joshr is still the primary user there: the login

@@ -68,6 +68,11 @@ let
   # no helper. The script and the `cava` package stay for the full-size
   # terminal version, which is what they were also good for.
   visualiser = lib.optional config.local.waybar.cavaInBar "audio_visualizer";
+
+  # The version actually being built, read back off the package rather than
+  # from `inputs`, so an override is checked too. See the assertion at the
+  # bottom of this file for why it is checked at all.
+  version = config.programs.noctalia.package.version;
 in
 {
   imports = [ inputs.noctalia.homeModules.default ];
@@ -554,6 +559,47 @@ in
     # symlink. Only Mod+D moves, from wofi's `drun` mode to noctalia's
     # launcher — which sorts by usage, filters by category, and carries the
     # calculator and emoji providers the separate bemoji picker existed for.
+
+    # --- the major version is part of this file's contract ----------------
+    #
+    # Everything in `settings` above is written against noctalia's **v5** TOML
+    # schema — `[bar.<name>]` with `start`/`center`/`end` lanes, `[widget.<id>]`
+    # instances, `theme.source = "custom"` reading `palettes/<name>.json`. v4
+    # spelled several of those differently: colour schemes lived in
+    # `colorschemes/<name>/<name>.json`, and the bar was configured elsewhere.
+    #
+    # The flake input follows `main`, and upstream's convention is that main is
+    # the current major with the previous one parked on a branch of its own —
+    # `legacy-v4` at the time of writing. So main becomes v6 the day v6 lands.
+    # flake.lock means that cannot happen by surprise, but the first
+    # `nix flake update` afterwards would otherwise swap the shell for one
+    # reading a schema this file was not written for.
+    #
+    # `validateConfig` already catches the loud half of that: a key that has
+    # been renamed or removed fails the build with the offending line. This
+    # catches the half it cannot — a schema that still accepts every key here
+    # and means something different by them.
+    #
+    # If this fires, the fix is to read the upgrade notes and revisit
+    # `settings` and ./noctalia-palettes.nix, not to widen the bound.
+    assertions = [
+      {
+        assertion = lib.versionAtLeast version "5" && lib.versionOlder version "6";
+        message = ''
+          home/joshr/niri/noctalia.nix is written against noctalia v5's config
+          schema, but the package resolves to ${version}.
+
+          Check what moved (https://docs.noctalia.dev), update `settings` and
+          home/joshr/niri/noctalia-palettes.nix to match, then widen the bound
+          in the assertion at the bottom of noctalia.nix.
+
+          To carry on with the version that works while doing that, pin the
+          input in flake.nix to the last v5 ref:
+
+              noctalia.url = "github:noctalia-dev/noctalia/<v5 tag or commit>";
+        '';
+      }
+    ];
 
     # The gamemode indicator has no widget here.
     #

@@ -40,6 +40,18 @@
     # home-manager module validates the generated config against the pinned
     # binary at build time, which only means anything while the two are locked
     # together.
+    #
+    # **This is v5**, and that matters more than the usual "pin your inputs".
+    # `main` is the current major — meson.build says 5.0.0 — and upstream
+    # parks the previous one on a branch of its own, `legacy-v4` today. So
+    # this ref becomes v6 the day v6 lands, and v4's config schema is
+    # different enough that noctalia.nix would be writing the wrong file.
+    #
+    # There is deliberately no tag here to pin to instead: the v5 tags are all
+    # `v5.0.0-beta.*` and sit behind main, so pinning to one would be a
+    # downgrade to a beta. flake.lock holds the commit, and
+    # home/joshr/niri/noctalia.nix asserts the major is 5 so an update past it
+    # fails the build with instructions rather than switching quietly.
     noctalia = {
       url = "github:noctalia-dev/noctalia";
       inputs.nixpkgs.follows = "nixpkgs";

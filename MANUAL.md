@@ -274,6 +274,29 @@ generated from `home/joshr/niri/noctalia.nix`. The mapping is one-for-one:
 | hyprlock | `[lockscreen]` |
 | awww | `[wallpaper]` |
 
+**It is v5, and the major version is checked.** Everything in `noctalia.nix`
+is written against noctalia's v5 schema — `[bar.<name>]` with `start`/`center`
+/`end` lanes, `[widget.<id>]` instances, `theme.source = "custom"` reading
+`palettes/<name>.json`. v4 spelled several of those differently; colour
+schemes in particular lived in `colorschemes/<name>/<name>.json`.
+
+The flake input follows the repo's `main` branch, which is where the current
+major lives — upstream parks the previous one on a branch of its own, and
+`legacy-v4` is there now. So `main` becomes v6 the day v6 lands. `flake.lock`
+means that can't happen by surprise, but the first `nix flake update`
+afterwards would otherwise switch the shell quietly. Two things stop that:
+
+- `programs.noctalia.validateConfig` (on by default) runs
+  `noctalia config validate` over the generated TOML at build time, so a key
+  that has been renamed fails the build with the offending line rather than
+  being dropped in silence.
+- an assertion at the bottom of `noctalia.nix` fails the build if the package
+  is not 5.x, which is the case validation can't see — a schema that still
+  accepts every key and means something different by them.
+
+There is no v5 tag to pin to instead: the v5 tags are all `v5.0.0-beta.*` and
+sit behind `main`, so pinning to one would be a downgrade to a beta.
+
 The bar comes across slot for slot — same order, same geometry (34px tall, 4px
 between widgets, 12px corners, 88% opaque), with three additions that had no
 waybar equivalent: a notification history, a clipboard panel, and a control

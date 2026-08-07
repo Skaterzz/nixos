@@ -47,18 +47,35 @@
     '';
   };
 
+  options.local.niri.noctaliaSourcePatches = lib.mkOption {
+    type = lib.types.bool;
+    default = true;
+    description = ''
+      Whether to build Noctalia with this repository's C++ extras: animated
+      lock/unlock transitions, content-sized text OSDs, and the customized
+      control-panel identity and detail colours, plus the relative MPRIS IPC
+      actions retained for compatibility.
+
+      Enabling this changes the Noctalia derivation and therefore compiles it
+      locally instead of using the binary from cache.nixos.org. Disabling it
+      keeps the complete generated Noctalia configuration, palettes, plugins,
+      templates and theme-sync hooks, but uses stock pkgs.noctalia and its
+      upstream behaviour for those source-only features.
+    '';
+  };
+
   options.local.waybar.cavaInBar = lib.mkOption {
     type = lib.types.bool;
-    default = false;
+    default = true;
     description = ''
-      Whether the bar carries an audio visualiser.
+      Whether the bar and Noctalia lock screen carry audio visualisers.
 
       Named for waybar because that is where it started, and still read by
       both shells — it answers the same question either way. Under waybar it
       adds the `custom/cava` module, a script feeding the bar one frame of
       glyphs per line (cavaBar in home/joshr/niri/scripts.nix); under noctalia
-      it adds the `audio_visualizer` widget, which reads PipeWire directly and
-      needs no helper.
+      it adds the compact bar widget and the full-output lock-screen visualizer,
+      both of which read PipeWire directly and need no helper.
     '';
   };
 

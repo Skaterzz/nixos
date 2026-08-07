@@ -43,8 +43,6 @@
   local.niri.randomLockGreetings = false;
   local.niri.timeBasedLockGreetings = true;
 
-  local.waybar.cavaInBar = true;
-  
   local.niri.lockAlbumArtBackground = true;
   local.niri.lockAlbumArtCover = true;
 }

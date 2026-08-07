@@ -30,6 +30,16 @@
   # ./gamestation-niri.nix, and `local.niri.shell` in home/common/options.nix.
   local.niri.shell = "noctalia";
 
+  # Keep the generated Noctalia configuration, palettes, plugins and theme
+  # syncing, but use the stock cache.nixos.org binary on the laptop. The C++
+  # extras remain enabled by default on the desk, where compiling the custom
+  # derivation is intentional.
+  local.niri.noctaliaSourcePatches = false;
+
+  # The same existing option owns both visualizers under Noctalia. It defaults
+  # on everywhere else; the laptop keeps both the bar and lock screen quiet.
+  local.waybar.cavaInBar = false;
+
   # The lock screen's clock is placed by pixel coordinate per output, and this
   # host deliberately declares no `local.niri.outputs` (./displays/laptop.nix
   # leaves the layout to niri, because a laptop's external displays change).

@@ -32,13 +32,11 @@
 #
 # No home-manager module, and no flake input
 # ------------------------------------------
-# The shell starts from `pkgs.noctalia` and everything below is written out
-# by hand. Small source patches add lock-screen entrance/exit motion, let text
-# OSDs grow to their content, use username@host in the control centre, and
-# expose relative MPRIS volume actions — behaviours v5 does not expose as
-# settings —
-# so the first rebuild after this change compiles Noctalia locally; later
-# builds reuse that store result.
+# The shell starts from `pkgs.noctalia` and everything below is written out by
+# hand. `local.niri.noctaliaSourcePatches` chooses between the ordinary cached
+# package and a locally compiled derivation carrying the source-only extras.
+# The generated configuration, palettes, templates, plugins and hooks are the
+# same on both sides of that choice.
 # Upstream ships a home-manager module in its flake, and this used to use it,
 # but it only generates the three files at the bottom of this comment and its
 # flake publishes no substituter — so having it in `inputs` meant an extra
@@ -58,13 +56,17 @@
 let
   useNoctalia = config.local.niri.shell == "noctalia";
 
-  pkg = pkgs.noctalia.overrideAttrs (old: {
-    patches = (old.patches or [ ]) ++ [
-      ./noctalia-lock-transition.patch
-      ./noctalia-user-media.patch
-    ];
-  });
-  noctalia = lib.getExe pkg;
+  noctaliaPackage =
+    if config.local.niri.noctaliaSourcePatches then
+      pkgs.noctalia.overrideAttrs (old: {
+        patches = (old.patches or [ ]) ++ [
+          ./noctalia-lock-transition.patch
+          ./noctalia-user-media.patch
+        ];
+      })
+    else
+      pkgs.noctalia;
+  noctalia = lib.getExe noctaliaPackage;
 
   paletteSet = import ./noctalia-palettes.nix { inherit lib; };
 
@@ -346,8 +348,9 @@ let
         scale = o.scale;
       }) config.local.niri.outputs;
 
-  # One full-output audio visualizer, a compact login box, an auto-hiding media
-  # player, two lock-safe buttons, and two clock widgets per output.
+  # With local.waybar.cavaInBar on, one full-output audio visualizer; then a
+  # compact login box, an auto-hiding media player, two lock-safe buttons, and
+  # two clock widgets per output.
   #
   # A clock widget has one font size, so "time bigger than the date" cannot be
   # done inside a single `format` string — it needs two widgets sized
@@ -459,7 +462,7 @@ let
           };
         };
       in
-      [
+      (lib.optionals config.local.waybar.cavaInBar [
         # First in widget_order below, so it paints behind every other custom
         # lock-screen widget. The login panel is a later root layer too. With
         # no background or padding the spectrum fills the entire logical
@@ -483,6 +486,8 @@ let
             background_padding = 0;
           };
         })
+      ])
+      ++ [
         (lib.nameValuePair "login_box_${o.name}" {
           type = "login_box";
           output = o.name;
@@ -561,15 +566,18 @@ let
   # This is paint order as well as editor order: the lock-screen host appends
   # widget scene nodes in this sequence. Keep the full-screen visualizer first
   # and list every widget, because an explicit order is authoritative.
-  lockWidgetOrder = lib.concatMap (o: [
-    "audio_visualizer_${o.name}"
-    "clock_time_${o.name}"
-    "clock_date_${o.name}"
-    "media_player_${o.name}"
-    "lock_suspend_${o.name}"
-    "lock_switch_user_${o.name}"
-    "login_box_${o.name}"
-  ]) (lib.filter (o: !o.off) lockOutputs);
+  lockWidgetOrder = lib.concatMap (
+    o:
+    lib.optional config.local.waybar.cavaInBar "audio_visualizer_${o.name}"
+    ++ [
+      "clock_time_${o.name}"
+      "clock_date_${o.name}"
+      "media_player_${o.name}"
+      "lock_suspend_${o.name}"
+      "lock_switch_user_${o.name}"
+      "login_box_${o.name}"
+    ]
+  ) (lib.filter (o: !o.off) lockOutputs);
 
   settings = {
     shell = {
@@ -728,7 +736,7 @@ let
     # `widget_spacing` and `padding` are the two that deliberately do *not*
     # match waybar. waybar's 4px gap was chosen to claw back room from a
     # twelve-slot right-hand cluster that had grown too wide; that cluster is
-    # four slots shorter now, so the gap can go back to something that reads
+    # three slots shorter now, so the gap can go back to something that reads
     # as separate controls rather than one run-on strip.
     bar.main = {
       position = "top";
@@ -750,24 +758,23 @@ let
 
       center = [ "clock" ];
 
-      # Right-hand cluster, in waybar's order, minus four that were doing a
+      # Right-hand cluster, in waybar's order, minus two that were doing a
       # job something else already does:
       #
       #   lock       the session panel next door offers it, and Mod+L is the
       #              reflex anyway
-      #   clipboard  Mod+Ctrl+V, and the launcher's own clipboard provider
       #   lock_keys  the caps-lock OSD says it louder, and this only ever had
       #              anything to show while a key was actually held on
       #
-      # What stays is either a live reading (brightness, volume, network,
-      # bluetooth, battery) or an indicator that means
-      # something by being present at all (privacy, notifications).
+      # Clipboard sits immediately to the right of Notifications and opens
+      # the attached clipboard-history panel near the button.
       end =
 	visualiser
         ++ [
           "media"
           "tray"
           "notifications"
+          "clipboard"
           "brightness"
           "volume"
           "bluetooth"
@@ -891,18 +898,14 @@ let
       #
       # `title_scroll` is the other half of the answer and the more useful
       # one: no fixed width fits every track, so anything past 270px scrolls
-      # continuously rather than being lost to an ellipsis. Scroll gestures
-      # replace the built-in track skipping with 5% changes to the active
-      # MPRIS player's own volume.
+      # continuously rather than being lost to an ellipsis. There is
+      # deliberately no custom wheel action here: scrolling must not change
+      # the MPRIS player's volume.
       media = {
         max_length = 270;
         min_length = 0;
         title_scroll = "always";
         hide_when_no_media = true;
-        # actions = {
-        #   scroll_up = "media volume-up";
-        #   scroll_down = "media volume-down";
-        # };
       };
 
       network = {
@@ -1405,7 +1408,7 @@ in
 {
   config = lib.mkIf useNoctalia {
     home.packages = [
-      pkg
+      noctaliaPackage
 
       # `ddcutil` has to be findable by name: noctalia gates its whole DDC/CI
       # backend on `commandExists("ddcutil")` and nixpkgs' wrapper only

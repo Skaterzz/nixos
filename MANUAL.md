@@ -278,11 +278,12 @@ generated from `home/joshr/niri/noctalia.nix`. The mapping is one-for-one:
 | hyprlock | `[lockscreen]` |
 | awww | `[wallpaper]` |
 
-**It is v5, and nothing compiles.** Everything in `noctalia.nix` is written
-against noctalia's v5 schema — `[bar.<name>]` with `start`/`center`/`end`
-lanes, `[widget.<id>]` instances, `theme.source = "custom"` reading
-`palettes/<name>.json`. v4 spelled several of those differently; colour
-schemes in particular lived in `colorschemes/<name>/<name>.json`.
+**It is v5, and compilation is a host choice.** Everything in `noctalia.nix`
+is written against noctalia's v5 schema — `[bar.<name>]` with
+`start`/`center`/`end` lanes, `[widget.<id>]` instances,
+`theme.source = "custom"` reading `palettes/<name>.json`. v4 spelled several
+of those differently; colour schemes in particular lived in
+`colorschemes/<name>/<name>.json`.
 
 **Watch the attribute name.** nixpkgs carries both majors, and the names run
 backwards from what you'd guess:
@@ -301,7 +302,16 @@ this config.
 home-manager module in its flake and this used to use it, but that flake
 publishes no substituter — its cachix cache name is a CI secret — so any
 reference to `packages.default` meant compiling a Qt/C++ project locally on
-every rebuild. `pkgs.noctalia` is on the ordinary binary cache.
+every rebuild. Stock `pkgs.noctalia` is on the ordinary binary cache.
+
+`local.niri.noctaliaSourcePatches` controls the remaining fork. It defaults to
+true and adds the animated lock/unlock transitions, content-sized text OSDs,
+the customized control-panel identity and colours, and relative MPRIS IPC
+actions retained for compatibility. Source changes create a different
+derivation, so that side compiles locally. `laptop-niri` sets the option false:
+it uses cached `pkgs.noctalia`, while keeping exactly the same generated TOML,
+palettes, templates, plugins and theme-sync hooks. The desktop keeps the default
+and therefore keeps the C++ extras.
 
 What the module generated is small enough to own outright, and `noctalia.nix`
 now writes all three itself:
@@ -315,8 +325,8 @@ the systemd user service             restarted by X-Restart-Triggers
 The one piece worth keeping from it is the build-time check: `noctalia config
 validate` still runs over the generated TOML in a `runCommand`, so a key that
 has been renamed upstream fails the build naming the line instead of being
-dropped in silence. It costs nothing — the binary comes from the cache and it
-only reads a file.
+dropped in silence. It does not create another Noctalia build: it uses whichever
+cached or source-patched package the host selected and only reads a file.
 
 **Two config files, and only one of them is Nix's.** `config.toml` above is
 generated and read-only. `~/.local/state/noctalia/settings.toml` is the other
@@ -352,21 +362,22 @@ The bar comes across slot for slot — same order, same geometry (34px tall,
 
 **It is spaced out more than waybar was.** waybar ran an 8px gap down to 4 to
 claw back room from a right-hand cluster that had grown to twelve slots. That
-cluster is four slots shorter here, so the gap goes back up (`widget_spacing`
+cluster is three slots shorter here, so the gap goes back up (`widget_spacing`
 8, `padding` 16) and the controls read as separate things again rather than
 one run-on strip.
 
-**Three widgets are gone**, each because something else already did the job:
+**Two widgets are gone**, each because something else already did the job:
 
 | dropped | because |
 |---|---|
 | `lock` | the session panel next door offers it, and `Mod+L` is the reflex |
-| `clipboard` | `Mod+Ctrl+V`, and the launcher's own clipboard provider |
 | `lock_keys` | the caps-lock OSD says it louder, and only while a key is on |
 
 What stays is either a live reading (brightness, volume, network, bluetooth,
 battery) or an indicator that means something by being present at all
-(privacy, notifications, gamemode, caffeine).
+(privacy, notifications, gamemode, caffeine). The clipboard-history button is
+immediately to the right of Notifications; the `Mod+Ctrl+V` shortcut and the
+launcher's clipboard provider remain available as well.
 
 **The left cluster is deliberately quiet**: one icon, one row of pills, one
 line of text. The first slot is the NixOS snowflake and it opens the launcher
@@ -386,9 +397,9 @@ reserving a slot.
 playing widget, capped at 800 by the widgets themselves — not a count of
 glyphs, which is the natural reading of the name. The window title scrolls on
 hover; now playing is capped at 270px and scrolls continuously, so a long track
-never needs a wider permanent slot. Scrolling the now-playing widget itself
-changes the active MPRIS player's own volume by 5% per notch instead of
-skipping tracks; system output volume remains the separate volume widget.
+never needs a wider permanent slot. It deliberately has no custom wheel action,
+so scrolling does not change the MPRIS player's volume; system output volume
+remains the separate volume widget.
 
 **Privacy hides itself when idle.** noctalia draws all three of its glyphs —
 microphone, camera, screen-share — greyed out by default, which is three
@@ -573,11 +584,13 @@ is disabled; Suspend and Switch user are explicit lock-safe buttons beneath
 it, so the desktop session menu can keep its complete action list without
 putting reboot and shutdown on the locked screen.
 
-An `audio_visualizer` is the first entry in the explicit `widget_order`, which
-also makes it the backmost custom widget. Its box is the full logical width
-and height of the output, with no panel or padding, while the login panel is a
-later root layer. `show_when_idle = false` fades the 128-band spectrum away
-when playback stops, so the wallpaper remains clean when there is no media.
+With `local.waybar.cavaInBar` enabled, an `audio_visualizer` is the first entry
+in the explicit `widget_order`, which also makes it the backmost custom widget.
+Its box is the full logical width and height of the output, with no panel or
+padding, while the login panel is a later root layer. `show_when_idle = false`
+fades the spectrum away when playback stops, so the wallpaper remains clean
+when there is no media. The option defaults on and controls the compact bar
+visualizer too; `laptop-niri` disables both.
 
 Time is **two** widgets, not one. A clock widget has a single
 font size, so "time bigger than the date" can't be done inside one `format`

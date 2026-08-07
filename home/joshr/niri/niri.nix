@@ -511,6 +511,25 @@ ${workspaceBlocks}
         XF86MonBrightnessUp   allow-when-locked=true { spawn-sh "${brightnessUp}"; }
         XF86MonBrightnessDown allow-when-locked=true { spawn-sh "${brightnessDown}"; }
 
+        // Power profile: power-saver, balanced, performance. Mod+P steps
+        // forward through whatever the daemon offers and Mod+Ctrl+P steps
+        // back — the same two directions as the bar's left and right click,
+        // which is the other way to reach this.
+        //
+        // Ctrl rather than Shift for the reverse because Mod+Shift+P is
+        // already a second way to blank the monitors, at the bottom of this
+        // block.
+        //
+        // Neither one draws the pop-up. That is power-profile-osd, which
+        // watches the daemon and therefore also catches the changes these keys
+        // didn't make; see osd.nix.
+        //
+        // No `allow-when-locked`. Unlike volume and brightness there is nothing
+        // to gain from moving it behind a lock screen, and the OSD wouldn't be
+        // visible to confirm it either way.
+        Mod+P      hotkey-overlay-title="Next power profile" { spawn "${bin niriScripts.powerProfile}" "next"; }
+        Mod+Ctrl+P hotkey-overlay-title="Previous power profile" { spawn "${bin niriScripts.powerProfile}" "prev"; }
+
         // --- window management -----------------------------------------
         Mod+Q repeat=false { close-window; }
         Alt+F4 repeat=false { close-window; }

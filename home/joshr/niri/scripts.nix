@@ -3533,6 +3533,207 @@ lockNowPlaying = pkgs.writeShellApplication {
     '';
   };
 
+  # The power profile — power-saver, balanced, performance — and the pop-up
+  # that goes with it.
+  #
+  # `powerprofilesctl` is what moves it, the same command the bar and every
+  # other route already end up in; this exists so there is one place that knows
+  # the order they cycle in and one place that knows what each looks like on
+  # screen.
+  #
+  #   power-profile next / prev     step through the profiles the daemon offers
+  #   power-profile set <name>      one by name
+  #   power-profile show            draw the current one, changing nothing
+  #
+  # `show` is the drawing half, and it is deliberately not called from the
+  # other three. Nothing here shows the profile it just set: the watcher below
+  # does that, having heard the daemon say so, which is the only way a change
+  # made from waybar, from Plasma's battery applet, from `powerprofilesctl` in
+  # a terminal or by the daemon itself gets a pop-up too. Drawing here as well
+  # would give the keybind two.
+  #
+  # The order is whatever `powerprofilesctl list` prints, rather than a list
+  # written down here, so a machine whose driver offers a profile beyond the
+  # usual three cycles through that one as well instead of skipping it — and
+  # `next` means the same direction as the bar's left click, which walks the
+  # daemon's list too.
+  #
+  # With nothing answering on the system bus, the three that change something
+  # say so on stderr and exit non-zero, and `show` draws nothing at all. That
+  # is a host without `services.power-profiles-daemon.enable`
+  # (modules/nixos/desktop.nix), which is a configuration mistake rather than
+  # something to report on screen to whoever pressed the key — and the same
+  # condition already hides the bar's widget.
+  powerProfile = pkgs.writeShellApplication {
+    name = "power-profile";
+    runtimeInputs = with pkgs; [
+      power-profiles-daemon
+      gawk
+      osd
+    ];
+    text = ''
+      # `powerprofilesctl list` prints one `  <name>:` line per profile, with a
+      # `*` in the first column on the active one and its driver and degraded
+      # state indented underneath. The anchors are what keep those detail lines
+      # out: they are indented four spaces, so `^[* ] ` never reaches their
+      # colon.
+      profiles() {
+        powerprofilesctl list 2>/dev/null |
+          awk '/^[* ] [a-z-]+:$/ { sub(/:$/, "", $NF); print $NF }'
+      }
+
+      # A profile the daemon has no driver for is still a profile it accepts
+      # and reports, so this is the state of the machine either way.
+      current() {
+        powerprofilesctl get 2>/dev/null
+      }
+
+      # Step through the list, wrapping. Same shape as `theme-cycle` above:
+      # awk holds the list, finds the current entry and prints its neighbour,
+      # falling back to the first entry when the current one isn't in the list
+      # — which is what happens when the daemon is answering but `get` didn't.
+      step() {
+        local direction="$1" now
+        now="$(current || true)"
+
+        profiles | awk -v cur="$now" -v dir="$direction" '
+          { list[NR] = $0 }
+          END {
+            if (NR == 0) exit 1
+            for (i = 1; i <= NR; i++)
+              if (list[i] == cur) {
+                # 1-based and wrapping in both directions: +1 is i % NR + 1,
+                # -1 is the same walk with NR - 2 added instead.
+                print list[(i + (dir == "next" ? 0 : NR - 2)) % NR + 1]
+                exit
+              }
+            print list[1]
+          }'
+      }
+
+      apply() {
+        [ -n "$1" ] || { echo "power-profile: no power profiles daemon" >&2; exit 1; }
+
+        # Already there is not a failure, and it is reachable: two keypresses
+        # in a row on a machine with one profile land here.
+        [ "$1" != "$(current || true)" ] || exit 0
+
+        if ! powerprofilesctl set "$1"; then
+          echo "power-profile: could not set $1" >&2
+          exit 1
+        fi
+      }
+
+      case "''${1:-}" in
+        next) apply "$(step next || true)" ;;
+        prev) apply "$(step prev || true)" ;;
+        set)
+          [ -n "''${2:-}" ] || { echo "usage: power-profile set <profile>" >&2; exit 2; }
+          apply "$2"
+          ;;
+        show)
+          profile="$(current || true)"
+          [ -n "$profile" ] || exit 0
+
+          # Freedesktop icon names, from the icon theme rather than from the
+          # set swayosd compiles in — it carries volume and brightness and
+          # nothing else. Papirus-Dark, which this session wears (see
+          # ./default.nix), ships all three under `symbolic/status`; a theme
+          # that didn't would leave swayosd drawing its `missing-symbolic`
+          # fallback beside the right words.
+          #
+          # The labels are capitalised rather than passed through as the
+          # daemon's own lowercase identifiers, so the pop-up reads like the
+          # rest of the session's messages ("Muted", "Microphone on").
+          case "$profile" in
+            power-saver) icon=power-profile-power-saver-symbolic ; label="Power saver" ;;
+            balanced)    icon=power-profile-balanced-symbolic    ; label="Balanced" ;;
+            performance) icon=power-profile-performance-symbolic ; label="Performance" ;;
+            # A profile from a driver neither this case nor Papirus knows
+            # about. The balanced glyph is the neutral one of the three and
+            # the name is spelled out beside it, so the pop-up still says
+            # which profile took.
+            *)           icon=power-profile-balanced-symbolic    ; label="$profile" ;;
+          esac
+
+          osd message "$icon" "$label"
+          ;;
+        *)
+          echo "usage: power-profile [next|prev|set <profile>|show]" >&2
+          exit 2
+          ;;
+      esac
+    '';
+  };
+
+  # Draw the power profile whenever it changes, whoever changed it.
+  #
+  # This is the whole reason the profile gets an OSD at all. Volume and
+  # brightness are moved by the keys that draw them, so the pop-up can live in
+  # the script that makes the change; the profile is not. It is moved by the
+  # bar (waybar's `power-profiles-daemon` module has its own click handler and
+  # takes no `on-click` of ours), by `powerprofilesctl` in a terminal, by a
+  # `powerprofilesctl launch` hold that a game takes and gives back, and by the
+  # daemon itself when it drops out of performance on a hot machine. So the
+  # thing worth watching is the daemon, not any one route into it.
+  #
+  # `gdbus monitor` rather than `dbus-monitor`, and the difference matters
+  # here: dbus-monitor asks the bus to make it a monitor, which the system
+  # bus's default policy allows root and nobody else, so it fails in a user
+  # session. gdbus subscribes to the signal instead — an ordinary AddMatch for
+  # a broadcast, which the same policy allows — and PropertiesChanged is a
+  # broadcast.
+  #
+  # `--dest` filters to the daemon's own connection, so the loop below is woken
+  # by its properties and nothing else on the bus. The legacy
+  # `net.hadess.PowerProfiles` name is the one asked for: the daemon has owned
+  # it since it existed and still does alongside the newer
+  # org.freedesktop.UPower.PowerProfiles, and both names are the same
+  # connection — so a match on either sees the signals from both objects.
+  #
+  # `stdbuf -oL` because gdbus prints through stdio, which block-buffers once
+  # its stdout is a pipe: without it a change would sit in a 4KB buffer instead
+  # of reaching the loop.
+  #
+  # The profile is read back rather than parsed out of the signal, for the
+  # reason `volume` reads wpctl back: it makes the pop-up describe the machine
+  # rather than the event. It also means the loop doesn't care which property
+  # changed — `PerformanceDegraded` and `ActiveProfileHolds` come through the
+  # same signal, and they are filtered out here by the profile simply not
+  # having moved.
+  powerProfileOsd = pkgs.writeShellApplication {
+    name = "power-profile-osd";
+    runtimeInputs = with pkgs; [
+      coreutils
+      glib
+      power-profiles-daemon
+      powerProfile
+    ];
+    text = ''
+      # What the session is already sitting at, so the first pop-up is a
+      # change and not a report of the state at login.
+      last="$(powerprofilesctl get 2>/dev/null || true)"
+
+      stdbuf -oL gdbus monitor --system --dest net.hadess.PowerProfiles |
+        while IFS= read -r line; do
+          case "$line" in
+            *PropertiesChanged*) ;;
+            # gdbus also prints a line when the name changes owner, which is
+            # the daemon being restarted. Nothing to draw for that, and the
+            # readback below would only report a profile that hasn't moved.
+            *) continue ;;
+          esac
+
+          profile="$(powerprofilesctl get 2>/dev/null || true)"
+          [ -n "$profile" ] || continue
+          [ "$profile" != "$last" ] || continue
+
+          last="$profile"
+          power-profile show
+        done
+    '';
+  };
+
   # Audio visualiser for the bar. See the custom/cava module in waybar.nix.
   cavaConfig = pkgs.writeText "cava-waybar.conf" ''
     [general]
@@ -3786,6 +3987,8 @@ in
     osd
     volume
     brightness
+    powerProfile
+    powerProfileOsd
     cavaBar
     capsLock
     gamemodeStatus
@@ -3812,6 +4015,8 @@ in
       osd
       volume
       brightness
+      powerProfile
+      powerProfileOsd
       cavaBar
       capsLock
       gamemodeStatus

@@ -110,6 +110,13 @@
   # machine after that.
   local.boot.detectOtherSystems = false;
 
+  # No boot splash either, and left off rather than written down as `false`:
+  # `local.boot.plymouth.enable` defaults off and the four fixed graphical
+  # hosts are the ones that turn it on. This is the machine that boots on
+  # hardware it has never seen, so the boot most likely to need explaining is
+  # exactly the one a splash would paint over. See modules/nixos/plymouth.nix
+  # for the one line that changes that.
+
   # --- auto-login ---------------------------------------------------------
   #
   # Boot to the desktop. There is one account (modules/nixos/usb-users.nix)

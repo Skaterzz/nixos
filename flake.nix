@@ -25,41 +25,6 @@
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
-    # noctalia: a Wayland desktop shell — bar, notifications, OSD, launcher,
-    # clipboard, wallpaper, lock screen — in one Quickshell process.
-    #
-    # The alternative to the waybar stack on the niri hosts, selected per host
-    # with `local.niri.shell`. See home/joshr/niri/noctalia.nix, which imports
-    # `homeModules.default` from here on every niri host and leaves it inert
-    # unless that option asks for it.
-    #
-    # **This input is here for the home-manager module, not the package.**
-    # The shell itself is `pkgs.noctalia` — it is in nixpkgs, and nixpkgs
-    # builds it on the binary cache where this flake publishes no substituter
-    # (its cachix cache name is a CI secret). noctalia.nix therefore sets
-    # `programs.noctalia.package = pkgs.noctalia` and nothing here gets built.
-    #
-    # The module cannot come from either of those places. home-manager ships no
-    # `programs.noctalia`, and nixpkgs ships only the binary, so without this
-    # input the config.toml, the 29 palette files and — the part that matters —
-    # the build-time `noctalia config validate` would all have to be hand-rolled
-    # out of `xdg.configFile`, which is how a renamed key becomes a setting that
-    # silently stops applying.
-    #
-    # **v5.** Watch the attribute names in nixpkgs, which are a trap: `noctalia`
-    # is the v5 line and `noctalia-shell` is 4.7.7, having kept the repository's
-    # old name from before upstream renamed it at v5. Here, `main` is the
-    # current major (meson.build says 5.0.0) and upstream parks the previous one
-    # on a branch of its own — `legacy-v4` today — so this ref becomes v6 the
-    # day v6 lands. There is deliberately no tag to pin to instead: every v5 tag
-    # is `v5.0.0-beta.*` and sits behind main. flake.lock holds the commit, and
-    # noctalia.nix asserts the major is 5 so any of these going wrong is a build
-    # failure with instructions rather than a session that comes up subtly wrong.
-    noctalia = {
-      url = "github:noctalia-dev/noctalia";
-      inputs.nixpkgs.follows = "nixpkgs";
-    };
-
     # keylase/nvidia-patch as a nixpkgs overlay: takes the concurrent-NVENC
     # session cap and the Quadro-only NvFBC check off a GeForce driver.
     #

@@ -30,6 +30,14 @@
   # ./gamestation-niri.nix, and `local.niri.shell` in home/common/options.nix.
   local.niri.shell = "noctalia";
 
+  # The lock screen's clock is placed by pixel coordinate per output, and this
+  # host deliberately declares no `local.niri.outputs` (./displays/laptop.nix
+  # leaves the layout to niri, because a laptop's external displays change).
+  # So the connector is named here instead. eDP-1 is the internal panel;
+  # `niri msg outputs` confirms it, and the position falls back to a 1080p
+  # centre that noctalia clamps onto whatever the panel actually is.
+  local.niri.lockClockOutputs = [ "eDP-1" ];
+
   local.niri.randomLockGreetings = false;
   local.niri.timeBasedLockGreetings = true;
 

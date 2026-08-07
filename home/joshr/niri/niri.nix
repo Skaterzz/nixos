@@ -56,11 +56,14 @@ let
   #
   # Only the binds that talk to the shell are here. Window management, the
   # workspace keys and the screenshot binds are the compositor's own actions
-  # and are the same under both — as are Mod+Shift+T and Mod+Ctrl+T, which go
-  # through `theme-apply` either way (it is the switcher that knows how to
-  # tell each shell; see scripts.nix).
+  # and are the same under both — as is Mod+Ctrl+T, which goes through
+  # `theme-apply` either way (it is the switcher that knows how to tell each
+  # shell; see scripts.nix).
   useNoctalia = config.local.niri.shell == "noctalia";
-  noctalia = lib.getExe config.programs.noctalia.package;
+
+  # `pkgs.noctalia` and not `pkgs.noctalia-shell`: nixpkgs carries both majors
+  # and the names read backwards. See the header of ./noctalia.nix.
+  noctalia = lib.getExe pkgs.noctalia;
   shellBind = stack: ipc: if useNoctalia then "${noctalia} msg ${ipc}" else stack;
 
   terminal = "${pkgs.kitty}/bin/kitty";
@@ -77,7 +80,6 @@ let
   clipboardHistory = shellBind (bin niriClipboard.clipboardHistory) "panel-toggle clipboard";
   sessionMenu = shellBind (bin niriScripts.sessionMenu) "panel-toggle session";
   wallpaperMenu = shellBind (bin niriScripts.wallpaperMenu) "panel-toggle wallpaper";
-  wallpaperRandom = shellBind (bin niriScripts.wallpaperRandom) "wallpaper-random";
   lockNow = shellBind (bin niriScripts.lockNow) "session lock";
   idleInhibit = shellBind "${bin niriScripts.idleInhibit} toggle" "caffeine-toggle";
 
@@ -454,12 +456,16 @@ ${workspaceBlocks}
         Mod+Shift+I hotkey-overlay-title="Stay awake — toggle idle inhibitor" { spawn-sh "${idleInhibit}"; }
 
         // --- theming ---------------------------------------------------
-        // Random theme, or pick one / a wallpaper from a menu. Mod+Shift is
-        // the random half of both pairs, Mod+Ctrl the deliberate half.
-        // `theme-cycle` still exists on PATH if you want the ordered walk.
-        Mod+Shift+T hotkey-overlay-title="Random theme" { spawn "${bin niriScripts.themeRandom}"; }
+        // Pick a theme, or a wallpaper. Both deliberate, both on Mod+Ctrl.
+        //
+        // The Mod+Shift halves of these two pairs are gone. They jumped to a
+        // *random* theme and a random wallpaper, which is a fine thing to
+        // have on a keyboard exactly once and a bad thing to have next to the
+        // pickers: Mod+Shift+W is one slip from Mod+Ctrl+W, and the slip
+        // silently replaced whatever you had chosen. `theme-random`,
+        // `theme-cycle` and `wallpaper-random` are all still on PATH for when
+        // that is actually what you want.
         Mod+Ctrl+T  hotkey-overlay-title="Choose theme" { spawn "${bin niriScripts.themeMenu}"; }
-        Mod+Shift+W hotkey-overlay-title="Random wallpaper" { spawn-sh "${wallpaperRandom}"; }
         Mod+Ctrl+W  hotkey-overlay-title="Choose wallpaper" { spawn-sh "${wallpaperMenu}"; }
 
         // --- screenshots -----------------------------------------------

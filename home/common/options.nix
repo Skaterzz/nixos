@@ -206,6 +206,29 @@
     );
   };
 
+  options.local.niri.lockClockOutputs = lib.mkOption {
+    type = lib.types.listOf lib.types.str;
+    default = [ ];
+    example = [ "eDP-1" ];
+    description = ''
+      Connectors that get a clock on noctalia's lock screen, for hosts that
+      do not pin their display layout.
+
+      Only consulted when `local.niri.outputs` is empty. noctalia places lock
+      screen widgets by pixel coordinate per output, so the clock's position
+      is normally computed from the mode already declared there — one place
+      for the resolution, and a monitor change moves the clock with it. A host
+      that leaves the layout to niri's auto-detection has no mode to read, so
+      this names the connectors instead and the position falls back to a 1080p
+      centre. noctalia clamps widget coordinates to the output, so on a panel
+      that is not 1080p the clock is off-centre rather than off-screen.
+
+      `niri msg outputs` prints the connector names. Only read under
+      `local.niri.shell = "noctalia"`; the hyprlock screen the waybar stack
+      uses draws its own clock and needs none of this.
+    '';
+  };
+
   options.local.niri.brightness.device = lib.mkOption {
     type = lib.types.nullOr lib.types.str;
     default = null;

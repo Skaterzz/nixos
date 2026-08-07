@@ -275,9 +275,9 @@ generated from `home/joshr/niri/noctalia.nix`. The mapping is one-for-one:
 | hyprlock | `[lockscreen]` |
 | awww | `[wallpaper]` |
 
-**It is v5, and the major version is checked.** Everything in `noctalia.nix`
-is written against noctalia's v5 schema — `[bar.<name>]` with `start`/`center`
-/`end` lanes, `[widget.<id>]` instances, `theme.source = "custom"` reading
+**It is v5, and nothing compiles.** Everything in `noctalia.nix` is written
+against noctalia's v5 schema — `[bar.<name>]` with `start`/`center`/`end`
+lanes, `[widget.<id>]` instances, `theme.source = "custom"` reading
 `palettes/<name>.json`. v4 spelled several of those differently; colour
 schemes in particular lived in `colorschemes/<name>/<name>.json`.
 
@@ -294,51 +294,63 @@ the more official-looking `noctalia-shell` is the stale one. Putting it in
 `environment.systemPackages` gets you v4 and a session that ignores most of
 this config.
 
-**The package is nixpkgs'; only the module comes from the flake.** Upstream's
-flake publishes no substituter — its cachix cache name is a CI secret — so
-`packages.default` means compiling a Qt/C++ project locally on every machine,
-where nixpkgs' build is on the ordinary binary cache. So `noctalia.nix` sets
-`programs.noctalia.package = pkgs.noctalia` and nothing from the flake is
-built.
+**There is no flake input, and that is the point.** Upstream ships a
+home-manager module in its flake and this used to use it, but that flake
+publishes no substituter — its cachix cache name is a CI secret — so any
+reference to `packages.default` meant compiling a Qt/C++ project locally on
+every rebuild. `pkgs.noctalia` is on the ordinary binary cache.
 
-The module can't come from nixpkgs, though: home-manager ships no
-`programs.noctalia` and nixpkgs ships only the binary. Without the flake
-input, `config.toml`, the 29 palette files and the build-time
-`noctalia config validate` would all have to be hand-rolled out of
-`xdg.configFile` — which is exactly how a renamed key becomes a setting that
-quietly stops applying.
+What the module generated is small enough to own outright, and `noctalia.nix`
+now writes all three itself:
 
-That split has one consequence worth knowing: the module is from `main`
-(5.0.0) and the binary is the beta.7 tag, and `validateConfig` is the module
-running *that binary* over the config generated here. A key added upstream
-after beta.7 fails the build, naming the key. The fix is one line — put
-`inputs.noctalia.packages.<system>.default` back as the `package` and take the
-local compile until nixpkgs catches up.
+```
+~/.config/noctalia/config.toml       from `settings`
+~/.config/noctalia/palettes/*.json   one per theme, from themes.nix
+the systemd user service             restarted by X-Restart-Triggers
+```
 
-The flake input follows the repo's `main` branch, which is where the current
-major lives — upstream parks the previous one on a branch of its own, and
-`legacy-v4` is there now. So `main` becomes v6 the day v6 lands. `flake.lock`
-means that can't happen by surprise, but the first `nix flake update`
-afterwards would otherwise switch the shell quietly. Two things stop that:
+The one piece worth keeping from it is the build-time check: `noctalia config
+validate` still runs over the generated TOML in a `runCommand`, so a key that
+has been renamed upstream fails the build naming the line instead of being
+dropped in silence. It costs nothing — the binary comes from the cache and it
+only reads a file.
 
-- `programs.noctalia.validateConfig` (on by default) runs
-  `noctalia config validate` over the generated TOML at build time, so a key
-  that has been renamed fails the build with the offending line rather than
-  being dropped in silence.
-- an assertion at the bottom of `noctalia.nix` fails the build if the package
-  is not 5.x, which is the case validation can't see — a schema that still
-  accepts every key and means something different by them.
+The bar comes across slot for slot — same order, same geometry (34px tall,
+12px corners, 88% opaque) — with two deliberate departures.
 
-There is no v5 tag to pin to instead: the v5 tags are all `v5.0.0-beta.*` and
-sit behind `main`, so pinning to one would be a downgrade to a beta.
+**It is spaced out more than waybar was.** waybar ran an 8px gap down to 4 to
+claw back room from a right-hand cluster that had grown to twelve slots. That
+cluster is four slots shorter here, so the gap goes back up (`widget_spacing`
+8, `padding` 16) and the controls read as separate things again rather than
+one run-on strip.
 
-The bar comes across slot for slot — same order, same geometry (34px tall, 4px
-between widgets, 12px corners, 88% opaque), with three additions that had no
-waybar equivalent: a notification history, a clipboard panel, and a control
-centre. That last one is where wifi, bluetooth, audio devices and the power
-profile get real panels, which is most of what the old right-click actions on
-those modules were reaching for — `nm-connection-editor`, `blueman-manager`,
-`pavucontrol`.
+**Four widgets are gone**, each because something else already did the job:
+
+| dropped | because |
+|---|---|
+| `lock` | the session panel next door offers it, and `Mod+L` is the reflex |
+| `clipboard` | `Mod+Ctrl+V`, and the launcher's own clipboard provider |
+| `caffeine` | a control-centre shortcut, and `Mod+Shift+I` |
+| `lock_keys` | the caps-lock OSD says it louder, and only while a key is on |
+
+What stays is either a live reading (brightness, volume, network, bluetooth,
+battery, power profile) or an indicator that means something by being present
+at all (privacy, notifications).
+
+Three things are new, with no waybar equivalent: a notification history, a
+clipboard panel, and a control centre. That last is where wifi, bluetooth,
+audio devices and the power profile get real panels — most of what the old
+right-click actions were reaching for (`nm-connection-editor`,
+`blueman-manager`, `pavucontrol`).
+
+**The panels open under what you clicked.** Attached panels are centred on the
+bar by default, so the control centre — whose widget sits at the far right —
+opened in the middle of the screen and had to be tracked back to the icon that
+produced it. `open_near_click_*` drops the control centre, session, wallpaper
+and clipboard panels directly beneath their widget, which for the right-hand
+cluster means the right-hand side. The launcher is deliberately excluded: it's
+a search box rather than a menu belonging to a widget, it's opened from the
+keyboard as often as the bar, and centred is where a search box belongs.
 
 **Colour does not move.** `themes.nix` stays the single source of truth under
 both shells. Under waybar, `theming.nix` renders each palette into the seven
@@ -346,20 +358,49 @@ config formats those daemons read; under noctalia, `noctalia-palettes.nix`
 renders the same palettes into noctalia's own colour-scheme format and drops
 one JSON file per theme into `~/.config/noctalia/palettes/`, named for the
 theme id. Either way `theme-apply` is the switcher — see
-[Theme switching](#theme-switching) — and kitty, Dolphin and VS Code follow a
-theme change exactly as they did before.
+[Theme switching](#theme-switching).
 
-That last part is the reason noctalia's own template system is turned off in
-`noctalia.nix`. noctalia can push its palette into other apps' configs, and so
-can this repo; both would be writing the same files, and on a NixOS machine
-only one of them can, because `~/.config/kitty/kitty.conf` and
-`~/.config/kdeglobals` are home-manager symlinks into the store and a template
-hook editing them would fail read-only on every theme change. So `theming.nix`
-keeps that job and there is one switcher rather than two.
+Two mechanisms share the rest of that job, and the split is not arbitrary.
 
-The visible cost: changing the colour scheme from noctalia's own Settings
-window moves the shell and nothing else. `theme-apply`, and the `Mod+Shift+T`
-/ `Mod+Ctrl+T` binds that call it, are the supported route.
+`theming.nix` renders all 29 palettes into the config formats this repo
+already had to speak — niri's KDL, kitty's include, `kdeglobals` for Dolphin
+and the KDE file dialogs, VS Code, firefox, wofi — and `theme-apply` moves the
+symlink they all point at. That machinery predates noctalia, works under both
+shells, and is what the SDDM greeter reads too.
+
+noctalia's **templates** fill the gap it left, which is GTK. Nothing in
+`theming.nix` ever wrote a GTK stylesheet, so GTK apps — and every portal and
+file-chooser dialog they open — kept the stock Adwaita palette while the rest
+of the session changed colour. `gtk3` and `gtk4` write
+`~/.config/gtk-{3,4}.0/noctalia.css` and add an `@import` to `gtk.css`, which
+home-manager does not manage here; their apply hook already knows about NixOS
+and replaces a read-only symlink with a real file rather than failing on it.
+`qt` is the same idea for qt5ct/qt6ct, as plain side files with no hook.
+
+Four builtin templates are deliberately **off**, each because the file they
+want to edit is a read-only store symlink here — and each already themed by
+`theming.nix`, so nothing is missing:
+
+| template | would write |
+|---|---|
+| `kcolorscheme` | `~/.config/kdeglobals` |
+| `kitty` | `~/.config/kitty/kitty.conf` |
+| `btop` | `~/.config/btop/btop.conf` |
+| `niri` | `~/.config/niri/config.kdl` |
+
+Changing the colour scheme from noctalia's own Settings window used to move
+the shell and nothing else. It doesn't any more: a `colors_changed` hook calls
+`theme-apply` with whatever scheme noctalia reports. That can't loop, because
+`theme-apply` writes the state file *before* it tells noctalia, so its own
+call finds the name already current and returns.
+
+**The wallpaper reaches the greeter the same way.** `modules/nixos/niri.nix`
+watches `~/.local/state/niri-theme/wallpaper` with a systemd path unit and
+copies whatever it names somewhere the greeter's own user can read. Under the
+waybar stack `wallpaper-set` wrote that file; noctalia owns the wallpaper now,
+so a `wallpaper_changed` hook writes it from `$NOCTALIA_WALLPAPER_PATH`
+instead — through a temp file and a rename, because the path unit fires on
+close and would otherwise read a half-written filename.
 
 **What is lost crossing over.** Two things, both indicators that were rarely
 on screen:
@@ -370,14 +411,50 @@ on screen:
   to poll with; the equivalent would be a Luau plugin. The hooks in
   `gaming.nix` are left alone — their `pkill` finds no waybar and exits into a
   `|| true`.
-- **Most of the lock screen.** `lock-session` builds a hyprlock config per
-  invocation carrying a blurred album-art background, the album cover, media
-  transport buttons, a battery readout and a time-aware greeting. noctalia's
-  lock screen has a blurred snapshot of the desktop and no widgets, which is
-  the one thing hyprlock was being fed album art to approximate. The
-  `local.niri.lockAlbumArt*`, `.lockBatteryIndicator` and greeting options are
-  therefore only read under `"waybar"`, and are left set on both hosts so that
-  going back restores the screen that was there.
+- **The lock screen's album art, and its battery.** `lock-session` builds a
+  hyprlock config per invocation carrying a blurred album-art background, the
+  album cover, media transport buttons, a battery readout and a time-aware
+  greeting. noctalia's lock screen keeps most of that in a different shape —
+  see below — but the album-art background and the charge do not survive.
+  `local.niri.lockAlbumArt*`, `.lockBatteryIndicator` and the greeting flags
+  are therefore only read under `"waybar"`, and are left set on both hosts so
+  that going back restores the screen that was there.
+
+#### The lock screen under noctalia
+
+noctalia draws the login box itself, centred and near the bottom, and it
+already carries most of what a lock screen is asked for: who is logging in,
+what is playing, caps lock, the keyboard layout and the session buttons.
+Nothing in this config places it — a `login_box` entry in `lockscreen_widgets`
+only *overrides* its position, so leaving it out is what keeps the layout
+right on a display whose resolution the config doesn't know.
+
+The one thing it has no equivalent for is the time, so that is the single
+widget `noctalia.nix` adds. Widgets *are* placed by pixel coordinate, per
+output, which is why there's arithmetic behind it: the position is computed
+from the mode already declared in `local.niri.outputs` rather than written
+down a second time, so changing a monitor moves the clock with it. On the desk
+that puts a clock on DP-3 at (1280, 432) and DP-2 at (960, 324).
+
+A host that leaves its layout to niri's auto-detection has no mode to read.
+`local.niri.lockClockOutputs` names the connectors instead — `[ "eDP-1" ]` on
+the laptop — and the position falls back to a 1080p centre. noctalia clamps
+widget coordinates to the output, so on a panel that isn't 1080p the clock
+lands off-centre rather than off-screen.
+
+Two choices there are about cost rather than looks. The clock has
+`background = false`, which drops a rounded rect and an alpha layer per output
+per frame and makes the text shadow load-bearing instead of decorative. And
+`blurred_desktop = false` uses the wallpaper rather than a wlr-screencopy
+snapshot of every output taken at the moment of locking — cheaper, and it
+still works when you lock from an already-blanked screen.
+
+**Battery is not there, and can't be.** noctalia has no battery widget for the
+lock screen or the desktop: the widget types are clock, label, button, sysmon,
+media_player, weather, sticker, volume, the two visualisers and login_box, and
+sysmon's stats are CPU, GPU, RAM, swap and network with nothing for the power
+supply. There's no official plugin for it either. The charge is on the bar and
+in the control centre, and the hyprlock screen under `"waybar"` still draws it.
 
 `local.niri.brightness.device` is also unread under noctalia, but nothing is
 lost: it existed because waybar's backlight module and the `brightness` helper
@@ -687,14 +764,15 @@ Three light options besides `mono-light`: `rose-pine-dawn` is the cool one,
 `gruvbox-light` the yellow one, and `sandstone` — warm paper and sienna —
 sits between them.
 
-`Mod+Shift+T` jumps to a random one, `Mod+Ctrl+T` opens a picker (more useful
-at this count). That matches the wallpaper keys — `Mod+Shift` is the random
-half of both pairs, `Mod+Ctrl` the deliberate half. The theme currently active
-is excluded from the draw, so the key always visibly does something; at 29
-palettes a plain random pick would land on the current one about one press in
-twenty-nine, and a keybind that occasionally appears to do nothing reads as
-broken rather than as chance. `theme-cycle` is still on PATH if you want the
-ordered walk.
+`Mod+Ctrl+T` opens a picker, which at 29 palettes is the useful way in, and
+`Mod+Ctrl+W` does the same for wallpapers.
+
+The `Mod+Shift` halves of both pairs used to jump to a *random* theme and a
+random wallpaper. They're gone. Random is a fine thing to have on a keyboard
+exactly once and a bad thing to have next to the pickers — `Mod+Shift+W` is
+one slip from `Mod+Ctrl+W`, and the slip silently replaced whatever you'd
+chosen. `theme-random`, `theme-cycle` and `wallpaper-random` are all still on
+PATH for when that is genuinely what you want.
 
 The mechanism is worth knowing, because it's what keeps this declarative.
 home-manager owns `~/.config/...` as read-only symlinks into the store, so a
@@ -818,7 +896,7 @@ SDDM only reads its config when the greeter starts, so that lands at the next
 logout or reboot rather than immediately.
 
 Wallpapers use `awww` (the renamed `swww`) over `~/.local/share/wallpapers`:
-`Mod+Shift+W` is random, `Mod+Ctrl+W` picks one. The choice is remembered and
+`Mod+Ctrl+W` picks one. The choice is remembered and
 restored at login.
 
 **Whose theme the machine follows** is `local.desktop.primaryUser`, which
@@ -855,8 +933,8 @@ the greeter and boot menu on the default palette.
 | `Mod+Shift+L` | lock **and** blank the monitors, in one key |
 | `Mod+Escape` | blank the monitors — works on the lock screen too |
 | `Mod+Shift+I` | stay awake — toggle the idle inhibitor |
-| `Mod+Shift+T` / `Mod+Ctrl+T` | random theme, pick theme |
-| `Mod+Shift+W` / `Mod+Ctrl+W` | random wallpaper, pick wallpaper |
+| `Mod+Ctrl+T` | pick a theme |
+| `Mod+Ctrl+W` | pick a wallpaper |
 | volume / brightness keys | change it and show an OSD — see "The on-screen display" |
 | `Mod+P` / `Mod+Ctrl+P` | next / previous power profile — the OSD follows the daemon |
 | `Mod`+scroll / `Mod+Shift`+scroll | walk windows / workspaces (wheel and touchpad) |

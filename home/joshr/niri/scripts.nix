@@ -220,10 +220,15 @@ let
   #   SDDM    picked up by a system path unit watching the file written
   #           below; applies at the next greeter start. See
   #           modules/nixos/niri.nix.
+  #   Limine  picked up by its own system path unit watching that same file;
+  #           rewrites the boot menu colours. See modules/nixos/boot.nix.
+  #   Spotify picked up by its user path unit watching the same state file;
+  #           restarts an already-running themed client. See ../spicetify.nix.
   themeApply = pkgs.writeShellApplication {
     name = "theme-apply";
     runtimeInputs =
       (with pkgs; [
+        coreutils
         libnotify
         systemd
         procps
@@ -243,11 +248,24 @@ let
         *) echo "unknown theme: $name" >&2; exit 1 ;;
       esac
 
+      from_noctalia="''${NIRI_THEME_FROM_NOCTALIA:-0}"
+      previous="$(cat "${stateDir}/current" 2>/dev/null || true)"
+
       mkdir -p "${stateDir}"
       ln -sfn "$target" "${activeDir}"
-      printf %s "$name" > "${stateDir}/current"
+      current_tmp="$(mktemp "${stateDir}/current.XXXXXX")"
+      trap 'rm -f "$current_tmp"' EXIT
+      printf %s "$name" > "$current_tmp"
+      mv -f "$current_tmp" "${stateDir}/current"
+      trap - EXIT
 
-      ${shellApplyTheme}
+      # A Noctalia colors_changed hook is already downstream of the shell
+      # palette change. Do not echo it back into Noctalia and recursively fire
+      # the hook; all other consumers, including both system path units and
+      # Spotify's user path unit, still update below.
+      if [ "$from_noctalia" != 1 ]; then
+        ${shellApplyTheme}
+      fi
       # -x so this matches the kitty process and not, say, an editor that
       # happens to have "kitty" in its command line. Non-zero simply means no
       # terminal is open.
@@ -265,8 +283,10 @@ let
         /KGlobalSettings org.kde.KGlobalSettings.notifyChange \
         int32:0 int32:0 >/dev/null 2>&1 || true
 
-      notify-send -a theme -i preferences-desktop-theme \
-        "Theme" "Switched to $name — Some apps may need to be restarted for $name to apply." || true
+      if [ "$from_noctalia" != 1 ] || [ "$name" != "$previous" ]; then
+        notify-send -a theme -i preferences-desktop-theme \
+          "Theme" "Switched to $name — Some apps may need to be restarted for $name to apply." || true
+      fi
     '';
   };
 

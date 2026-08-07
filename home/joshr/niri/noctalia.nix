@@ -61,8 +61,8 @@ let
   jsonFormat = pkgs.formats.json { };
 
   # The same directories the scripts in ./scripts.nix use, spelled the same
-  # way. `stateDir` in particular is shared with the SDDM sync — see the hooks
-  # below.
+  # way. `stateDir` in particular is the fan-out point shared with the SDDM,
+  # Limine, and Spotify syncs — see the hooks below.
   stateDir = "${config.home.homeDirectory}/.local/state/niri-theme";
   wallpaperDir = "${config.home.homeDirectory}/.local/share/wallpapers";
   screenshotDir = "${config.home.homeDirectory}/Pictures/Screenshots";
@@ -163,11 +163,13 @@ let
   # It does not cover the colour scheme being changed from noctalia's own
   # Settings window, which is the case this closes.
   #
-  # **Why this does not loop.** `theme-apply` writes `current` *before* it
-  # calls `color-scheme-set`, so when its own call fires this hook the name
-  # noctalia reports already matches `current` and the guard below returns.
-  # A change made in the GUI does not match, so `theme-apply` runs once, which
-  # fires the hook once more, which then matches and stops.
+  # **Why this does not loop.** The environment flag below tells `theme-apply`
+  # that noctalia is already the source of the change, so it applies every
+  # non-shell consumer but does not send `color-scheme-set` back to noctalia.
+  # Running the switcher even when the name is unchanged is intentional: it
+  # atomically replaces `current`, which reliably wakes the SDDM and Limine
+  # system path units and Spotify's user path unit after a missed or
+  # late-starting sync.
   #
   # `color-scheme-get` prints `<source> <name>`; anything other than a `custom`
   # source is a palette that did not come from themes.nix and that there is no
@@ -177,7 +179,6 @@ let
     runtimeInputs = [
       pkg
       niriScripts.themeApply
-      pkgs.coreutils
     ];
     text = ''
       line="$(noctalia msg color-scheme-get 2>/dev/null || true)"
@@ -190,10 +191,7 @@ let
       [ "$source" = "custom" ] || exit 0
       [ -n "$name" ] || exit 0
 
-      current="$(cat ${lib.escapeShellArg "${stateDir}/current"} 2>/dev/null || true)"
-      [ "$name" != "$current" ] || exit 0
-
-      theme-apply "$name"
+      NIRI_THEME_FROM_NOCTALIA=1 theme-apply "$name"
     '';
   };
 
@@ -357,7 +355,10 @@ let
           box_width = loginW;
           box_height = loginH;
 
-          settings.show_session_buttons = false;
+          settings = {
+            show_session_buttons = false;
+            show_weather = false;
+          };
         })
         (lib.nameValuePair "clock_time_${o.name}" (
           lib.recursiveUpdate common {
@@ -575,12 +576,11 @@ let
       #   lock       the session panel next door offers it, and Mod+L is the
       #              reflex anyway
       #   clipboard  Mod+Ctrl+V, and the launcher's own clipboard provider
-      #   caffeine   a control-centre shortcut, and Mod+Shift+I
       #   lock_keys  the caps-lock OSD says it louder, and this only ever had
       #              anything to show while a key was actually held on
       #
       # What stays is either a live reading (brightness, volume, network,
-      # bluetooth, battery, power profile) or an indicator that means
+      # bluetooth, battery) or an indicator that means
       # something by being present at all (privacy, notifications).
       end =
 	visualiser
@@ -594,13 +594,12 @@ let
           "network"
           "privacy"
 
-          # battery and the power profile drawn flush as one control, which is
-          # what waybar's `group/power` did. Unconditional on every host for
-          # the reason the waybar group was: both halves hide themselves when
-          # they have nothing to say, so the desk draws the profile alone and
-          # the laptop draws both.
+          # Battery and the requested Caffeine toggle drawn flush as one
+          # control. Caffeine takes the slot that previously showed the power
+          # profile, so the right-hand cluster does not grow wider.
           "group:power"
 
+          "wallpaper"
           "control-center"
           "session"
         ];
@@ -610,7 +609,7 @@ let
           id = "power";
           members = [
             "battery"
-            "power_profile"
+            "caffeine"
           ];
         }
       ];
@@ -693,7 +692,7 @@ let
       # Dolphin and the KDE file dialogs, VS Code, firefox, wofi — and hands
       # each app a path under ~/.local/state/niri-theme/active. `theme-apply`
       # moves that symlink. That machinery predates noctalia, works under both
-      # shells, and is what the SDDM greeter reads too.
+      # shells, and feeds SDDM, Limine, and the themed Spotify launcher too.
       #
       # noctalia's templates now cover the rest, including the gap theming.nix
       # left: **GTK**. Nothing in theming.nix ever wrote a GTK stylesheet, so
@@ -943,7 +942,10 @@ let
 
     # --- hooks ------------------------------------------------------------
     hooks = {
-      started = lib.getExe niriOverviewSync;
+      started = [
+        (lib.getExe themeResync)
+        (lib.getExe niriOverviewSync)
+      ];
       wallpaper_changed = lib.getExe sddmWallpaperSync;
       colors_changed = [
         (lib.getExe themeResync)

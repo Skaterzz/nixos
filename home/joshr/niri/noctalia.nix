@@ -701,7 +701,7 @@ let
       reserve_space = true;
 
       start = [
-        "user"
+        "launcher_button"
         "workspaces"
         "active_window"
       ];
@@ -758,23 +758,30 @@ let
       # every one of the changes below removes something that was on screen
       # permanently while saying nothing that changed.
 
-      # Who the session belongs to, first thing on the bar — the same
-      # `custom/user` slot with the same glyph.
+      # The launcher, first thing on the bar, as the NixOS snowflake.
       #
-      # The username has moved from the label to the tooltip. It is still read
-      # from `config.home.username` rather than written down, so a second
-      # user's generation still renders their own name; it is simply not a
-      # thing that needs to be on screen at all times, because the one person
-      # who can read this bar already knows whose session it is. What is left
-      # is a round icon button, which is also what the four buttons at the
-      # other end of the bar are.
+      # This slot has been through three shapes. Under waybar it was
+      # `custom/user`: static text with no `exec` and no action, printing the
+      # username. It became a glyph that opens the launcher — which is the
+      # entry point wofi never had a bar slot for at all — and the username
+      # moved to the tooltip. Now it says what it *does* rather than who it
+      # belongs to, which is the only one of the three that a stranger could
+      # read correctly.
       #
-      # It has gained a job since waybar, where this was static text with no
-      # `exec` and no action: it opens the launcher, which is the entry point
-      # wofi had no bar slot for at all.
-      user = {
+      # `custom_image` overrides `glyph`, and `custom_image_colorize` is what
+      # keeps it from being the one thing on the bar that ignores the palette:
+      # the snowflake is drawn as a flat accent-coloured mark, the same weight
+      # as the glyphs in the right-hand cluster, and it follows a colour-scheme
+      # change with everything else. Set `custom_image_colorize = false` for
+      # the artwork's own two blues instead.
+      #
+      # `nixos-icons` is the NixOS artwork repository packaged in Freedesktop
+      # icon layout; the scalable copy is the same shape of file as every
+      # application icon the launcher itself resolves.
+      launcher_button = {
         type = "custom_button";
-        glyph = "user";
+        custom_image = "${pkgs.nixos-icons}/share/icons/hicolor/scalable/apps/nix-snowflake.svg";
+        custom_image_colorize = true;
         tooltip = "Applications — ${config.home.username}";
         command = "noctalia msg panel-toggle launcher";
       };

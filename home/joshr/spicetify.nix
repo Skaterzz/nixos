@@ -97,36 +97,87 @@ let
     // Noctalia derives palettes from a wallpaper or a downloaded community
     // scheme at runtime, long after this immutable theme was built. A tiny
     // loopback-only service exposes the resolved variables written by the
-    // shell's template; replace one style element instead of rebuilding
+    // shell's template; override the custom properties instead of rebuilding
     // Spotify.
+    //
+    // Two mechanisms, because they fail differently.
+    //
+    // The <link> is the floor. A stylesheet subresource is fetched in no-cors
+    // mode, so it needs no preflight, no CORS headers and no agreement about
+    // address spaces — if the service is up when Spotify starts, the palette
+    // is right. That is the case that actually matters, because a colour
+    // scheme changes far less often than Spotify is launched.
+    //
+    // The fetch is what makes an *already open* Spotify follow a change. It
+    // is the one subject to the Private Network Access preflight described in
+    // spicetify.nix, and it writes a <style> appended after the link, so when
+    // both work the later one wins and they agree anyway.
     (() => {
       const endpoint = "http://127.0.0.1:38471/colors.css";
-      const id = "noctalia-live-colors";
+      const linkId = "noctalia-live-colors-link";
+      const styleId = "noctalia-live-colors";
+
+      function installLink() {
+        if (document.getElementById(linkId)) return;
+        const link = document.createElement("link");
+        link.id = linkId;
+        link.rel = "stylesheet";
+        link.href = endpoint;
+        document.head.appendChild(link);
+      }
 
       async function syncNoctaliaColors() {
         try {
           const response = await fetch(endpoint, { cache: "no-store" });
           if (!response.ok) return;
           const css = await response.text();
-          let style = document.getElementById(id);
+          let style = document.getElementById(styleId);
           if (!style) {
             style = document.createElement("style");
-            style.id = id;
+            style.id = styleId;
             document.head.appendChild(style);
           }
           if (style.textContent !== css) style.textContent = css;
         } catch (_) {
-          // The service is absent under the non-Noctalia shell; the static
-          // color.ini above remains the fallback.
+          // The service is absent under the non-Noctalia shell, and the
+          // static color.ini baked into this theme remains the fallback.
         }
       }
 
-      syncNoctaliaColors();
-      setInterval(syncNoctaliaColors, 2000);
+      function start() {
+        installLink();
+        syncNoctaliaColors();
+        setInterval(syncNoctaliaColors, 2000);
+      }
+
+      // Spicetify injects this with `defer`, so the head is parsed by now.
+      // The guard is for the case where it is loaded some other way.
+      if (document.head) {
+        start();
+      } else {
+        document.addEventListener("DOMContentLoaded", start, { once: true });
+      }
     })();
     THEME_JS
   '';
 
+  # Serves exactly one file, to exactly one client, on the loopback interface.
+  #
+  # **The preflight is the whole reason this needed fixing.** Spotify's UI is a
+  # document on `https://xpui.app.spotify.com`, which is a *public* address
+  # space as far as Chromium is concerned, and 127.0.0.1 is the *loopback* one.
+  # Private Network Access makes that pairing a preflighted request even for a
+  # plain GET: the renderer sends `OPTIONS` carrying
+  # `Access-Control-Request-Private-Network: true` and requires the response to
+  # answer with `Access-Control-Allow-Private-Network: true` before it will
+  # issue the real request at all.
+  #
+  # `SimpleHTTPRequestHandler` implements GET and HEAD and nothing else, so the
+  # preflight was being answered `501 Unsupported method ('OPTIONS')` — and a
+  # failed preflight means the GET never happens. The CORS header this already
+  # sent was correct and never got the chance to matter. That is why Spotify
+  # sat on the palette it was built with while every other application in the
+  # session followed the shell.
   paletteServer = pkgs.writeText "noctalia-spotify-palette-server.py" ''
     from functools import partial
     from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
@@ -137,8 +188,16 @@ let
 
         def end_headers(self):
             self.send_header("Access-Control-Allow-Origin", "*")
+            self.send_header("Access-Control-Allow-Private-Network", "true")
             self.send_header("Cache-Control", "no-store")
             super().end_headers()
+
+        def do_OPTIONS(self):
+            self.send_response(204)
+            self.send_header("Access-Control-Allow-Methods", "GET, HEAD, OPTIONS")
+            self.send_header("Access-Control-Allow-Headers", "*")
+            self.send_header("Access-Control-Max-Age", "86400")
+            self.end_headers()
 
     handler = partial(Handler, directory=${builtins.toJSON spotifyPaletteDir})
     ThreadingHTTPServer(("127.0.0.1", 38471), handler).serve_forever()
@@ -212,20 +271,25 @@ in
   # there is nothing to choose and both go away.
   home.packages = [ spicedSpotify ];
 
-  # Serves exactly one file, to exactly one client, on the loopback interface.
+  # A plain long-running service rather than a socket unit: it has to be up
+  # before Spotify's first request and stay up for the life of the session,
+  # and the <link> in theme.js is a page-load subresource with no retry — so
+  # there is no first request to activate on and being late is being absent.
   #
-  # `Restart = on-failure` rather than a socket unit because it has to be up
-  # before Spotify's first poll and stay up for the life of the session; there
-  # is no first request to activate on.
+  # `Restart = always` with the start limit lifted, because the one way this
+  # dies is the port already being held, and the holder is a previous instance
+  # of itself on its way out. Giving up after five attempts would leave the
+  # session with no palette service until the next login.
   systemd.user.services.noctalia-spotify-palette = lib.mkIf (config.local.niri.shell == "noctalia") {
     Unit = {
       Description = "Expose Noctalia's resolved palette to Spotify";
       After = [ "graphical-session.target" ];
+      StartLimitIntervalSec = 0;
     };
     Service = {
       ExecStartPre = "${pkgs.coreutils}/bin/mkdir -p ${spotifyPaletteDir}";
       ExecStart = "${pkgs.python3}/bin/python ${paletteServer}";
-      Restart = "on-failure";
+      Restart = "always";
       RestartSec = 2;
     };
     Install.WantedBy = [ "default.target" ];

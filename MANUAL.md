@@ -369,14 +369,18 @@ battery) or an indicator that means something by being present at all
 (privacy, notifications, gamemode, caffeine).
 
 **The left cluster is deliberately quiet**: one icon, one row of pills, one
-line of text. The user button is a glyph with the username in its tooltip
-rather than beside it — the one person who can read this bar already knows
-whose session it is — and it opens the launcher, which is the entry point
-wofi never had a bar slot for. Workspaces label only the occupied ones, so
-the empty workspace niri always keeps at the end of the row is a plain dot
-instead of a number standing in for nothing. The window title draws nothing
-at all when nothing is focused (`show_empty_label = false`, `min_length = 0`),
-so the cluster ends where its content does rather than reserving a slot.
+line of text. The first slot is the NixOS snowflake and it opens the launcher
+— the entry point wofi never had a bar slot for. It is drawn through
+`custom_image` with `custom_image_colorize`, so it is a flat accent-coloured
+mark that follows a colour-scheme change like every other glyph on the bar;
+`custom_image_colorize = false` gets the artwork's own two blues instead. The
+username lives in its tooltip rather than beside it — the one person who can
+read this bar already knows whose session it is. Workspaces label only the
+occupied ones, so the empty workspace niri always keeps at the end of the row
+is a plain dot instead of a number standing in for nothing. The window title
+draws nothing at all when nothing is focused (`show_empty_label = false`,
+`min_length = 0`), so the cluster ends where its content does rather than
+reserving a slot.
 
 **`max_length` is a width in pixels**, on both the window title and the now
 playing widget, capped at 800 by the widgets themselves — not a count of
@@ -1173,9 +1177,10 @@ What changed:
 - Spotify is one Spicetify build instead of thirty. Its colours arrive at
   runtime: noctalia renders `--spice-*` custom properties to a file, a
   loopback-only service on `127.0.0.1:38471` exposes it, and the theme's
-  `theme.js` swaps one `<style>` element. It has to be HTTP rather than a file
-  read because that JavaScript runs in Spotify's renderer, where `fetch` on a
-  `file://` URL is blocked outright.
+  `theme.js` applies it. It has to be HTTP rather than a file read because
+  that JavaScript runs in Spotify's renderer, where `fetch` on a `file://` URL
+  is blocked outright. See "Spotify" below — that route took two further goes
+  to actually work.
 - `noctalia-builtin-themes.nix` — a 500-line hand transcription of noctalia's
   own builtin palettes, kept so the greeter and boot menu could be given a
   prebuilt match — is deleted. Nothing could ever select it.
@@ -1232,7 +1237,56 @@ template's hook edits the file in place:
 `spicetify` is enabled and renders the Comfy and Colorful `color.ini` files,
 but its post-hook runs `spicetify apply`, which is inert here — that patches a
 mutable Spotify install and this one is a read-only store path. Spotify's
-actual colours come from the route described above.
+actual colours come from the route described next.
+
+#### Spotify
+
+A Spicetify build is immutable — `mkSpicetify` patches Spotify's xpui bundle
+inside a derivation — so the palette cannot be baked in. What makes it follow
+anyway is that the Text theme's stylesheet is written entirely in
+`var(--spice-*)` custom properties, with no hardcoded colours at all: redefine
+those on `:root` at runtime and the whole UI moves.
+
+The chain is four links, and each one had to be checked before this worked:
+
+1. noctalia's `spotify` user template renders the properties to
+   `~/.local/state/noctalia-spotify/colors.css` on every colour-scheme change
+2. `noctalia-spotify-palette`, a loopback-only HTTP service, exposes that file
+3. Spicetify's `inject_theme_js` copies the theme's `theme.js` to
+   `xpui/extensions/theme.js` and adds `<script defer>` for it to `index.html`
+4. that script installs the CSS
+
+**Link 2 was returning `501` to the preflight.** Spotify's UI is a document on
+`https://xpui.app.spotify.com`, which Chromium classes as a *public* address
+space, and `127.0.0.1` is the *loopback* one. Private Network Access makes
+that pairing preflighted even for a plain `GET`: the renderer sends `OPTIONS`
+with `Access-Control-Request-Private-Network: true` and will not issue the
+real request unless the response carries
+`Access-Control-Allow-Private-Network: true`. Python's
+`SimpleHTTPRequestHandler` implements `GET` and `HEAD` and nothing else, so
+the preflight was answered `501 Unsupported method ('OPTIONS')` — and a failed
+preflight means the `GET` never happens. The `Access-Control-Allow-Origin`
+header that was already being sent was correct and never got the chance to
+matter.
+
+**Link 4 was also only half doing its job**, independently of that. Spicetify
+defines every scheme colour *twice* — `--spice-<name>` as a hex literal and
+`--spice-rgb-<name>` as a bare `r,g,b` triple, so a theme can write
+`rgba(var(--spice-rgb-main), 0.5)` and vary the alpha. The Text theme uses
+fifteen of the rgb variants; the template overrode none of them. Even with the
+transport fixed, that would have re-themed the opaque surfaces and left every
+translucent one — backgrounds, hovers, shadows — on the palette the Nix build
+was made with, which reads worse than not following at all. Both families are
+emitted now, from the same colour role.
+
+The script installs the CSS **two ways**, because they fail differently. A
+`<link rel="stylesheet">` is fetched in no-cors mode: no preflight, no CORS
+headers, no argument about address spaces. If the service is up when Spotify
+starts, the palette is right — and that is the case that matters, since a
+colour scheme changes far less often than Spotify is launched. The polling
+`fetch` is what makes an *already open* Spotify follow a change; it is the one
+subject to the preflight above, and it writes a `<style>` appended after the
+link, so when both work the later one wins and they agree anyway.
 
 ### Keys
 

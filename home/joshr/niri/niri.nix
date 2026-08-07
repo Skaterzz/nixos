@@ -131,11 +131,29 @@ let
   # `has_noctalia_include` check passes and it returns without touching the
   # file. See the templates note in ./noctalia.nix.
   #
+  # **`optional=true` is load-bearing, and leaving it off broke everything.**
+  # niri treats a missing include as a hard parse error — the tolerant branch
+  # in its `include` handler is reached only when the node carries this
+  # property (niri-config/src/lib.rs), and without it a `failed to read
+  # included config` aborts the *whole* config, not just the themed part. That
+  # is the state a session is in before noctalia has ever applied its
+  # templates: the file is named here at build time and only written the first
+  # time the shell renders a palette, so a fresh install, a new user, or a
+  # `theme-apply` that has not happened yet all leave it absent.
+  #
+  # The hook's own `has_noctalia_include` regex allows trailing content after
+  # the filename, so the property does not stop it recognising the line.
+  #
+  # Relative rather than absolute, which is safe despite config.kdl being a
+  # symlink into the store: niri joins a relative include onto the parent of
+  # the path it was *given* and never canonicalises it, so this resolves to
+  # ~/.config/niri/noctalia.kdl rather than to somewhere in /nix/store.
+  #
   # Deliberately *after* the theme include above. Both set the focus ring and
   # border colours and the later one wins; they are drawn from the same
   # palette either way, but a single rule about which is authoritative beats
   # two that happen to agree.
-  noctaliaInclude = lib.optionalString useNoctalia ''include "noctalia.kdl"'';
+  noctaliaInclude = lib.optionalString useNoctalia ''include "noctalia.kdl" optional=true'';
   # finalPackage rather than pkgs.firefox: that's the wrapper home-manager
   # actually installs, carrying whatever ../firefox.nix declares beyond plain
   # prefs. Naming the raw package here would launch a second, unwrapped build.

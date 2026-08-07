@@ -425,7 +425,7 @@ and the hook finds its job already done.
 | `kitty` | `include themes/noctalia.conf` | `programs.kitty.extraConfig` |
 | `btop` | `color_theme = "noctalia"` | `programs.btop.settings` (mkForce) |
 | `cava` | `[color] theme = "noctalia"` | `xdg.configFile."cava/config"` |
-| `niri` | `include "noctalia.kdl"` | written into `config.kdl` by `niri.nix` |
+| `niri` | `include "noctalia.kdl" optional=true` | written into `config.kdl` by `niri.nix` |
 | `gtk3`/`gtk4` | — | `gtk.css` isn't managed; their hook already handles NixOS |
 | `qt` | — | plain side files for qt5ct/qt6ct, no hook |
 | `alacritty` | — | not installed and not managed; the hook creates its own |
@@ -438,6 +438,35 @@ home-manager therefore stops owning that file and an activation step seeds a
 real one from `home/common/files/starship.toml`, which stays the source of
 truth: the step strips the hook's block before diffing, so a theme change never
 looks like drift, and re-seeds when the repo's copy actually changes.
+
+**`optional=true` on the niri include is load-bearing.** niri treats a missing
+include as a hard parse error — the tolerant branch is reached only when the
+node carries that property — so without it, a session that has not yet had
+noctalia render its templates fails to parse its config *entirely*, not just
+the themed part. That is the state on a fresh install, a new user, or before
+the first `theme-apply`. The hook's own regex allows trailing content after the
+filename, so the property doesn't stop it recognising the line. The path stays
+relative, which is safe even though `config.kdl` is a store symlink: niri joins
+a relative include onto the parent of the path it was *given* and never
+canonicalises it.
+
+**The overrides file can silently shadow all of this.**
+`~/.local/state/noctalia/settings.toml` is read after `config.toml` and wins,
+which is right for something changed in the Settings window and wrong for the
+widget placements, because noctalia writes those itself without being asked —
+`setLockscreenWidgetsState` serialises every widget *and* a `widget_order`, and
+the shell seeds a login box into it on its own. `widget_order` is what makes it
+an override rather than a merge: the reader treats an order list as the
+definitive membership list, so a stale one naming `clock_DP-3` drops the
+`clock_time_DP-3` and `clock_date_DP-3` declared here outright — and the
+Poppins family and the two boxes that make the time bigger than the date then
+look like they did nothing.
+
+The activation step strips those two sections on every switch, so what is
+declared applies again. Only those two: everything else in that file is a real
+preference, and the wallpaper especially is genuine runtime state — noctalia
+records the current image per monitor there, and dropping it would reset the
+desktop to `wallpaper.default.path` on every `home-manager switch`.
 
 **`kcolorscheme` stays off.** Its post-action writes `~/.config/kdeglobals`
 unconditionally, and `default.nix` points that at the active theme as an

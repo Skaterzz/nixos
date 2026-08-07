@@ -915,6 +915,49 @@ let
         ${pkgs.coreutils}/bin/rm -rf "$probeDir"
       fi
     fi
+
+    # --- and drop the widget placements it persists ------------------------
+    #
+    # The overrides file is read *after* config.toml and wins, which is right
+    # for something the user changed in the Settings window and wrong for the
+    # two sections below, because noctalia writes those itself without being
+    # asked. `setLockscreenWidgetsState` / `setDesktopWidgetsState` serialise
+    # the whole placement — every widget *and* a `widget_order` — and the
+    # shell seeds a login box into it on its own.
+    #
+    # `widget_order` is what makes this a silent override rather than a merge:
+    # the reader treats an order list as the definitive membership list, so a
+    # stale one naming `clock_DP-3` drops the `clock_time_DP-3` and
+    # `clock_date_DP-3` declared here entirely. Everything about the lock
+    # screen clock — the Poppins family, the two boxes that make the time
+    # bigger than the date — then looks like it did nothing.
+    #
+    # Only these two sections. Everything else in that file is a real
+    # preference, and the wallpaper in particular is genuine runtime state:
+    # noctalia records the current image per monitor under `wallpaper.…` and
+    # dropping it would reset the desktop to `wallpaper.default.path` on every
+    # `home-manager switch`.
+    if [ -f "$stateFile" ]; then
+      trimmed="$(${pkgs.coreutils}/bin/mktemp)"
+
+      # Delete each `[section]` and `[section.sub]` block by tracking which
+      # table the current line belongs to: a header switches tables, and
+      # everything until the next header belongs to the one just seen.
+      ${pkgs.gawk}/bin/awk '
+        /^[[:space:]]*\[\[?[a-zA-Z0-9_.-]+\]?\]/ {
+          drop = ($0 ~ /^[[:space:]]*\[\[?(lockscreen_widgets|desktop_widgets)([].[])/)
+        }
+        !drop
+      ' "$stateFile" > "$trimmed"
+
+      if ! ${pkgs.diffutils}/bin/cmp -s "$stateFile" "$trimmed"; then
+        $DRY_RUN_CMD ${pkgs.coreutils}/bin/cp -f "$trimmed" "$stateFile"
+        echo "noctalia: dropped persisted widget placements from settings.toml;" >&2
+        echo "noctalia: the ones declared in config.toml apply again." >&2
+      fi
+
+      ${pkgs.coreutils}/bin/rm -f "$trimmed"
+    fi
   '';
 in
 {

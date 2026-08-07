@@ -237,6 +237,8 @@ let
         ${lib.escapeShellArg "${liveThemeDir}/kdeglobals"}
         ${lib.escapeShellArg "${liveThemeDir}/vscode-extension/package.json"}
         ${lib.escapeShellArg "${liveThemeDir}/vscode-extension/themes/niri-color-theme.json"}
+        ${lib.escapeShellArg "${liveThemeDir}/wofi.css"}
+        ${lib.escapeShellArg "${liveThemeDir}/wofi-emoji.css"}
         ${lib.escapeShellArg "${spotifyThemeDir}/colors.css"}
         ${lib.escapeShellArg "${config.xdg.configHome}/Vencord/themes/noctalia.theme.css"}
         ${lib.escapeShellArg "${config.xdg.configHome}/vesktop/themes/noctalia.theme.css"}
@@ -1017,6 +1019,23 @@ let
             output_path = "${liveThemeDir}/vscode-extension/themes/niri-color-theme.json";
             index = 120;
           };
+          # wofi is not the launcher any more, but `theme-menu`,
+          # `wallpaper-menu` and `session-menu` in ./scripts.nix all still
+          # drive it as a plain `--dmenu`, and ./emoji.nix passes it a second
+          # stylesheet with bigger rows. Both are named under `active` by
+          # those modules, which under this shell is the live directory — so
+          # without these two the menus would come up in wofi's own default
+          # look while everything around them followed the palette.
+          wofi = {
+            input_path = "${config.xdg.configHome}/noctalia/templates/wofi.css";
+            output_path = "${liveThemeDir}/wofi.css";
+            index = 125;
+          };
+          wofi_emoji = {
+            input_path = "${config.xdg.configHome}/noctalia/templates/wofi-emoji.css";
+            output_path = "${liveThemeDir}/wofi-emoji.css";
+            index = 126;
+          };
           spotify = {
             input_path = "${config.xdg.configHome}/noctalia/templates/spotify.css";
             output_path = "${spotifyThemeDir}/colors.css";
@@ -1571,6 +1590,8 @@ in
       "noctalia/templates/vencord.css".source = ./noctalia-templates/vencord.css;
       "noctalia/templates/vscode-package.json".source = ./noctalia-templates/vscode-package.json;
       "noctalia/templates/vscode.json".source = ./noctalia-templates/vscode.json;
+      "noctalia/templates/wofi.css".source = ./noctalia-templates/wofi.css;
+      "noctalia/templates/wofi-emoji.css".source = ./noctalia-templates/wofi-emoji.css;
     }
     // lib.mapAttrs' (
       name: palette:

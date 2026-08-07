@@ -480,6 +480,22 @@ relative, which is safe even though `config.kdl` is a store symlink: niri joins
 a relative include onto the parent of the path it was *given* and never
 canonicalises it.
 
+**`config.kdl` carries exactly one theme include**, and which one depends on
+the shell. `"waybar"` gets `include "<active>/niri.kdl"` — a file
+`theming.nix` renders into every prebuilt palette directory. `"noctalia"` gets
+the `noctalia.kdl` line above and *not* the other one, because `active` points
+at `noctalia-live` under that shell and nothing has ever written a `niri.kdl`
+there; noctalia's `niri` template renders `~/.config/niri/noctalia.kdl`
+instead.
+
+Emitting both was a hard failure rather than a cosmetic one — the
+`<active>/niri.kdl` include carries no `optional=true`, so
+`failed to read included config` aborted the whole config and the session came
+up with niri's defaults. It survived as long as it did because `theming.nix`'s
+activation used to repoint `active` at a prebuilt directory on every switch,
+which is the same clobbering that put the greeter, the boot menu and Spotify
+on the wrong palette. Removing that is what exposed this.
+
 **The overrides file can silently shadow all of this.**
 `~/.local/state/noctalia/settings.toml` is read after `config.toml` and wins,
 which is right for something changed in the Settings window and wrong for the
@@ -1124,6 +1140,7 @@ the same lines it describes `gruvbox`.
 | kitty, btop, cava, GTK, Qt, niri, starship | noctalia's own builtin templates |
 | Dolphin and every Qt app | `kdeglobals`, via the `active` symlink |
 | VS Code | a generated one-theme extension, via the same symlink |
+| wofi | `wofi.css` and `wofi-emoji.css`, via the same symlink |
 | Vencord / Vesktop | a theme CSS written straight into their theme directories |
 | Spotify | live CSS over loopback — see below |
 | SDDM | `noctalia-resolved`, substituted into the greeter's config |
@@ -1162,6 +1179,23 @@ What changed:
 - `noctalia-builtin-themes.nix` — a 500-line hand transcription of noctalia's
   own builtin palettes, kept so the greeter and boot menu could be given a
   prebuilt match — is deleted. Nothing could ever select it.
+
+**Two things had been leaning on that clobbering** without anyone noticing,
+because it kept `active` pointing at a directory that had *every* rendered
+file in it. Both are fixed by making noctalia write what it needs rather than
+by putting the clobbering back:
+
+- **niri's theme include.** See "`optional=true` on the niri include" above:
+  `config.kdl` now emits one include, chosen by shell, instead of two.
+- **wofi's stylesheets.** wofi is no longer the launcher under noctalia, but
+  `theme-menu`, `wallpaper-menu` and `session-menu` still drive it as a plain
+  `--dmenu` and the emoji picker passes it a second sheet with bigger rows.
+  Both are named under `active`, so two user templates now render `wofi.css`
+  and `wofi-emoji.css` into the live directory. They are the same stylesheets
+  `theming.nix` produces, with one improvement the move made free: the text on
+  a selected row is `on_primary` rather than the palette's background colour,
+  which is the same light-palette assumption `noctalia-palettes.nix` already
+  stopped making.
 
 **Community templates** are on, listed by catalog id in
 `home/joshr/niri/noctalia.nix`. They come from `noctalia-dev/community-templates`,

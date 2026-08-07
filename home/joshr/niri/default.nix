@@ -232,10 +232,19 @@
   # and without it the merge order between two modules isn't defined.
   #
   # The theme switcher reloads running terminals; see scripts.nix.
-  programs.kitty.extraConfig = lib.mkAfter ''
+  #
+  # Only under the waybar stack. noctalia's `kitty` template renders the same
+  # palette to ~/.config/kitty/themes/noctalia.conf and ./noctalia.nix adds
+  # the include for it; carrying both would leave two `include` lines setting
+  # the same colours, where kitty takes the last value for any key and which
+  # one that is would come down to the merge order of two `mkAfter`s. One
+  # writer per shell instead.
+  programs.kitty.extraConfig = lib.mkIf (config.local.niri.shell == "waybar") (
+    lib.mkAfter ''
 
-    include ${niriTheming.activeDir}/kitty.conf
-  '';
+      include ${niriTheming.activeDir}/kitty.conf
+    ''
+  );
 
   # Enable Dolphin's Git version-control integration while leaving dolphinrc
   # writable, so Dolphin can still save its other preferences normally.

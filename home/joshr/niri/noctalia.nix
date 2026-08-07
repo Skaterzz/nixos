@@ -211,8 +211,24 @@ let
         scale = o.scale;
       }) config.local.niri.outputs;
 
+  # Two clock widgets per output rather than one with a two-line format.
+  #
+  # A clock widget has one font size, so "time bigger than the date" cannot be
+  # done inside a single `format` string — it needs two widgets sized
+  # independently. And the *only* size control noctalia exposes for a lock
+  # screen widget is the box: with both `box_width` and `box_height` set the
+  # widget scales its content to fill them, aspect-preserved
+  # (`contentScaleForBox`), and the clock's font is
+  # `fontSizeBody * 4 * contentScale`. There is no `font_size` setting, and no
+  # `scale` key on a widget in this version. So the boxes below *are* the type
+  # scale, and they are fractions of the output rather than fixed pixels so
+  # the proportions hold on a 1080p panel and a 1440p one alike.
+  #
+  # Stacked with the time's box directly above the date's, both centred on the
+  # same x. The pair sits a little above the third of the screen — high enough
+  # to clear the login box noctalia draws near the bottom.
   lockClockWidgets = lib.listToAttrs (
-    map (
+    lib.concatMap (
       o:
       let
         parsed = if o.mode == null then null else parseMode o.mode;
@@ -223,37 +239,68 @@ let
         # `position` fields in local.niri.outputs are written in.
         w = builtins.floor ((if parsed == null then 1920 else parsed.w) / (scale + 0.0));
         h = builtins.floor ((if parsed == null then 1080 else parsed.h) / (scale + 0.0));
-      in
-      lib.nameValuePair "clock_${o.name}" {
-        type = "clock";
-        output = o.name;
 
-        # Horizontally centred, a bit above the third — high enough to clear
-        # the login box, low enough not to sit on the very top edge.
+        timeW = builtins.floor (w * 0.30);
+        timeH = builtins.floor (h * 0.13);
+        dateW = builtins.floor (w * 0.22);
+        dateH = builtins.floor (h * 0.045);
+
         cx = w / 2;
-        cy = builtins.floor (h * 0.30);
+        timeCy = builtins.floor (h * 0.26);
 
-        settings = {
-          clock_style = "digital";
+        # Baselines touch rather than overlap: half of each box plus a small
+        # gap. Derived from the boxes above so changing the type scale moves
+        # the date with it instead of leaving a hole.
+        dateCy = timeCy + builtins.floor (timeH * 0.5) + builtins.floor (dateH * 0.5) + builtins.floor (h * 0.012);
 
-          # Time over date, matching the bar's own 12-hour format. `%-I` drops
-          # the leading zero, which reads better at lock-screen size than the
-          # bar's padded `%I` does at 13px.
-          format = "{:%-I:%M %p}\n{:%A, %B %-d}";
-          center_text = true;
+        common = {
+          type = "clock";
+          output = o.name;
 
-          # No panel behind it. A slab of surface colour under a clock on top
-          # of a wallpaper is the least elegant thing the widget can do, and
-          # it is also the expensive one — dropping it drops a rounded-rect
-          # and an alpha layer per output per frame.
-          background = false;
+          settings = {
+            clock_style = "digital";
+            center_text = true;
 
-          # Which makes the text shadow load-bearing rather than decorative:
-          # it is the only thing keeping the time legible over a pale
-          # wallpaper now that there is no panel behind it.
-          shadow = true;
+            # Poppins for both. It is a geometric sans with a tall x-height,
+            # which is what makes a very large time read as deliberate rather
+            # than as the UI font blown up — and the shell's own
+            # FiraCode Nerd Font is a monospace, which at this size looks like
+            # a terminal rather than a clock.
+            font_family = "Poppins";
+
+            # No panel behind either. A slab of surface colour under a clock
+            # on top of a wallpaper is the least elegant thing the widget can
+            # do, and it is also the expensive one — it drops a rounded rect
+            # and an alpha layer per widget per output per frame.
+            background = false;
+
+            # Which makes the text shadow load-bearing rather than
+            # decorative: with no panel behind it, it is the only thing
+            # keeping the time legible over a pale wallpaper.
+            shadow = true;
+          };
         };
-      }
+      in
+      [
+        (lib.nameValuePair "clock_time_${o.name}" (
+          lib.recursiveUpdate common {
+            cx = cx;
+            cy = timeCy;
+            box_width = timeW;
+            box_height = timeH;
+            settings.format = "{:%-I:%M %p}";
+          }
+        ))
+        (lib.nameValuePair "clock_date_${o.name}" (
+          lib.recursiveUpdate common {
+            cx = cx;
+            cy = dateCy;
+            box_width = dateW;
+            box_height = dateH;
+            settings.format = "{:%A, %B %-d}";
+          }
+        ))
+      ]
     ) (lib.filter (o: !o.off) lockOutputs)
   );
 
@@ -346,6 +393,39 @@ let
         open_near_click_wallpaper = true;
         open_near_click_clipboard = true;
       };
+
+      # --- what the session panel and the lock screen offer ---------------
+      #
+      # Two actions, and they are the same two in both places: the lock
+      # screen's buttons are these actions, not a separate list. Cutting the
+      # list to sleep and switch-user is therefore what makes the lock screen
+      # carry only those two.
+      #
+      # The default set is lock, logout, suspend, reboot and shutdown. Lock is
+      # meaningless *on* the lock screen; reboot and shutdown are one
+      # mis-click from throwing away a session you only meant to step away
+      # from, and are still a `Mod+Shift+Escape` away on the desktop.
+      #
+      # **Switch user is a `command`.** The action vocabulary is lock,
+      # logout, suspend, lock_and_suspend, reboot, shutdown and command —
+      # there is no switch-user verb, because switching users is a greeter
+      # operation rather than a session one. `switch-user` from ./scripts.nix
+      # is the script that already knows how to do it (it asks logind for a
+      # greeter on a spare VT and leaves this session running), which is the
+      # same one the waybar session menu called.
+      session.actions = [
+        {
+          action = "suspend";
+          label = "Sleep";
+          glyph = "moon";
+        }
+        {
+          action = "command";
+          label = "Switch user";
+          glyph = "users";
+          command = lib.getExe niriScripts.switchUser;
+        }
+      ];
     };
 
     # --- bar ------------------------------------------------------------
@@ -399,7 +479,8 @@ let
       # bluetooth, battery, power profile) or an indicator that means
       # something by being present at all (privacy, notifications).
       end =
-        visualiser
+        [ "weather" ]
+        ++ visualiser
         ++ [
           "media"
           "tray"
@@ -467,6 +548,19 @@ let
       network = {
         show_label = true;
       };
+
+      # Camera, microphone and screen-share indicators, and only while one of
+      # them is actually open.
+      #
+      # This is the behaviour waybar's pair of modules had and lost in the
+      # move: `custom/microphone-privacy` printed an empty line when nothing
+      # held the mic, and waybar hides a custom module with no text, so the
+      # slot cost nothing the rest of the time. noctalia draws all three
+      # glyphs greyed out by default, which is three permanent icons saying
+      # "not recording" — the state you are in essentially always.
+      privacy = {
+        hide_inactive = true;
+      };
     };
 
     # --- colour -----------------------------------------------------------
@@ -494,35 +588,59 @@ let
       # moves that symlink. That machinery predates noctalia, works under both
       # shells, and is what the SDDM greeter reads too.
       #
-      # noctalia's templates fill the gap it left: **GTK**. Nothing in
-      # theming.nix ever wrote a GTK stylesheet, so GTK apps and every
-      # portal/file-chooser dialog they open kept the stock Adwaita palette
-      # while the rest of the session changed colour. `gtk3` and `gtk4` write
-      # ~/.config/gtk-{3,4}.0/noctalia.css and add an `@import` to gtk.css,
-      # which home-manager does not manage here — and their apply hook already
-      # knows about NixOS, replacing a read-only symlink with a real file
-      # rather than failing on it.
+      # noctalia's templates now cover the rest, including the gap theming.nix
+      # left: **GTK**. Nothing in theming.nix ever wrote a GTK stylesheet, so
+      # GTK apps and every portal/file-chooser dialog they open kept the stock
+      # Adwaita palette while the rest of the session changed colour.
       #
-      # `qt` is the same idea for qt5ct/qt6ct, which it writes as plain side
-      # files with no hook at all.
+      # `kcolorscheme` is the one still left off. Its post-action writes
+      # ~/.config/kdeglobals unconditionally, and ./default.nix points that at
+      # the active theme as an out-of-store symlink — so the two would be
+      # fighting over one file that theming.nix already keeps correct. Every
+      # other builtin that touches something home-manager owns is handled by
+      # pre-declaring what its hook looks for; see below.
       #
-      # Deliberately **not** enabled, and each for the same reason — the file
-      # they want to edit is a read-only store symlink here:
+      # --- and how it reaches everything that is not the shell -------------
       #
-      #   kcolorscheme  its post-action writes ~/.config/kdeglobals, which
-      #                 ./default.nix points at the active theme
-      #   kitty         its hook writes through ~/.config/kitty/kitty.conf
-      #   btop          its hook edits ~/.config/btop/btop.conf
-      #   niri          its hook adds an include to ~/.config/niri/config.kdl
+      # Every builtin template renders the palette into a *side* file the app
+      # can include — `kitty/themes/noctalia.conf`, `btop/themes/noctalia.theme`
+      # — and then runs a hook that makes the app read it. It is the hook, not
+      # the render, that is awkward on NixOS: it edits the app's main config,
+      # which home-manager owns here as a read-only symlink into the store.
       #
-      # All four are already themed by theming.nix, so nothing is missing —
-      # they would only be a second writer for a file that already has one.
+      # Every one of those hooks is idempotent, though — each checks for its
+      # own line before writing anything. So the way to make them work is to
+      # declare that line on the home-manager side and let the hook find its
+      # job already done. That is what the `programs.*` settings and the
+      # `xdg.configFile` entries in the config block below are for, and each
+      # is commented with the hook it is satisfying. The store file stays
+      # declarative, the hook stays a no-op, and neither has to know about the
+      # other.
+      #
+      #   kitty      `include themes/noctalia.conf`, via programs.kitty.extraConfig
+      #   btop       `color_theme = "noctalia"`, via programs.btop.settings
+      #   cava       `[color] theme = "noctalia"`, via xdg.configFile
+      #   niri       `include "noctalia.kdl"`, written into config.kdl by niri.nix
+      #   gtk3/gtk4  nothing — gtk.css is not managed here, and their hook
+      #              already replaces a read-only symlink with a real file
+      #   qt         nothing — plain side files for qt5ct/qt6ct, no hook
+      #   alacritty  nothing — alacritty is not installed and its config is
+      #              not managed, so the hook creates the file it wants
+      #   starship   the exception: see the starship block in the config
+      #              below. Its hook has to inject the palette *into*
+      #              starship.toml, so there is no line to pre-declare
       templates = {
         enable_builtin_templates = true;
         builtin_ids = [
+          "alacritty"
+          "btop"
+          "cava"
           "gtk3"
           "gtk4"
+          "kitty"
+          "niri"
           "qt"
+          "starship"
         ];
 
         # Community templates are a runtime fetch from api.noctalia.dev, which
@@ -606,7 +724,63 @@ let
     # same way it reaches a laptop panel — through sysfs, which its automatic
     # backend already finds — and `enable_ddcutil` would put a second, slower
     # userspace DDC/CI implementation on top of the one already in the kernel.
-    brightness.enable_ddcutil = false;
+    # --- brightness -------------------------------------------------------
+    #
+    # ddcutil is **on**, and the earlier reasoning for leaving it off was
+    # wrong in a way worth writing down.
+    #
+    # modules/nixos/ddcci.nix loads ddcci-backlight, which speaks DDC/CI in
+    # the kernel and registers each external monitor as an ordinary
+    # /sys/class/backlight/ddcci* device. The argument was that noctalia would
+    # then reach the desk's monitors through sysfs exactly as it reaches a
+    # laptop panel, with no second DDC/CI implementation involved. It does not:
+    # `enumerateBacklights` only keeps a backlight it can tie to a live
+    # Wayland output, and it does that by canonicalising <device> and checking
+    # it sits under /sys/class/drm/card*-<CONNECTOR>. A ddcci backlight hangs
+    # off its i2c adapter instead, so it matches nothing — and the one
+    # fallback in that code path is hardcoded to connectors starting `eDP`.
+    #
+    # So the laptop's internal panel works through sysfs and every external
+    # monitor is silently dropped, which is a brightness widget that does
+    # nothing on the desk. `enable_ddcutil` is the supported route for those:
+    # noctalia shells out to `ddcutil detect` and drives them from userspace.
+    #
+    # Two things it needs, both already true here. `hardware.i2c` — enabled by
+    # ddcci.nix — loads i2c-dev and puts a uaccess tag on /dev/i2c-*, so this
+    # runs as the user rather than needing root. And `ddcutil` has to be on
+    # PATH: nixpkgs' noctalia wrapper only prefixes gitMinimal, and the code
+    # gates the whole backend on `commandExists("ddcutil")`, so it is added to
+    # home.packages below.
+    #
+    # What this leaves: two writers for the same monitors. The idle dim in
+    # `idle.behavior.dim` still goes through the `brightness` helper, which
+    # writes sysfs through ddcci-backlight, while noctalia writes over i2c
+    # directly. They agree — both end at the monitor's own luminance register
+    # — but a dim landing in the middle of a `ddcutil detect` is a DDC/CI
+    # round trip contending with another, and DDC/CI is slow and not
+    # especially robust. Worth knowing if brightness ever feels sticky right
+    # as the screen dims.
+    brightness.enable_ddcutil = true;
+
+    # --- weather ----------------------------------------------------------
+    #
+    # `auto_locate` resolves coordinates from the machine's public IP rather
+    # than from a place name, which is the "automatically" part: nothing to
+    # write down, and it follows a laptop that moves.
+    #
+    # It is worth being explicit that this is the one thing in this config
+    # that talks to the network on its own. Weather comes from Open-Meteo and
+    # the coordinates come from an IP lookup, so leaving this on means the
+    # shell makes an outbound request on a schedule. `[location]` is also what
+    # `theme.mode = "auto"` and the night light would use for sunrise/sunset,
+    # neither of which is on here.
+    weather = {
+      enabled = true;
+      unit = "fahrenheit";
+      refresh_minutes = 30;
+    };
+
+    location.auto_locate = true;
 
     # --- idle -------------------------------------------------------------
     #
@@ -745,7 +919,106 @@ let
 in
 {
   config = lib.mkIf useNoctalia {
-    home.packages = [ pkg ];
+    home.packages = [
+      pkg
+
+      # `ddcutil` has to be findable by name: noctalia gates its whole DDC/CI
+      # backend on `commandExists("ddcutil")` and nixpkgs' wrapper only
+      # prefixes gitMinimal onto its PATH. See the brightness block above.
+      pkgs.ddcutil
+
+      # Poppins, for the lock screen clock. A font referenced by family name
+      # in a config file has to actually be installed for fontconfig to
+      # resolve it — otherwise the clock silently falls back to the default
+      # sans and the setting looks like it did nothing.
+      pkgs.poppins
+    ];
+
+    # --- satisfying the template hooks -------------------------------------
+    #
+    # Each of these declares the exact line the matching builtin template's
+    # `apply.sh` looks for, so the hook finds its work already done and leaves
+    # the store-managed file alone. See the `templates` note in `settings`.
+
+    # kitty/apply.sh rewrites kitty.conf to contain `include
+    # themes/noctalia.conf` exactly once, then writes it back only `if ! cmp -s`
+    # — so with the line already present its rewrite is a no-op and it never
+    # touches the read-only symlink.
+    #
+    # mkAfter for the same reason ./default.nix uses it: `extraConfig` is a
+    # `lines` option and kitty takes the last value for any key.
+    programs.kitty.extraConfig = lib.mkAfter ''
+
+      include themes/noctalia.conf
+    '';
+
+    # btop/apply.sh greps for `^color_theme\s*=\s*"noctalia"` and does nothing
+    # when it matches. Set here rather than in home/common/btop.nix because
+    # that module is shared with root and the server, where noctalia never
+    # runs and the theme file would never be written.
+    #
+    # mkForce because btop.nix names `tokyo-night` outright; two plain
+    # definitions of one option is a conflict rather than an override, and
+    # that host's btop should follow the session's palette rather than a
+    # theme picked once.
+    programs.btop.settings.color_theme = lib.mkForce "noctalia";
+
+    # cava/apply.sh wants a `[color]` section already naming the theme, and
+    # exits 1 with an error if the config file is missing entirely. cava is
+    # installed for the bar visualiser (see ./default.nix) but its config was
+    # never managed, so this is both the file it needs and the line it checks.
+    xdg.configFile."cava/config".text = ''
+      # Managed by home/joshr/niri/noctalia.nix.
+      #
+      # The palette is not here: noctalia renders it to
+      # ~/.config/cava/themes/noctalia and this points cava at it. The theme
+      # file is rewritten on every colour-scheme change.
+      [color]
+      theme = "noctalia"
+    '';
+
+    # starship is the exception, and the only place a declarative file has to
+    # become a mutable one.
+    #
+    # Every other template renders a *side* file and the app is pointed at it
+    # with one line — which is why declaring that line up front makes the hook
+    # a no-op. starship has no include mechanism at all, so its hook has to
+    # splice the palette bodily into starship.toml between two markers, and
+    # the spliced content changes with every theme. There is no line to
+    # pre-declare, and a store symlink cannot be written.
+    #
+    # So on a noctalia host home-manager stops owning the file and seeds a
+    # real one instead. `home/common/files/starship.toml` stays the source of
+    # truth — the activation below re-seeds whenever it changes — and the hook
+    # owns only what is between its markers.
+    xdg.configFile."starship.toml".enable = lib.mkForce false;
+
+    home.activation.noctaliaStarshipSeed = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
+      starshipTarget="${config.xdg.configHome}/starship.toml"
+      starshipSeed=${../../common/files/starship.toml}
+
+      if [ ! -e "$starshipTarget" ]; then
+        $DRY_RUN_CMD ${pkgs.coreutils}/bin/install -Dm644 "$starshipSeed" "$starshipTarget"
+      else
+        # Compare what the seed owns, not what the hook owns: strip the
+        # palette block before diffing so a theme change never looks like the
+        # file drifting from the source.
+        stripped="$(${pkgs.coreutils}/bin/mktemp)"
+        ${pkgs.gnused}/bin/sed \
+          '/^# >>> NOCTALIA STARSHIP PALETTE >>>$/,/^# <<< NOCTALIA STARSHIP PALETTE <<<$/d' \
+          "$starshipTarget" > "$stripped"
+
+        if ! ${pkgs.diffutils}/bin/diff -q \
+          <(${pkgs.gnused}/bin/sed -e :a -e '/^\n*$/{$d;N;ba' -e '}' "$stripped") \
+          <(${pkgs.gnused}/bin/sed -e :a -e '/^\n*$/{$d;N;ba' -e '}' "$starshipSeed") >/dev/null; then
+          $DRY_RUN_CMD ${pkgs.coreutils}/bin/install -Dm644 "$starshipSeed" "$starshipTarget"
+          echo "noctalia: re-seeded starship.toml from home/common/files/starship.toml;" >&2
+          echo "noctalia: its palette block returns on the next colour-scheme change." >&2
+        fi
+
+        ${pkgs.coreutils}/bin/rm -f "$stripped"
+      fi
+    '';
 
     # Before the unit is (re)started, so a stale overrides file is dealt with
     # rather than crashing the shell on the way in. See reconcileOverrides.

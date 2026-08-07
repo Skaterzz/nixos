@@ -124,6 +124,18 @@ let
   wallpaperRestoreSpawn = lib.optionalString (
     !useNoctalia
   ) ''spawn-at-startup "${bin niriScripts.wallpaperRestore}"'';
+
+  # noctalia's `niri` template writes ~/.config/niri/noctalia.kdl and its hook
+  # wants to add this line to config.kdl — which is a read-only store symlink
+  # here, so the write would fail. Declaring the include means the hook's
+  # `has_noctalia_include` check passes and it returns without touching the
+  # file. See the templates note in ./noctalia.nix.
+  #
+  # Deliberately *after* the theme include above. Both set the focus ring and
+  # border colours and the later one wins; they are drawn from the same
+  # palette either way, but a single rule about which is authoritative beats
+  # two that happen to agree.
+  noctaliaInclude = lib.optionalString useNoctalia ''include "noctalia.kdl"'';
   # finalPackage rather than pkgs.firefox: that's the wrapper home-manager
   # actually installs, carrying whatever ../firefox.nix declares beyond plain
   # prefs. Naming the raw package here would launch a second, unwrapped build.
@@ -172,6 +184,7 @@ in
     // Colours live in the active theme, swapped by `theme-apply`. niri
     // reloads its config automatically when this include target changes.
     include "${activeDir}/niri.kdl"
+    ${noctaliaInclude}
 
     // Displays. Set per host in home/joshr/<host>-niri.nix via
     // local.niri.outputs; nothing here means niri auto-detects.

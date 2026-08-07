@@ -362,9 +362,17 @@ one run-on strip.
 | `caffeine` | a control-centre shortcut, and `Mod+Shift+I` |
 | `lock_keys` | the caps-lock OSD says it louder, and only while a key is on |
 
-What stays is either a live reading (brightness, volume, network, bluetooth,
-battery, power profile) or an indicator that means something by being present
-at all (privacy, notifications).
+What stays is either a live reading (weather, brightness, volume, network,
+bluetooth, battery, power profile) or an indicator that means something by
+being present at all (privacy, notifications).
+
+**Privacy hides itself when idle.** noctalia draws all three of its glyphs —
+microphone, camera, screen-share — greyed out by default, which is three
+permanent icons saying "not recording", the state you're in essentially
+always. `hide_inactive` restores what waybar's pair of modules did: the
+custom mic module printed an empty line when nothing held the microphone and
+waybar hides a custom module with no text, so the slot cost nothing until it
+meant something.
 
 Three things are new, with no waybar equivalent: a notification history, a
 clipboard panel, and a control centre. That last is where wifi, bluetooth,
@@ -406,16 +414,40 @@ home-manager does not manage here; their apply hook already knows about NixOS
 and replaces a read-only symlink with a real file rather than failing on it.
 `qt` is the same idea for qt5ct/qt6ct, as plain side files with no hook.
 
-Four builtin templates are deliberately **off**, each because the file they
-want to edit is a read-only store symlink here — and each already themed by
-`theming.nix`, so nothing is missing:
+Most builtin templates edit the app's *main* config from a hook — adding an
+`include`, setting a `color_theme` — and here that file is a read-only symlink
+into the store. Every one of those hooks is idempotent though: it checks for
+its own line before writing. So the line is declared on the home-manager side
+and the hook finds its job already done.
 
-| template | would write |
-|---|---|
-| `kcolorscheme` | `~/.config/kdeglobals` |
-| `kitty` | `~/.config/kitty/kitty.conf` |
-| `btop` | `~/.config/btop/btop.conf` |
-| `niri` | `~/.config/niri/config.kdl` |
+| template | the line declared for it | where |
+|---|---|---|
+| `kitty` | `include themes/noctalia.conf` | `programs.kitty.extraConfig` |
+| `btop` | `color_theme = "noctalia"` | `programs.btop.settings` (mkForce) |
+| `cava` | `[color] theme = "noctalia"` | `xdg.configFile."cava/config"` |
+| `niri` | `include "noctalia.kdl"` | written into `config.kdl` by `niri.nix` |
+| `gtk3`/`gtk4` | — | `gtk.css` isn't managed; their hook already handles NixOS |
+| `qt` | — | plain side files for qt5ct/qt6ct, no hook |
+| `alacritty` | — | not installed and not managed; the hook creates its own |
+
+**`starship` is the exception**, and the one place a declarative file becomes a
+mutable one. starship has no include mechanism, so its hook splices the palette
+bodily into `starship.toml` between two markers, and what it splices changes
+with every theme — there is no line to pre-declare. On a noctalia host
+home-manager therefore stops owning that file and an activation step seeds a
+real one from `home/common/files/starship.toml`, which stays the source of
+truth: the step strips the hook's block before diffing, so a theme change never
+looks like drift, and re-seeds when the repo's copy actually changes.
+
+**`kcolorscheme` stays off.** Its post-action writes `~/.config/kdeglobals`
+unconditionally, and `default.nix` points that at the active theme as an
+out-of-store symlink — two writers for one file that `theming.nix` already
+keeps correct.
+
+Kitty is single-writer per shell: under `"waybar"` the include points at the
+active theme directory, under `"noctalia"` at the template's output. Carrying
+both would mean two `include` lines setting the same colours with the winner
+decided by the merge order of two `mkAfter`s.
 
 Changing the colour scheme from noctalia's own Settings window used to move
 the shell and nothing else. It doesn't any more: a `colors_changed` hook calls
@@ -458,12 +490,24 @@ Nothing in this config places it — a `login_box` entry in `lockscreen_widgets`
 only *overrides* its position, so leaving it out is what keeps the layout
 right on a display whose resolution the config doesn't know.
 
-The one thing it has no equivalent for is the time, so that is the single
-widget `noctalia.nix` adds. Widgets *are* placed by pixel coordinate, per
-output, which is why there's arithmetic behind it: the position is computed
-from the mode already declared in `local.niri.outputs` rather than written
-down a second time, so changing a monitor moves the clock with it. On the desk
-that puts a clock on DP-3 at (1280, 432) and DP-2 at (960, 324).
+The one thing it has no equivalent for is the time, so that is what
+`noctalia.nix` adds — as **two** widgets, not one. A clock widget has a single
+font size, so "time bigger than the date" can't be done inside one `format`
+string, and the only size control a lock screen widget has is its box: with
+`box_width` and `box_height` both set, the widget scales its content to fill
+them and the clock's font becomes `fontSizeBody * 4 * contentScale`. There is
+no `font_size` setting and no `scale` key on a widget in this version, so the
+boxes *are* the type scale. They're fractions of the output (30%×13% for the
+time, 22%×4.5% for the date), which holds the proportions — about 2.9× — on a
+1080p panel and a 1440p one alike. Both are set in **Poppins**: a geometric
+sans with a tall x-height, where the shell's own FiraCode Nerd Font is a
+monospace and at that size reads as a terminal rather than a clock.
+
+Widgets are positioned by pixel coordinate per output, so the position is
+computed from the mode already declared in `local.niri.outputs` rather than
+written down twice — changing a monitor moves the clock with it. On the desk
+that's the time at (1280, 374) on DP-3 and (960, 280) on DP-2, with the date
+stacked directly beneath.
 
 A host that leaves its layout to niri's auto-detection has no mode to read.
 `local.niri.lockClockOutputs` names the connectors instead — `[ "eDP-1" ]` on
@@ -471,12 +515,22 @@ the laptop — and the position falls back to a 1080p centre. noctalia clamps
 widget coordinates to the output, so on a panel that isn't 1080p the clock
 lands off-centre rather than off-screen.
 
-Two choices there are about cost rather than looks. The clock has
-`background = false`, which drops a rounded rect and an alpha layer per output
-per frame and makes the text shadow load-bearing instead of decorative. And
+**Two session actions, and they are the lock screen's buttons too.** The lock
+screen doesn't have a button list of its own — it draws `[shell.session]`'s
+actions — so cutting that list to sleep and switch-user is what makes the lock
+screen carry only those two. The default set is lock, logout, suspend, reboot
+and shutdown; lock is meaningless *on* the lock screen, and reboot and shutdown
+are one mis-click from throwing away a session you only meant to step away
+from. Switch-user is a `command` action rather than a verb of its own — the
+vocabulary is lock, logout, suspend, lock_and_suspend, reboot, shutdown and
+command — running the same `switch-user` script the waybar session menu called.
+
+Two choices are about cost rather than looks. Neither clock has a background,
+which drops a rounded rect and an alpha layer per widget per output per frame
+and makes the text shadow load-bearing instead of decorative. And
 `blurred_desktop = false` uses the wallpaper rather than a wlr-screencopy
-snapshot of every output taken at the moment of locking — cheaper, and it
-still works when you lock from an already-blanked screen.
+snapshot of every output taken at the moment of locking — cheaper, and it still
+works when you lock from an already-blanked screen.
 
 **Battery is not there, and can't be.** noctalia has no battery widget for the
 lock screen or the desktop: the widget types are clock, label, button, sysmon,
@@ -485,14 +539,50 @@ sysmon's stats are CPU, GPU, RAM, swap and network with nothing for the power
 supply. There's no official plugin for it either. The charge is on the bar and
 in the control centre, and the hyprlock screen under `"waybar"` still draws it.
 
-`local.niri.brightness.device` is also unread under noctalia, but nothing is
-lost: it existed because waybar's backlight module and the `brightness` helper
-each picked "the display" by a different rule and could disagree about which
-monitor the bar was quoting. noctalia reports the focused monitor's own
-backlight, which is the answer that option was approximating. DDC/CI still
-goes through the kernel driver — see [Brightness](#brightness) — and
-noctalia's own `enable_ddcutil` stays off so there is only one DDC/CI
-implementation on the machine.
+**Brightness needs ddcutil, and the reason is worth writing down** — the
+earlier reasoning here was wrong.
+
+`modules/nixos/ddcci.nix` loads ddcci-backlight, which speaks DDC/CI in the
+kernel and registers each external monitor as an ordinary
+`/sys/class/backlight/ddcci*` device. The argument was that noctalia would then
+reach the desk's monitors through sysfs exactly as it reaches a laptop panel,
+with no second DDC/CI implementation involved. It doesn't:
+`enumerateBacklights` only keeps a backlight it can tie to a live Wayland
+output, and it does that by canonicalising `<device>` and checking it sits
+under `/sys/class/drm/card*-<CONNECTOR>`. A ddcci backlight hangs off its i2c
+adapter instead, so it matches nothing — and the single fallback in that code
+path is hardcoded to connectors starting `eDP`.
+
+So the laptop's internal panel works through sysfs and **every external monitor
+is silently dropped**: a brightness widget that does nothing on the desk.
+`brightness.enable_ddcutil = true` is the supported route for those — noctalia
+shells out to `ddcutil detect` and drives them from userspace.
+
+Two things it needs, both already true. `hardware.i2c` — enabled by `ddcci.nix`
+— loads `i2c-dev` and puts a uaccess tag on `/dev/i2c-*`, so this runs as the
+user. And `ddcutil` has to be on `PATH`: nixpkgs' noctalia wrapper only
+prefixes `gitMinimal`, and the code gates the whole backend on
+`commandExists("ddcutil")`, so it's in `home.packages`.
+
+What this leaves is two writers for the same monitors. The idle dim still goes
+through the `brightness` helper, which writes sysfs via ddcci-backlight, while
+noctalia writes over i2c directly. They agree — both end at the monitor's own
+luminance register — but a dim landing mid-`ddcutil detect` is one DDC/CI round
+trip contending with another, and DDC/CI is slow and not especially robust.
+Worth knowing if brightness ever feels sticky right as the screen dims.
+
+`local.niri.brightness.device` is unread under noctalia, and nothing is lost:
+it existed because waybar's backlight module and the `brightness` helper each
+picked "the display" by a different rule and could disagree about which monitor
+the bar was quoting. noctalia reports the focused monitor's own backlight,
+which is the answer that option was approximating.
+
+**Weather is on, and it is the one thing here that reaches the network on its
+own.** `location.auto_locate` resolves coordinates from the machine's public IP
+rather than a place name — nothing to write down, and it follows a laptop that
+moves — and the forecast comes from Open-Meteo on a 30-minute refresh.
+`[location]` is also what `theme.mode = "auto"` and the night light would use
+for sunrise and sunset, neither of which is enabled.
 
 ### The bar
 

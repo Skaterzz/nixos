@@ -1,4 +1,4 @@
-{ config, lib, pkgs, niriTheming, ... }:
+{ config, lib, pkgs, niriTheming, niriScripts, ... }:
 
 # swayosd: the on-screen display for volume and brightness.
 #
@@ -24,6 +24,9 @@
 # set up. That half is a *system* service needing udev rules and polkit, it
 # reads every input device to do its job, and none of the three keys it
 # reports is one this session has anything to say about.
+#
+# The third thing with a pop-up is the power profile, and it is the one that
+# needs a service of its own — see `power-profile-osd` below.
 let
   inherit (niriTheming) activeDir;
 in
@@ -46,5 +49,42 @@ in
     # top. This is swayosd's own default, spelled out so the position is
     # readable from here and doesn't move if upstream's changes.
     topMargin = 0.85;
+  };
+
+  # The power profile's pop-up, which is a watcher rather than a keybind.
+  #
+  # Volume and brightness are drawn by the scripts that change them, because
+  # the keys are the only thing that changes them. The profile has several
+  # routes — the bar, `powerprofilesctl`, a `launch` hold a game takes, the
+  # daemon dropping out of performance by itself — and the point of showing it
+  # is to see the ones that weren't you. So the display hangs off the daemon's
+  # own PropertiesChanged signal instead; see `power-profile-osd` in
+  # ./scripts.nix for how it listens and why it reads the profile back rather
+  # than parsing it out of the signal.
+  #
+  # Nothing conditional around it. On a host with no power-profiles-daemon the
+  # signal never arrives and the loop simply blocks forever, at the cost of one
+  # idle process — the same shape as the bar's widget, which hides itself when
+  # nothing answers. The daemon is on for every graphical host anyway
+  # (modules/nixos/desktop.nix).
+  #
+  # `Restart = "always"` and not `on-failure`: the failure worth surviving is
+  # gdbus exiting *cleanly* when the bus goes away, which leaves the unit
+  # inactive and the pop-up silently gone for the rest of the session.
+  systemd.user.services.power-profile-osd = {
+    Unit = {
+      Description = "Show an OSD when the power profile changes";
+      PartOf = [ "graphical-session.target" ];
+      After = [ "graphical-session.target" ];
+    };
+
+    Service = {
+      Type = "simple";
+      ExecStart = "${niriScripts.powerProfileOsd}/bin/power-profile-osd";
+      Restart = "always";
+      RestartSec = 5;
+    };
+
+    Install.WantedBy = [ "graphical-session.target" ];
   };
 }

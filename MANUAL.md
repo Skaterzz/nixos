@@ -43,6 +43,7 @@ the machine.
 - [Bootloader](#bootloader)
   - [Dual boot: finding the other operating systems](#dual-boot-finding-the-other-operating-systems)
   - [How the boot menu ends up wearing the desktop's colours](#how-the-boot-menu-ends-up-wearing-the-desktops-colours)
+  - [The boot splash](#the-boot-splash)
 - [Shells](#shells)
   - [`nix-clean`](#nix-clean)
   - [`nix-delete-gens`](#nix-delete-gens)
@@ -444,6 +445,44 @@ waybar's click-to-mute and scroll. The bar's scroll passes an explicit step of
 `scroll-step` no longer does anything once `on-scroll-up`/`on-scroll-down` are
 set, so it's gone from the module rather than left there looking load-bearing.
 
+**The power profile gets a pop-up too, and it is built the other way round.**
+Volume and brightness are drawn by the scripts that change them, because those
+keys are the only thing that changes them. The profile isn't: it moves from the
+bar (waybar's `power-profiles-daemon` module has its own click handler and
+takes no `on-click` of ours), from `powerprofilesctl` in a terminal, from a
+`powerprofilesctl launch` hold that a game takes and gives back, and from the
+daemon itself when it drops out of performance on a hot machine. The changes
+worth seeing are exactly the ones you didn't press a key for.
+
+So the display hangs off the daemon instead. `power-profile-osd` — a user
+service declared in `osd.nix`, a loop around `gdbus monitor` — waits for
+power-profiles-daemon's `PropertiesChanged` on the system bus, reads the
+profile back with `powerprofilesctl get`, and draws "Power saver", "Balanced"
+or "Performance" with the matching icon whenever it has actually moved. The
+readback is the same discipline as volume's: it describes the machine rather
+than the event, and it is also the filter, since `PerformanceDegraded` and
+`ActiveProfileHolds` arrive on that same signal and are dropped by the profile
+simply not having changed.
+
+`Mod+P` steps forward through whatever profiles the daemon offers and
+`Mod+Ctrl+P` steps back, in the daemon's own order, through `power-profile`
+(`scripts.nix`). Neither key draws anything — the watcher does, having heard
+the daemon agree — so a profile that didn't take produces no pop-up claiming
+it did. `power-profile show` draws the current one without changing it.
+
+Two details worth keeping. It is **`gdbus monitor` and not `dbus-monitor`**:
+dbus-monitor asks the bus to make it a monitor, which the system bus's default
+policy allows root and nobody else, so it fails in a user session; gdbus
+subscribes to the broadcast, which anyone may do. And it runs under `stdbuf
+-oL`, because gdbus prints through stdio and a change would otherwise sit in a
+4KB buffer instead of reaching the loop.
+
+The three icons — `power-profile-{power-saver,balanced,performance}-symbolic` —
+come from the icon theme rather than from swayosd, which compiles in volume and
+brightness and nothing else. Papirus-Dark has all three. A theme that didn't
+would leave swayosd drawing its `missing-symbolic` fallback next to the right
+words.
+
 It appears on **every** output rather than only the focused one, which is
 swayosd's default and is left alone. `swayosd-client --monitor <name>` would
 narrow it, but only if something works out which output is focused first —
@@ -629,6 +668,7 @@ the greeter and boot menu on the default palette.
 | `Mod+Shift+T` / `Mod+Ctrl+T` | random theme, pick theme |
 | `Mod+Shift+W` / `Mod+Ctrl+W` | random wallpaper, pick wallpaper |
 | volume / brightness keys | change it and show an OSD — see "The on-screen display" |
+| `Mod+P` / `Mod+Ctrl+P` | next / previous power profile — the OSD follows the daemon |
 | `Mod`+scroll / `Mod+Shift`+scroll | walk windows / workspaces (wheel and touchpad) |
 
 `Mod+W` is the one that isn't guessable from the key. A column normally
@@ -2385,6 +2425,57 @@ local.boot.branding = "gamestation";     # text above the menu
 local.boot.menuTransparency = "50";      # TT of limine's TTRRGGBB
 ```
 
+### The boot splash
+
+What covers everything *after* the menu: an animated NixOS logo with a progress
+bar under it, paced like a Mac's boot animation, instead of the kernel's
+scrolling messages. `modules/nixos/plymouth.nix`, imported by `boot.nix` so the
+option exists wherever the bootloader module does.
+
+```nix
+local.boot.plymouth.enable = true;    # on for the four fixed graphical hosts
+local.boot.plymouth.quiet = true;     # the default: turn the messages down too
+```
+
+**Off unless a host asks for it**, and the four that ask are the desk and the
+laptop in both their Plasma and niri configurations. The two servers don't: a
+splash needs an audience, and the console output it replaces is the only thing
+to look at when a headless machine doesn't come back. Neither does the stick,
+which is the one machine that boots on hardware it has never seen — the boot
+most likely to need explaining is the worst one to have covered up.
+
+**The theme's name is a trap.** The flake input is
+`github:SergioRibera/s4rchiso-plymouth-theme` and the theme it installs is
+called `mac-style`. That repository began as an Arch theme — an animated Arch
+logo, still on its `archlinux` branch — and its default branch is now a flake
+carrying a NixOS-logo theme under that name. The input, the overlay
+(`overlays.default`) and the package (`pkgs.mac-style-plymouth`) are all named
+the way that branch's README names them, and what boots is the NixOS
+animation.
+
+The overlay is applied inside the module rather than in `flake.nix`, the same
+arrangement as nvidia-patch's: named at the top it would reach every host, and
+this one should only reach hosts that draw a splash. The README's snippet puts
+it at the `import nixpkgs` because that is the shape of a README, not a
+requirement of the overlay.
+
+`quiet` is the half people usually mean by "splash". Plymouth owns the
+framebuffer from the initrd onwards, but the kernel writes to the console
+directly and outranks it — one printk at the wrong level and the animation
+spends the rest of the boot underneath a driver message. So the option turns
+the sources down rather than covering them up: `quiet` and `loglevel=0` for the
+kernel, `udev.log_level=3` (and the `rd.` copy of it) for the loudest thing in
+the initrd, and `boot.initrd.verbose = false` for NixOS's own stage-1 chatter.
+Turn it off to keep the messages and the animation both — worth doing on a
+machine misbehaving early in boot. `journalctl -b` has all of it either way.
+
+Nothing here hides a failure. A stage-1 that panics drops to the emergency
+shell with its messages intact, and **Escape** at any point during the boot
+switches to the console. Because this theme is built on plymouth's `two-step`
+module it can also draw a password dialog, so a machine with an encrypted root
+still gets somewhere to type — which the Arch theme on the other branch, with
+no password function at all, would not have.
+
 ## Shells
 
 Fish is the login shell for both `joshr` and `root`, but zsh, bash and
@@ -3622,6 +3713,13 @@ for performance — and badges the battery icon with the profile where there is
 a battery, so the "which profile am I in" reading the niri bar gives is
 already there. The daemon was the only piece missing on the desk.
 
+The **pop-up** when the profile changes is niri-only, and that asymmetry is
+deliberate rather than a gap: Plasma already draws one of its own from
+powerdevil, and the niri session had nothing at all until
+`power-profile-osd` (see "The on-screen display"). It watches the daemon, so
+it reports a change made from the bar or from a terminal exactly as it reports
+one made with `Mod+P`.
+
 It conflicts with TLP and auto-cpufreq, which nixpkgs asserts on. Neither is
 enabled here; picking one up later means turning this off in the same edit.
 
@@ -3836,7 +3934,10 @@ two can't both be on, so getting this wrong stops the build rather than
 producing a stick that quietly edits machines. `local.boot.detectOtherSystems`
 is off for the same reason in reverse — os-prober scans the disks present at
 *rebuild* time and would bake one machine's Windows into the menu shown on
-every other.
+every other. `local.boot.plymouth.enable` is left off here too, on the
+reasoning that the boot most likely to need explaining is the one on hardware
+this stick has never met, and a splash is a screen with the explanation
+painted over.
 
 **Whoever holds it is logged in.** `services.displayManager.autoLogin` names
 `joshr`, and `modules/nixos/usb-users.nix` makes him the only account there is

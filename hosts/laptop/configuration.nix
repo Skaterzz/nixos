@@ -49,6 +49,11 @@
   # Defaults to limine; `local.boot.loader = "systemd-boot";` is the way back
   # to what this host used before that module existed.
 
+  # The boot splash — the animated NixOS logo — over everything between the
+  # boot menu and the login screen. See modules/nixos/plymouth.nix, and
+  # `local.boot.plymouth.quiet` there for keeping the kernel messages.
+  local.boot.plymouth.enable = true;
+
   # Do not bump this after the initial install; see the NixOS manual.
   system.stateVersion = "26.05";
 }

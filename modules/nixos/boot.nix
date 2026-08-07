@@ -6,6 +6,10 @@
 # `local.boot.loader` picks between three, described in modules/nixos/options.nix.
 # Only one is ever enabled; NixOS refuses to install two.
 #
+# What happens *after* the menu — the plymouth splash covering the boot — is
+# modules/nixos/plymouth.nix, imported below so that `local.boot.plymouth.*`
+# exists on every host this module does. It is off unless a host turns it on.
+#
 #
 # Finding other operating systems
 # -------------------------------
@@ -460,7 +464,11 @@ let
 in
 {
   # local.* lives in its own module so this one can stay a config attrset.
-  imports = [ ./options.nix ];
+  # plymouth.nix is the boot splash, off until a host asks for it.
+  imports = [
+    ./options.nix
+    ./plymouth.nix
+  ];
 
   config = lib.mkMerge [
     {

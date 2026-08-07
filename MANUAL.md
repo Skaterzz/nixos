@@ -315,6 +315,35 @@ has been renamed upstream fails the build naming the line instead of being
 dropped in silence. It costs nothing — the binary comes from the cache and it
 only reads a file.
 
+**Two config files, and only one of them is Nix's.** `config.toml` above is
+generated and read-only. `~/.local/state/noctalia/settings.toml` is the other
+half — noctalia's own overrides, holding whatever gets changed in the Settings
+window — and the shell writes it, stamped with a `config_version`.
+
+noctalia refuses to start on a version it doesn't understand:
+
+```
+config version 12 is newer than supported version 8
+```
+
+That is a *downgrade* symptom. Going forwards is handled — there's a migration
+per version and they run on load — but going backwards has nothing to run. It
+is reachable here because the package moved: an earlier revision of this
+config took noctalia from its own flake, where `main` is 5.0.0 and stamps
+version 12, while nixpkgs is on the `v5.0.0-beta.7` tag, which knows up to 8.
+Anyone who ran the flake build once has a state file the packaged build can't
+read, on every host they ran it on.
+
+A home-manager activation step reconciles that: it reads the version the state
+file claims and asks the installed binary about it with two probes — an empty
+config, which must pass, and the same thing carrying that version. Only when
+the first passes and the second fails is the version the cause, at which point
+the file is renamed to `settings.toml.too-new` rather than deleted. No version
+number is written down anywhere in this repo, so the check stays right when
+nixpkgs moves to a build that does understand 12.
+
+To do it by hand: `mv ~/.local/state/noctalia/settings.toml{,.too-new}`.
+
 The bar comes across slot for slot — same order, same geometry (34px tall,
 12px corners, 88% opaque) — with two deliberate departures.
 

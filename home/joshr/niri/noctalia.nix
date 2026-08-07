@@ -684,10 +684,72 @@ let
     ${noctalia} config validate ${configFile}
     cp ${configFile} $out
   '';
+
+  # Move aside a state file written by a *newer* noctalia than the one now
+  # installed.
+  #
+  # config.toml is generated above and Nix owns it. ~/.local/state/noctalia/
+  # settings.toml is the other half: noctalia's own overrides file, holding
+  # whatever has been changed from the Settings window, and it is written by
+  # the shell rather than by this config. It carries a `config_version`, and
+  # noctalia refuses to start on one it does not understand —
+  #
+  #     config version 12 is newer than supported version 8
+  #
+  # — which is a *downgrade* symptom, not an upgrade one. Going forwards is
+  # handled: there is a migration per version and they run on load. Going
+  # backwards has nothing to run, so the shell stops.
+  #
+  # It is reachable from here because the package moved. An earlier revision
+  # of this config took noctalia from its own flake, where `main` is 5.0.0 and
+  # writes config_version 12; nixpkgs is on the 5.0.0-beta.7 tag, which knows
+  # up to 8. Anyone who ran the flake build once has a state file the packaged
+  # build cannot read, on every host they ran it on.
+  #
+  # **No version number is written down here, on purpose.** The check asks the
+  # installed binary instead, with two probes: an empty config, which must
+  # pass, and the same thing carrying the version the state file claims. Only
+  # when the first passes and the second fails is the version the reason —
+  # which keeps this from throwing the file away over some unrelated
+  # validation failure, and keeps it correct when nixpkgs moves to a build
+  # that does understand 12.
+  #
+  # Renamed rather than deleted. The overrides are small and mostly duplicate
+  # what `settings` above already declares, but they are the user's, and a
+  # config that silently deletes state is worse than one that leaves a file
+  # to look at.
+  reconcileOverrides = ''
+    stateFile="''${XDG_STATE_HOME:-$HOME/.local/state}/noctalia/settings.toml"
+
+    if [ -f "$stateFile" ]; then
+      claimed="$(${pkgs.gnused}/bin/sed -n \
+        's/^[[:space:]]*config_version[[:space:]]*=[[:space:]]*\([0-9][0-9]*\).*/\1/p' \
+        "$stateFile" | ${pkgs.coreutils}/bin/head -n1)"
+
+      if [ -n "$claimed" ]; then
+        probeDir="$(${pkgs.coreutils}/bin/mktemp -d)"
+        : > "$probeDir/empty.toml"
+        printf 'config_version = %s\n' "$claimed" > "$probeDir/claimed.toml"
+
+        if ${noctalia} config validate "$probeDir/empty.toml" >/dev/null 2>&1 \
+          && ! ${noctalia} config validate "$probeDir/claimed.toml" >/dev/null 2>&1; then
+          $DRY_RUN_CMD ${pkgs.coreutils}/bin/mv -f "$stateFile" "$stateFile.too-new"
+          echo "noctalia: ~/.local/state/noctalia/settings.toml claims config_version $claimed," >&2
+          echo "noctalia: which this build does not support. Moved to settings.toml.too-new." >&2
+        fi
+
+        ${pkgs.coreutils}/bin/rm -rf "$probeDir"
+      fi
+    fi
+  '';
 in
 {
   config = lib.mkIf useNoctalia {
     home.packages = [ pkg ];
+
+    # Before the unit is (re)started, so a stale overrides file is dealt with
+    # rather than crashing the shell on the way in. See reconcileOverrides.
+    home.activation.noctaliaReconcileOverrides = lib.hm.dag.entryAfter [ "writeBoundary" ] reconcileOverrides;
 
     xdg.configFile = {
       "noctalia/config.toml".source = validatedConfig;

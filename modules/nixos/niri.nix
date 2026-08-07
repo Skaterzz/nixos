@@ -165,6 +165,35 @@ let
 
   sddmThemes = lib.mapAttrs mkSddmTheme themes;
 
+  # A fourth kind of SDDM theme beside the finite Nix palettes: its QML stays
+  # immutable, but theme.conf is a symlink to a validated file under /var/lib.
+  # That lets Noctalia's wallpaper/community palettes reach the greeter
+  # without trying to manufacture derivations at runtime.
+  sddmRuntimeConfig = "/var/lib/sddm-theme/theme.conf";
+  iniFormat = pkgs.formats.ini { };
+  sddmRuntimeSeed = iniFormat.generate "sddm-noctalia-live.conf" {
+    General = sddmThemeConfig themes.${themeSet.default};
+  };
+  sddmRuntimeTheme =
+    (pkgs.sddm-astronaut.override {
+      embeddedTheme = "black_hole";
+      themeConfig = sddmThemeConfig themes.${themeSet.default};
+    }).overrideAttrs
+      (old: {
+        pname = "sddm-astronaut-noctalia-live";
+        postInstall = (old.postInstall or "") + ''
+          themeDir="$out/share/sddm/themes/sddm-astronaut-theme"
+          chmod -R u+w "$themeDir"
+          substituteInPlace "$themeDir/Components/Input.qml" \
+            --replace-fail \
+              'passwordMaskDelay: config.HideCompletePassword == "true" ? undefined : 1000' \
+              'passwordMaskDelay: 0'
+          rm -f "$themeDir/theme.conf"
+          ln -s ${sddmRuntimeConfig} "$themeDir/theme.conf"
+          mv "$themeDir" "$out/share/sddm/themes/niri-noctalia-live"
+        '';
+      });
+
   defaultSddmTheme = "niri-${themeSet.default}";
 
   # Watches the user's theme *and* wallpaper choices and mirrors both to the
@@ -173,6 +202,7 @@ let
   niriStateDir = "/home/${config.local.desktop.primaryUser}/.local/state/niri-theme";
   themeStateFile = "${niriStateDir}/current";
   wallpaperStateFile = "${niriStateDir}/wallpaper";
+  resolvedThemeFile = "${niriStateDir}/noctalia-resolved";
 
   # Leftover state from an abandoned experiment.
   #
@@ -218,18 +248,74 @@ let
   syncSddmTheme = pkgs.writeShellScript "sddm-theme-sync" ''
     set -eu
 
+    read_colour() {
+      [ -f ${resolvedThemeFile} ] || return 0
+      sed -n "s/^$1=\\(#[0-9A-Fa-f]\\{6\\}\\)$/\\1/p" ${resolvedThemeFile} | head -n1 || true
+    }
+
+    fallback="${fallbackWallpapers.${themeSet.default}}"
+    live_bg=""
+
     # --- palette ------------------------------------------------------
     ${
       if useAstronaut then
         ''
-          name="$(cat ${themeStateFile} 2>/dev/null || true)"
-          case "$name" in
+          bg="$(read_colour bg)"
+          bg_alt="$(read_colour bg_alt)"
+          fg="$(read_colour fg)"
+          fg_dim="$(read_colour fg_dim)"
+          accent="$(read_colour accent)"
+          accent_dim="$(read_colour accent_dim)"
+          err="$(read_colour err)"
+
+          if [ -n "$bg" ] && [ -n "$bg_alt" ] && [ -n "$fg" ] \
+             && [ -n "$fg_dim" ] && [ -n "$accent" ] \
+             && [ -n "$accent_dim" ] && [ -n "$err" ]; then
+            install -d -m 0755 /var/lib/sddm-theme
+            conf_tmp="${sddmRuntimeConfig}.tmp"
+            cp ${sddmRuntimeSeed} "$conf_tmp"
+
+            replace_colour() {
+              sed -i "s|^$1=.*|$1=$2|" "$conf_tmp"
+            }
+            replace_colour HeaderTextColor "$accent"
+            replace_colour DateTextColor "$fg"
+            replace_colour TimeTextColor "$accent"
+            replace_colour FormBackgroundColor "$bg"
+            replace_colour BackgroundColor "$bg"
+            replace_colour LoginFieldBackgroundColor "$bg_alt"
+            replace_colour PasswordFieldBackgroundColor "$bg_alt"
+            replace_colour LoginFieldTextColor "$fg"
+            replace_colour PasswordFieldTextColor "$fg"
+            replace_colour UserIconColor "$accent"
+            replace_colour PasswordIconColor "$accent"
+            replace_colour PlaceholderTextColor "$fg_dim"
+            replace_colour WarningColor "$err"
+            replace_colour LoginButtonTextColor "$bg"
+            replace_colour LoginButtonBackgroundColor "$accent"
+            replace_colour SystemButtonsIconsColor "$accent"
+            replace_colour SessionButtonTextColor "$fg"
+            replace_colour VirtualKeyboardButtonTextColor "$fg"
+            replace_colour DropdownTextColor "$fg"
+            replace_colour DropdownSelectedBackgroundColor "$accent_dim"
+            replace_colour DropdownBackgroundColor "$bg_alt"
+            replace_colour HighlightTextColor "$bg"
+            replace_colour HighlightBackgroundColor "$accent"
+            replace_colour HighlightBorderColor "$accent"
+            replace_colour HoverUserIconColor "$fg"
+            replace_colour HoverSystemButtonsIconsColor "$fg"
+
+            mv -f "$conf_tmp" ${sddmRuntimeConfig}
+            chmod 0644 ${sddmRuntimeConfig}
+            name="noctalia-live"
+            live_bg="$bg"
+          else
+            name="$(cat ${themeStateFile} 2>/dev/null || true)"
+            case "$name" in
 ${wallpaperCaseArms}
-            *)
-              name="${themeSet.default}"
-              fallback="${fallbackWallpapers.${themeSet.default}}"
-              ;;
-          esac
+              *) name="${themeSet.default}" ;;
+            esac
+          fi
 
           mkdir -p /etc/sddm.conf.d
           printf '[Theme]\nCurrent=niri-%s\n' "$name" > "${themeDropIn}"
@@ -269,6 +355,11 @@ ${wallpaperCaseArms}
           # greeter over one unreadable file.
           rm -f "$tmp"
         fi
+      elif [ -n "$live_bg" ]; then
+        tmp="${sddmWallpaper}.tmp"
+        ${pkgs.imagemagick}/bin/magick -size 1920x1080 "xc:$live_bg" "png:$tmp"
+        mv -f "$tmp" "${sddmWallpaper}"
+        chmod 0644 "${sddmWallpaper}"
       fi
 
       # Guarantee the file the theme names actually exists. See the
@@ -277,7 +368,12 @@ ${wallpaperCaseArms}
       # down with it. Only used when nothing above produced an image — a
       # first boot, or before a wallpaper has ever been chosen.
       if [ ! -f "${sddmWallpaper}" ]; then
-        install -m 0644 "$fallback" "${sddmWallpaper}"
+        if [ -n "$live_bg" ]; then
+          ${pkgs.imagemagick}/bin/magick -size 1920x1080 "xc:$live_bg" "png:${sddmWallpaper}"
+          chmod 0644 "${sddmWallpaper}"
+        else
+          install -m 0644 "$fallback" "${sddmWallpaper}"
+        fi
       fi
     ''}
 
@@ -357,12 +453,12 @@ in
   }
   // lib.optionalAttrs useAstronaut {
     theme = defaultSddmTheme;
-    extraPackages = lib.attrValues sddmThemes;
+    extraPackages = (lib.attrValues sddmThemes) ++ [ sddmRuntimeTheme ];
   };
 
   # Every themed variant must be on the system so the greeter can switch
   # between them without a rebuild.
-  environment.systemPackages = lib.optionals useAstronaut (lib.attrValues sddmThemes);
+  environment.systemPackages = lib.optionals useAstronaut ((lib.attrValues sddmThemes) ++ [ sddmRuntimeTheme ]);
 
   # --- keep the login screen in step with the desktop ---------------------
   #
@@ -400,15 +496,9 @@ in
     pathConfig.PathChanged = [
       themeStateFile
       wallpaperStateFile
+      resolvedThemeFile
     ];
   };
-
-  # swaylock authenticates through PAM and ships no entry of its own, so
-  # without this the lock screen accepts a password and then refuses it —
-  # you get locked out of your own session. An empty attrset is enough; it
-  # just needs the /etc/pam.d file to exist.
-  security.pam.services.swaylock = { };
-  security.pam.services.hyprlock = { };
 
   # A polkit agent must run in the session for GUI privilege prompts. niri
   # doesn't ship one, so start the KDE agent as a user service tied to the

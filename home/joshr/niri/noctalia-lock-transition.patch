@@ -1,8 +1,149 @@
+diff --git a/src/shell/lockscreen/lock_screen.cpp b/src/shell/lockscreen/lock_screen.cpp
+index 7115b39..1c91c99 100644
+--- a/src/shell/lockscreen/lock_screen.cpp
++++ b/src/shell/lockscreen/lock_screen.cpp
+@@ -168,6 +168,65 @@ bool LockScreen::lock() {
+
+ void LockScreen::unlock() {
+   m_lockDeferred = false;
++  if (!isActive() || m_unlockTransitionPending) {
++    return;
++  }
++
++  m_pendingAfterLocked = {};
++  m_suspendTimeoutTimer.stop();
++  invalidatePendingAuthentication();
++  stopFingerprint();
++
++  // A pending lock request has never painted an interactive surface, so there
++  // is nothing to animate. The same is true if every output disappeared.
++  if (!m_locked || m_instances.empty()) {
++    finishUnlock();
++    return;
++  }
++
++  clearSensitiveString(m_password);
++  m_wayland->stopKeyRepeat();
++  m_unlockTransitionPending = true;
++
++  // Every output fades together. Only one surface owns the completion
++  // callback; destroying all surfaces from each animation callback would race
++  // the animation manager that is currently ticking them.
++  bool completionAttached = false;
++  for (auto& instance : m_instances) {
++    if (instance.surface == nullptr) {
++      continue;
++    }
++    std::function<void()> onComplete;
++    if (!completionAttached) {
++      completionAttached = true;
++      onComplete = [this]() {
++        DeferredCall::callLater([this]() {
++          if (m_unlockTransitionPending) {
++            finishUnlock();
++          }
++        });
++      };
++    }
++    instance.surface->startUnlockTransition(std::move(onComplete));
++  }
++
++  // If the callback-owning output disappears during the fade, do not leave
++  // the compositor locked forever. This is deliberately much longer than the
++  // 280 ms animation and is cancelled by the normal completion path.
++  m_unlockTransitionTimer.start(std::chrono::milliseconds(750), [this]() {
++    DeferredCall::callLater([this]() {
++      if (m_unlockTransitionPending) {
++        kLog.warn("unlock transition timed out; completing unlock");
++        finishUnlock();
++      }
++    });
++  });
++}
++
++void LockScreen::finishUnlock() {
++  m_unlockTransitionTimer.stop();
++  m_unlockTransitionPending = false;
++
+   if (!isActive()) {
+     return;
+   }
+@@ -311,7 +370,7 @@ void LockScreen::onWallpaperChanged() {
+ }
+
+ void LockScreen::onPointerEvent(const PointerEvent& event) {
+-  if (!isActive()) {
++  if (!isActive() || m_unlockTransitionPending) {
+     return;
+   }
+
+@@ -339,7 +398,7 @@ void LockScreen::onPointerEvent(const PointerEvent& event) {
+ }
+
+ void LockScreen::onKeyboardEvent(const KeyboardEvent& event) {
+-  if (!isActive()) {
++  if (!isActive() || m_unlockTransitionPending) {
+     return;
+   }
+   if (!m_locked) {
+@@ -469,6 +528,8 @@ void LockScreen::handleLocked(void* data, ext_session_lock_v1* /*lock*/) {
+ void LockScreen::handleFinished(void* data, ext_session_lock_v1* /*lock*/) {
+   auto* self = static_cast<LockScreen*>(data);
+   kLog.info("session lock finished by compositor");
++  self->m_unlockTransitionTimer.stop();
++  self->m_unlockTransitionPending = false;
+   self->m_pendingAfterLocked = {};
+   self->invalidatePendingAuthentication();
+   self->stopFingerprint();
+@@ -724,6 +785,8 @@ void LockScreen::createInstance(const WaylandOutput& output) {
+ void LockScreen::resetLockState() {
+   m_pendingAfterLocked = {};
+   m_suspendTimeoutTimer.stop();
++  m_unlockTransitionTimer.stop();
++  m_unlockTransitionPending = false;
+   m_lockDeferred = false;
+   if (m_lock == nullptr) {
+     m_lockPending = false;
+@@ -820,7 +883,7 @@ void LockScreen::handlePasswordEdited(const std::string& value) {
+ }
+
+ void LockScreen::tryAuthenticate() {
+-  if (m_authenticating || !m_locked) {
++  if (m_authenticating || !m_locked || m_unlockTransitionPending) {
+     return;
+   }
+   if (m_password.empty()) {
+diff --git a/src/shell/lockscreen/lock_screen.h b/src/shell/lockscreen/lock_screen.h
+index 75e279a..c9b11e3 100644
+--- a/src/shell/lockscreen/lock_screen.h
++++ b/src/shell/lockscreen/lock_screen.h
+@@ -103,6 +103,7 @@ private:
+   [[nodiscard]] bool isInteractiveOutput(const WaylandOutput& output) const;
+   [[nodiscard]] std::string wallpaperPathForOutput(const std::string& connectorName) const;
+   void createInstance(const WaylandOutput& output);
++  void finishUnlock();
+   void resetLockState();
+   void clearInstances();
+   void updatePromptOnSurfaces();
+@@ -140,6 +141,7 @@ private:
+   bool m_locked = false;
+   bool m_desktopCapturesPrimed = false;
+   bool m_lockDeferred = false;
++  bool m_unlockTransitionPending = false;
+   std::function<void()> m_pendingAfterLocked;
+   std::function<void()> m_onSessionLocked;
+   std::function<void()> m_onSessionUnlocked;
+@@ -149,4 +151,5 @@ private:
+   const WeatherService* m_weather = nullptr;
+   HttpClient* m_httpClient = nullptr;
+   Timer m_suspendTimeoutTimer;
++  Timer m_unlockTransitionTimer;
+ };
 diff --git a/src/shell/lockscreen/lock_surface.cpp b/src/shell/lockscreen/lock_surface.cpp
-index 1ad629f..f771c47 100644
+index 1ad629f..20e0185 100644
 --- a/src/shell/lockscreen/lock_surface.cpp
 +++ b/src/shell/lockscreen/lock_surface.cpp
-@@ -605,8 +605,46 @@ void LockSurface::setLockedState(bool locked) {
+@@ -605,13 +605,81 @@ void LockSurface::setLockedState(bool locked) {
    }
    m_locked = locked;
    if (m_locked) {
@@ -49,3 +190,181 @@ index 1ad629f..f771c47 100644
      m_inputDispatcher.setFocus(nullptr);
    }
    requestUpdate();
+ }
+
++void LockSurface::startUnlockTransition(std::function<void()> onComplete) {
++  m_locked = false;
++  m_inputDispatcher.setFocus(nullptr);
++  m_animations.cancelForOwner(this);
++
++  const float backgroundStart = m_backgroundLayer != nullptr ? m_backgroundLayer->opacity() : 1.0f;
++  const float widgetOpacityStart = m_widgetLayer != nullptr ? m_widgetLayer->opacity() : 1.0f;
++  const float widgetScaleStart = m_widgetLayer != nullptr ? m_widgetLayer->scale() : 1.0f;
++
++  m_animations.animate(
++      0.0f,
++      1.0f,
++      280.0f,
++      Easing::EaseInOutCubic,
++      [this, backgroundStart, widgetOpacityStart, widgetScaleStart](float progress) {
++        if (m_backgroundLayer != nullptr) {
++          m_backgroundLayer->setOpacity(backgroundStart * (1.0f - progress));
++        }
++        if (m_widgetLayer != nullptr) {
++          m_widgetLayer->setOpacity(widgetOpacityStart * (1.0f - progress));
++          m_widgetLayer->setScale(widgetScaleStart + (0.97f - widgetScaleStart) * progress);
++        }
++        requestUpdate();
++      },
++      std::move(onComplete),
++      this
++  );
++  requestUpdate();
++}
++
+ bool LockSurface::passwordFieldContainsPoint(float sceneX, float sceneY) const {
+   return m_passwordField != nullptr && m_passwordField->containsScenePoint(sceneX, sceneY);
+ }
+diff --git a/src/shell/lockscreen/lock_surface.h b/src/shell/lockscreen/lock_surface.h
+index d933f3d..1799cc8 100644
+--- a/src/shell/lockscreen/lock_surface.h
++++ b/src/shell/lockscreen/lock_surface.h
+@@ -53,6 +53,7 @@ public:
+   bool initialize() override { return false; }
+   bool initialize(ext_session_lock_v1* lock, wl_output* output, std::int32_t scale);
+   void setLockedState(bool locked);
++  void startUnlockTransition(std::function<void()> onComplete);
+   void setPromptState(std::string user, std::string password, std::string status, bool error, bool authenticating);
+   void setKeyboardIndicators(bool capsLock, bool hasMultipleLayouts, bool layoutSwitchable, std::string layoutLabel);
+   void setTextureCache(SharedTextureCache* cache) noexcept { m_textureCache = cache; }
+diff --git a/src/shell/osd/osd_overlay.cpp b/src/shell/osd/osd_overlay.cpp
+index eaf9bca..e05affd 100644
+--- a/src/shell/osd/osd_overlay.cpp
++++ b/src/shell/osd/osd_overlay.cpp
+@@ -126,8 +126,8 @@ namespace {
+     return (Style::controlHeight + Style::spaceSm) * s;
+   }
+
+-  [[nodiscard]] std::uint32_t osdSurfaceWidth(float s, const std::string& orientation, float innerPadX) {
+-    const float w = cardWidth(s, orientation) + innerPadX * 2.0f;
++  [[nodiscard]] std::uint32_t osdSurfaceWidth(float cardW, float innerPadX) {
++    const float w = cardW + innerPadX * 2.0f;
+     return static_cast<std::uint32_t>(std::max(1, static_cast<int>(std::ceil(w))));
+   }
+
+@@ -415,10 +415,30 @@ void OsdOverlay::ensureSurfaces() {
+   const int marginH = (m_config != nullptr) ? std::max(0, m_config->config().osd.offsetX) : 0;
+   const float horizontalInnerPad =
+       shell::surface_edge_inset::resolve(marginH, Style::spaceMd * layoutScale).innerPadding;
+-  const auto surfaceWidth = osdSurfaceWidth(layoutScale, orientation, horizontalInnerPad);
+   const auto surfaceHeight = osdSurfaceHeight(layoutScale, orientation, showProgress);
+   const SurfaceMargins margins = surfaceMarginsForPosition(position);
+
++  // Progress OSDs keep their stable compact width. Text OSDs carry values
++  // such as media titles and audio-device names, so size the card to the
++  // measured text and only ellipsize when it would run into an output edge.
++  const auto cardWidthForOutput = [&](const WaylandOutput& output) {
++    const float baseWidth = cardWidth(layoutScale, orientation);
++    if (showProgress || isVerticalOrientation(orientation) || m_content.value.empty()) {
++      return baseWidth;
++    }
++
++    const float textWidth =
++        m_renderContext->measureText(m_content.value, valueFontSize(layoutScale), FontWeight::Bold).width;
++    const float desiredWidth = cardPadding(layoutScale) * 2.0f
++        + glyphSize(layoutScale)
++        + innerGap(layoutScale)
++        + textWidth;
++    const float outputWidth = static_cast<float>(output.effectiveLogicalWidth());
++    const float edgeBudget = horizontalInnerPad * 2.0f + Style::spaceLg * layoutScale * 2.0f;
++    const float maxWidth = std::max(baseWidth, outputWidth - edgeBudget);
++    return std::clamp(desiredWidth, baseWidth, maxWidth);
++  };
++
+   m_lastPosition = position;
+   m_lastOrientation = orientation;
+   m_lastShowProgress = showProgress;
+@@ -450,6 +470,12 @@ void OsdOverlay::ensureSurfaces() {
+     if (inst->surface == nullptr) {
+       continue;
+     }
++    const WaylandOutput* output = m_wayland->findOutputByWl(inst->output);
++    if (output == nullptr) {
++      continue;
++    }
++    inst->cardWidth = cardWidthForOutput(*output);
++    const auto surfaceWidth = osdSurfaceWidth(inst->cardWidth, horizontalInnerPad);
+     if (inst->surface->marginTop() != margins.top
+         || inst->surface->marginRight() != margins.right
+         || inst->surface->marginBottom() != margins.bottom
+@@ -482,6 +508,8 @@ void OsdOverlay::ensureSurfaces() {
+     inst->output = output.output;
+     inst->scale = output.scale;
+     inst->uiLayoutScale = layoutScale;
++    inst->cardWidth = cardWidthForOutput(output);
++    const auto surfaceWidth = osdSurfaceWidth(inst->cardWidth, horizontalInnerPad);
+
+     std::uint32_t anchor = LayerShellAnchor::Top | LayerShellAnchor::Right;
+
+@@ -582,7 +610,7 @@ void OsdOverlay::prepareFrame(Instance& inst, bool needsUpdate, bool needsLayout
+     const float corner = Style::cornerRadiusScale();
+     if (std::abs(corner - inst.appliedCornerRadiusScale) > 1.0e-4f) {
+       const float s = inst.uiLayoutScale;
+-      const float cw = cardWidth(s, m_lastOrientation);
++      const float cw = inst.cardWidth;
+       const float ch = cardHeight(s, m_lastOrientation, m_lastShowProgress);
+       inst.background->setRadius(osdCardRadius(cw, ch, s));
+       if (inst.progress != nullptr) {
+@@ -612,7 +640,7 @@ void OsdOverlay::buildScene(Instance& inst, std::uint32_t width, std::uint32_t h
+   const auto h = static_cast<float>(height);
+   const float s = inst.uiLayoutScale;
+   const bool vertical = isVerticalOrientation(m_lastOrientation);
+-  const float cw = cardWidth(s, m_lastOrientation);
++  const float cw = inst.cardWidth;
+   const float ch = cardHeight(s, m_lastOrientation, m_lastShowProgress);
+   const float pad = cardPadding(s);
+   const float gap = innerGap(s);
+@@ -729,7 +757,7 @@ void OsdOverlay::updateInstanceContent(Instance& inst) {
+   const float s = inst.uiLayoutScale;
+   const bool vertical = isVerticalOrientation(m_lastOrientation);
+   // Card frame size is animated during reveal; measure layout against intrinsic size.
+-  const float cw = cardWidth(s, m_lastOrientation);
++  const float cw = inst.cardWidth;
+   const float ch = cardHeight(s, m_lastOrientation, m_lastShowProgress);
+   inst.background->setFill(colorSpecFromRole(ColorRole::Surface, osdBackgroundOpacity(m_config)));
+
+@@ -748,9 +776,10 @@ void OsdOverlay::updateInstanceContent(Instance& inst) {
+                                                   : ColorRole::OnSurface;
+   inst.value->setColor(colorSpecFromRole(valueRole));
+   inst.value->setTextAlign((vertical || !m_content.showProgress) ? TextAlign::Center : TextAlign::End);
+-  // Text OSDs (media title, device name, ...) carry arbitrary-length values; cap them to the card
+-  // interior so they ellipsize within the padding instead of overflowing. Progress OSDs keep the
+-  // uncapped "100%" value so it can reserve minWidth beside the bar.
++  // Text cards have already expanded to their measured value. This cap now
++  // only ellipsizes at the output-width limit rather than at the compact OSD
++  // width. Progress OSDs keep the uncapped "100%" value so it can reserve
++  // minWidth beside the bar.
+   const float horizontalValueMax = cw - cardPadding(s) * 2.0f - glyphSize(s) - innerGap(s);
+   inst.value->setMaxWidth(
+       vertical                      ? cw - cardPadding(s) * 2.0f
+@@ -792,7 +821,7 @@ void OsdOverlay::applyReveal(Instance& inst, float reveal) {
+   }
+
+   const float s = inst.uiLayoutScale;
+-  const float cw = cardWidth(s, m_lastOrientation);
++  const float cw = inst.cardWidth;
+   const float ch = cardHeight(s, m_lastOrientation, m_lastShowProgress);
+   const float baseX = cardBaseX(inst.sceneRoot->width(), cw);
+   const float baseY = cardBaseYForPosition(m_lastPosition, inst.sceneRoot->height(), ch);
+diff --git a/src/shell/osd/osd_overlay.h b/src/shell/osd/osd_overlay.h
+index a52f5ff..61e1e90 100644
+--- a/src/shell/osd/osd_overlay.h
++++ b/src/shell/osd/osd_overlay.h
+@@ -94,6 +94,7 @@ private:
+     Glyph* glyph = nullptr;
+     Label* value = nullptr;
+     ProgressBar* progress = nullptr;
++    float cardWidth = 0.0f;
+     float progressValueMinWidth = 0.0f;
+     float rowBaseX = 0.0f;
+     float rowBaseY = 0.0f;

@@ -111,6 +111,7 @@ let
   niriStateDir = "/home/${config.local.desktop.primaryUser}/.local/state/niri-theme";
   themeStateFile = "${niriStateDir}/current";
   wallpaperStateFile = "${niriStateDir}/wallpaper";
+  resolvedThemeFile = "${niriStateDir}/noctalia-resolved";
 
   # Outside `<esp>/limine/` — see the header note about the installer's
   # delete-what-I-didn't-write pass over that directory.
@@ -223,6 +224,7 @@ let
       coreutils
       findutils
       gawk
+      gnused
       imagemagick
       # lsblk, blkid, findmnt, mount, umount — for the other-ESP scan.
       util-linux
@@ -283,7 +285,60 @@ let
       }
       trap cleanup EXIT
 
-      cp "$block" "$body"
+      # Noctalia's generated template is the authority when it exists. Unlike
+      # the finite theme blocks, this file can describe wallpaper-derived and
+      # community palettes created after the NixOS generation was built.
+      read_colour() {
+        [ -f ${resolvedThemeFile} ] || return 0
+        sed -n "s/^$1=\\(#[0-9A-Fa-f]\\{6\\}\\)$/\\1/p" ${resolvedThemeFile} | head -n1 || true
+      }
+      rgb() {
+        printf '%s' "''${1#\#}" | tr '[:lower:]' '[:upper:]'
+      }
+
+      bg="$(read_colour bg)"
+      bg_alt="$(read_colour bg_alt)"
+      fg="$(read_colour fg)"
+      fg_dim="$(read_colour fg_dim)"
+      accent="$(read_colour accent)"
+      live_palette=""
+      live_bright_palette=""
+      palette_ok=1
+
+      for number in $(seq 0 15); do
+        value="$(read_colour "color$number")"
+        if [ -z "$value" ]; then
+          palette_ok=0
+          break
+        fi
+        value="$(rgb "$value")"
+        if [ "$number" -lt 8 ]; then
+          [ -z "$live_palette" ] || live_palette="$live_palette;"
+          live_palette="$live_palette$value"
+        else
+          [ -z "$live_bright_palette" ] || live_bright_palette="$live_bright_palette;"
+          live_bright_palette="$live_bright_palette$value"
+        fi
+      done
+
+      if [ -n "$bg" ] && [ -n "$bg_alt" ] && [ -n "$fg" ] \
+         && [ -n "$fg_dim" ] && [ -n "$accent" ] && [ "$palette_ok" -eq 1 ]; then
+        {
+          printf 'backdrop: %s\n' "$(rgb "$bg")"
+          printf 'term_foreground: %s\n' "$(rgb "$fg")"
+          printf 'term_foreground_bright: %s\n' "$(rgb "$accent")"
+          printf 'term_background: %s%s\n' ${lib.escapeShellArg (lib.toUpper cfg.menuTransparency)} "$(rgb "$bg")"
+          printf 'term_background_bright: %s\n' "$(rgb "$bg_alt")"
+          printf 'term_palette: %s\n' "$live_palette"
+          printf 'term_palette_bright: %s\n' "$live_bright_palette"
+          printf 'interface_branding_colour: %s\n' "$(rgb "$accent")"
+          printf 'interface_help_colour: %s\n' "$(rgb "$fg_dim")"
+          printf 'interface_help_colour_bright: %s\n' "$(rgb "$accent")"
+          ${lib.optionalString (cfg.branding != null) "printf '%s\\n' ${lib.escapeShellArg "interface_branding: ${cfg.branding}"}"}
+        } > "$body"
+      else
+        cp "$block" "$body"
+      fi
 
       # Only name the image if it is actually there — on a host that has never
       # picked a wallpaper and sets no local.boot.wallpaper, there is nothing
@@ -550,6 +605,7 @@ in
         wantedBy = [ "multi-user.target" ];
         pathConfig.PathChanged = [
           themeStateFile
+          resolvedThemeFile
           #wallpaperStateFile
         ];
       };

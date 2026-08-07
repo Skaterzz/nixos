@@ -9,9 +9,9 @@
 # Port of the existing Spicetify setup from the dotfiles repository.
 #
 # The Text theme's CSS remains sourced from dotfiles, while color.ini is
-# generated from niri/themes.nix. Each Niri palette is built as an immutable
-# Spicetify package, and the launcher selects the package matching the runtime
-# theme recorded in ~/.local/state/niri-theme/current.
+# generated from niri/themes.nix. Finite Niri palettes remain immutable
+# packages; when Noctalia owns the shell, its resolved live palette is layered
+# over Text at runtime so wallpaper/community schemes work too.
 let
   themeSet = import ./niri/theme-set.nix {
     inherit lib;
@@ -20,6 +20,7 @@ let
   inherit (themeSet) themes;
 
   currentThemeFile = "${config.home.homeDirectory}/.local/state/niri-theme/current";
+  spotifyPaletteDir = "${config.home.homeDirectory}/.local/state/noctalia-spotify";
 
   stripHash = lib.removePrefix "#";
 
@@ -52,6 +53,56 @@ let
     cat > "$out/color.ini" <<'COLOR_INI'
     ${generatedColorIni}
     COLOR_INI
+
+    cat >> "$out/theme.js" <<'THEME_JS'
+
+    // Noctalia can derive palettes from a wallpaper or a downloaded community
+    // scheme at runtime, long after this immutable theme was built. A tiny
+    // loopback-only service exposes the resolved variables written by the
+    // shell hook; replace one style element instead of rebuilding Spotify.
+    (() => {
+      const endpoint = "http://127.0.0.1:38471/colors.css";
+      const id = "noctalia-live-colors";
+
+      async function syncNoctaliaColors() {
+        try {
+          const response = await fetch(endpoint, { cache: "no-store" });
+          if (!response.ok) return;
+          const css = await response.text();
+          let style = document.getElementById(id);
+          if (!style) {
+            style = document.createElement("style");
+            style.id = id;
+            document.head.appendChild(style);
+          }
+          if (style.textContent !== css) style.textContent = css;
+        } catch (_) {
+          // The service is absent under the non-Noctalia shell; static
+          // color.ini remains the fallback.
+        }
+      }
+
+      syncNoctaliaColors();
+      setInterval(syncNoctaliaColors, 2000);
+    })();
+    THEME_JS
+  '';
+
+  paletteServer = pkgs.writeText "noctalia-spotify-palette-server.py" ''
+    from functools import partial
+    from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
+
+    class Handler(SimpleHTTPRequestHandler):
+        def log_message(self, *_args):
+            pass
+
+        def end_headers(self):
+            self.send_header("Access-Control-Allow-Origin", "*")
+            self.send_header("Cache-Control", "no-store")
+            super().end_headers()
+
+    handler = partial(Handler, directory=${builtins.toJSON spotifyPaletteDir})
+    ThreadingHTTPServer(("127.0.0.1", 38471), handler).serve_forever()
   '';
 
   marketplaceSource =
@@ -209,6 +260,20 @@ in
   systemd.user.paths.spotify-theme-sync = {
     Unit.Description = "Watch the active Niri theme for Spotify";
     Path.PathChanged = currentThemeFile;
+    Install.WantedBy = [ "default.target" ];
+  };
+
+  systemd.user.services.noctalia-spotify-palette = lib.mkIf (config.local.niri.shell == "noctalia") {
+    Unit = {
+      Description = "Expose Noctalia's resolved palette to Spotify";
+      After = [ "graphical-session.target" ];
+    };
+    Service = {
+      ExecStartPre = "${pkgs.coreutils}/bin/mkdir -p ${spotifyPaletteDir}";
+      ExecStart = "${pkgs.python3}/bin/python ${paletteServer}";
+      Restart = "on-failure";
+      RestartSec = 2;
+    };
     Install.WantedBy = [ "default.target" ];
   };
 }

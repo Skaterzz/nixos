@@ -33,9 +33,10 @@
 # No home-manager module, and no flake input
 # ------------------------------------------
 # The shell starts from `pkgs.noctalia` and everything below is written out
-# by hand. A small source patch adds the lock-screen entrance transition that
-# v5 does not expose as a setting, so the first rebuild after this change does
-# compile Noctalia locally; later builds reuse that store result.
+# by hand. A small source patch adds lock-screen entrance/exit motion and lets
+# text OSDs grow to their content — two behaviours v5 does not expose as
+# settings — so the first rebuild after this change compiles Noctalia locally;
+# later builds reuse that store result.
 # Upstream ships a home-manager module in its flake, and this used to use it,
 # but it only generates the three files at the bottom of this comment and its
 # flake publishes no substituter — so having it in `inputs` meant an extra
@@ -61,22 +62,6 @@ let
   noctalia = lib.getExe pkg;
 
   paletteSet = import ./noctalia-palettes.nix { inherit lib; };
-  noctaliaBuiltinSet = import ./noctalia-builtin-themes.nix;
-
-  # Shell case arms mapping Noctalia's own palette/mode pair to the generated
-  # internal theme that feeds niri, SDDM, Limine, Spotify, kitty, and KDE.
-  builtinThemeCases = lib.concatStringsSep "\n" (
-    lib.concatLists (
-      lib.mapAttrsToList (
-        palette: modes:
-        lib.mapAttrsToList (
-          mode: theme: ''
-            ${lib.escapeShellArg "builtin:${palette}:${mode}"}) mapped=${lib.escapeShellArg theme} ;;
-          ''
-        ) modes
-      ) noctaliaBuiltinSet.selections
-    )
-  );
 
   tomlFormat = pkgs.formats.toml { };
   jsonFormat = pkgs.formats.json { };
@@ -85,6 +70,8 @@ let
   # way. `stateDir` in particular is the fan-out point shared with the SDDM,
   # Limine, and Spotify syncs — see the hooks below.
   stateDir = "${config.home.homeDirectory}/.local/state/niri-theme";
+  resolvedThemeFile = "${stateDir}/noctalia-resolved";
+  spotifyThemeDir = "${config.home.homeDirectory}/.local/state/noctalia-spotify";
   wallpaperDir = "${config.home.homeDirectory}/.local/share/wallpapers";
   screenshotDir = "${config.home.homeDirectory}/Pictures/Screenshots";
 
@@ -192,49 +179,90 @@ let
   # system path units and Spotify's user path unit after a missed or
   # late-starting sync.
   #
-  # `color-scheme-get` prints the source followed by the display name. Custom
-  # palettes already use a themes.nix key. Builtins need both their name and
-  # Noctalia's resolved dark/light mode; noctalia-builtin-themes.nix carries
-  # the exact upstream values for all twenty combinations. Wallpaper and
-  # community palettes are intentionally left alone because their colours are
-  # not a finite build-time set.
+  # The important distinction here is resolved colours, not palette names.
+  # Noctalia's builtin templates have already expanded builtin, custom,
+  # wallpaper-derived and community schemes into ordinary colour files when
+  # this hook runs. Reading those files means system consumers follow all four
+  # sources, including a wallpaper palette that did not exist at build time.
   themeResync = pkgs.writeShellApplication {
     name = "noctalia-theme-resync";
     runtimeInputs = [
       pkg
-      niriScripts.themeApply
+      pkgs.coreutils
+      pkgs.gawk
+      pkgs.gnugrep
+      pkgs.gnused
     ];
     text = ''
-      line="$(noctalia msg color-scheme-get 2>/dev/null || true)"
+      kitty=${lib.escapeShellArg "${config.xdg.configHome}/kitty/themes/noctalia.conf"}
+      btop=${lib.escapeShellArg "${config.xdg.configHome}/btop/themes/noctalia.theme"}
+      niri=${lib.escapeShellArg "${config.xdg.configHome}/niri/noctalia.kdl"}
 
-      [ -n "$line" ] || exit 0
+      [ -f "$kitty" ] && [ -f "$btop" ] && [ -f "$niri" ] || exit 0
 
-      # Keep everything after the first space as the name. One builtin is
-      # called "Rosé Pine", so splitting with `set --` silently turns it
-      # into "Rosé".
-      source="''${line%% *}"
-      name="''${line#* }"
-      [ "$line" != "$source" ] || name=""
-      [ -n "$name" ] || exit 0
+      from_space_file() {
+        sed -n "s/^[[:space:]]*$1[[:space:]]\\+\\(#[0-9A-Fa-f]\\{6\\}\\).*/\\1/p" "$2" | head -n1 || true
+      }
+      from_equals_file() {
+        sed -n "s/^[[:space:]]*$1[[:space:]]*=[[:space:]]*['\"]\\(#[0-9A-Fa-f]\\{6\\}\\)['\"].*/\\1/p" "$2" | head -n1 || true
+      }
+      valid_colour() {
+        printf '%s\n' "$1" | grep -Eq '^#[0-9A-Fa-f]{6}$'
+      }
 
-      mapped=""
-      case "$source" in
-        custom)
-          mapped="$name"
-          ;;
-        builtin)
-          mode="$(noctalia msg theme-mode-get 2>/dev/null || true)"
-          case "$source:$name:$mode" in
-${builtinThemeCases}
-            *) exit 0 ;;
-          esac
-          ;;
-        *)
-          exit 0
-          ;;
-      esac
+      bg="$(from_space_file background "$kitty")"
+      fg="$(from_space_file foreground "$kitty")"
+      accent="$(from_space_file active_border_color "$kitty")"
+      bg_alt="$(from_space_file inactive_border_color "$kitty")"
+      fg_dim="$(from_space_file inactive_tab_foreground "$kitty")"
+      accent_dim="$(from_equals_file proc_misc "$btop")"
+      warn="$(from_equals_file hi_fg "$btop")"
+      border="$(from_equals_file cpu_box "$btop")"
+      err="$(sed -n 's/^[[:space:]]*urgent-color[[:space:]]*"\\(#[0-9A-Fa-f]\\{6\\}\\)".*/\\1/p' "$niri" | head -n1 || true)"
 
-      NIRI_THEME_FROM_NOCTALIA=1 theme-apply "$mapped"
+      for key in bg fg accent bg_alt fg_dim accent_dim warn border err; do
+        eval "value=\''${$key}"
+        valid_colour "$value" || exit 0
+      done
+
+      colours=""
+      for number in $(seq 0 15); do
+        value="$(from_space_file "color$number" "$kitty")"
+        valid_colour "$value" || exit 0
+        colours="$colours
+color$number=$value"
+      done
+
+      mkdir -p ${lib.escapeShellArg stateDir} ${lib.escapeShellArg spotifyThemeDir}
+
+      resolved_tmp="${resolvedThemeFile}.tmp"
+      {
+        printf 'bg=%s\nbg_alt=%s\nfg=%s\nfg_dim=%s\n' "$bg" "$bg_alt" "$fg" "$fg_dim"
+        printf 'accent=%s\naccent_dim=%s\nwarn=%s\nerr=%s\nborder=%s\n' \
+          "$accent" "$accent_dim" "$warn" "$err" "$border"
+        printf '%s\n' "$colours" | sed '/^$/d'
+      } > "$resolved_tmp"
+      mv -f "$resolved_tmp" ${lib.escapeShellArg resolvedThemeFile}
+
+      spotify_tmp=${lib.escapeShellArg "${spotifyThemeDir}/colors.css.tmp"}
+      {
+        printf ':root {\n'
+        printf '  --spice-accent: %s;\n  --spice-accent-active: %s;\n' "$accent" "$accent"
+        printf '  --spice-accent-inactive: %s;\n  --spice-banner: %s;\n' "$bg_alt" "$accent"
+        printf '  --spice-border-active: %s;\n  --spice-border-inactive: %s;\n' "$accent" "$border"
+        printf '  --spice-header: %s;\n  --spice-highlight: %s;\n' "$bg_alt" "$bg_alt"
+        printf '  --spice-main: %s;\n  --spice-notification: %s;\n' "$bg" "$accent"
+        printf '  --spice-notification-error: %s;\n  --spice-subtext: %s;\n' "$err" "$fg_dim"
+        printf '  --spice-text: %s;\n}\n' "$fg"
+      } > "$spotify_tmp"
+      mv -f "$spotify_tmp" ${lib.escapeShellArg "${spotifyThemeDir}/colors.css"}
+
+      # This sentinel is deliberately a stable name. It wakes the system and
+      # Spotify path units on every palette change without pretending a
+      # wallpaper/community palette is one of the finite Nix theme names.
+      current_tmp="${stateDir}/current.tmp"
+      printf '%s\n' noctalia-live > "$current_tmp"
+      mv -f "$current_tmp" "${stateDir}/current"
     '';
   };
 
@@ -292,7 +320,8 @@ ${builtinThemeCases}
         scale = o.scale;
       }) config.local.niri.outputs;
 
-  # One login box, two lock-safe buttons, and two clock widgets per output.
+  # One compact login box, an auto-hiding media player, two lock-safe buttons,
+  # and two clock widgets per output.
   #
   # A clock widget has one font size, so "time bigger than the date" cannot be
   # done inside a single `format` string — it needs two widgets sized
@@ -328,13 +357,15 @@ ${builtinThemeCases}
         cx = w / 2;
         timeCy = builtins.floor (h * 0.26);
 
-        # Noctalia's own default login box is capped at 810 logical pixels and
-        # sits 84px above the bottom edge. Declaring it here lets us turn off
-        # only its shared session row while keeping the rest of its regular
-        # layout (media, weather, password, caps lock, and keyboard layout).
-        loginW = lib.min 810 (w - 48);
-        loginH = 190;
+        # The native compact layout is one control-height row plus padding.
+        # Keep its upstream 400px width cap and put media directly above it.
+        loginW = lib.min 400 (w - 48);
+        loginH = 72;
         loginCy = h - 84 - (loginH / 2);
+
+        mediaW = lib.min 420 (w - 48);
+        mediaH = 132;
+        mediaCy = loginCy - (loginH / 2) - 18 - (mediaH / 2);
 
         buttonW = 170;
         buttonH = 42;
@@ -399,8 +430,28 @@ ${builtinThemeCases}
           box_height = loginH;
 
           settings = {
+            layout = "compact";
             show_session_buttons = false;
             show_weather = false;
+            show_media = false;
+          };
+        })
+        (lib.nameValuePair "media_player_${o.name}" {
+          type = "media_player";
+          output = o.name;
+          cx = cx;
+          cy = mediaCy;
+          box_width = mediaW;
+          box_height = mediaH;
+
+          settings = {
+            vertical = false;
+            hide_when_no_media = true;
+            background = true;
+            background_opacity = 0.82;
+            background_radius = 16;
+            background_padding = 10;
+            shadow = true;
           };
         })
         (lib.nameValuePair "clock_time_${o.name}" (
@@ -549,29 +600,40 @@ ${builtinThemeCases}
       # is the script that already knows how to do it (it asks logind for a
       # greeter on a spare VT and leaves this session running), which is the
       # same one the waybar session menu called.
+      session.show_shortcuts = true;
       session.actions = [
         {
           action = "lock";
           label = "Lock";
+          shortcut = "1";
         }
         {
           action = "lock_and_suspend";
           label = "Lock and suspend";
+          shortcut = "2";
         }
         {
           action = "command";
           label = "Switch user";
           glyph = "users";
           command = lib.getExe niriScripts.switchUser;
+          shortcut = "3";
+        }
+        {
+          action = "logout";
+          label = "Log out";
+          shortcut = "4";
         }
         {
           action = "reboot";
           label = "Reboot";
+          shortcut = "5";
         }
         {
           action = "shutdown";
           label = "Power off";
           variant = "destructive";
+          shortcut = "6";
         }
       ];
     };
@@ -636,6 +698,7 @@ ${builtinThemeCases}
           "bluetooth"
           "network"
           "privacy"
+          "joshr/gamemode-indicator:status"
 
           # Caffeine takes the slot that previously showed the power profile.
           # Keep it and the battery as ordinary bar widgets: a capsule group
@@ -1116,6 +1179,7 @@ in
       # backend on `commandExists("ddcutil")` and nixpkgs' wrapper only
       # prefixes gitMinimal onto its PATH. See the brightness block above.
       pkgs.ddcutil
+      pkgs.procps
 
       # Poppins, for the lock screen clock. A font referenced by family name
       # in a config file has to actually be installed for fontconfig to
@@ -1234,6 +1298,13 @@ in
       }
     ) paletteSet.palettes;
 
+    # Local v5 plugin: the slot collapses completely unless GameMode has an
+    # active client. It sits immediately after Privacy in the bar list above.
+    xdg.dataFile."noctalia/plugins/gamemode-indicator" = {
+      source = ./noctalia-plugins/gamemode-indicator;
+      recursive = true;
+    };
+
     # As a user service rather than a niri `spawn-at-startup`, matching how
     # waybar was run and for a better reason than waybar had: naming the
     # generated config in `X-Restart-Triggers` means a `home-manager switch`
@@ -1280,11 +1351,7 @@ in
     # `wallpaper-menu` and `session-menu` in ./scripts.nix all use it as a
     # plain `--dmenu` and keep working; only Mod+D moves.
 
-    # The gamemode indicator has no widget here. waybar's `custom/gamemode`
-    # was a script polled on an interval and poked with SIGRTMIN+9 by the
-    # hooks in modules/nixos/gaming.nix; noctalia's `custom_button` draws a
-    # fixed label and has no exec, so there is nothing to poll with. Those
-    # hooks are left alone — their `pkill` finds no waybar and exits into a
-    # `|| true`.
+    # GameMode is represented by the local plugin above. The old waybar signal
+    # hooks remain harmless; the plugin polls without starting gamemoded.
   };
 }

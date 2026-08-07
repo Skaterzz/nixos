@@ -76,10 +76,8 @@ let
 
   # --- hooks ------------------------------------------------------------
   #
-  # Carry a change noctalia made outward to something that isn't noctalia.
-  # Both are given the environment variables the shell exports for the hook
-  # (`NOCTALIA_WALLPAPER_PATH` here) rather than being told anything on the
-  # command line.
+  # Carry changes noctalia made outward to the pieces of the session that do
+  # not read its palette directly.
 
   # Wallpaper -> the login screen.
   #
@@ -105,6 +103,54 @@ let
       tmp="${stateDir}/wallpaper.tmp"
       printf %s "$path" > "$tmp"
       mv -f "$tmp" "${stateDir}/wallpaper"
+    '';
+  };
+
+  # Noctalia palette -> niri overview backdrop.
+  #
+  # The builtin niri template already resolves Noctalia's live `surface`
+  # colour into ~/.config/niri/noctalia.kdl, but it only themes borders,
+  # shadows and hints. The overview backdrop is absent, so it keeps the colour
+  # from theming.nix even when Noctalia changes to a builtin, wallpaper, or
+  # community palette that has no corresponding theme directory.
+  #
+  # Run after the builtin templates, read the resolved surface colour back
+  # from their niri fragment, and add the one node they omit. This works for
+  # every palette source without trying to reproduce Noctalia's colour
+  # resolution. Replacing the file atomically also gives niri one complete
+  # config change to live-reload instead of a partially appended KDL block.
+  niriOverviewSync = pkgs.writeShellApplication {
+    name = "noctalia-niri-overview-sync";
+    runtimeInputs = [
+      pkgs.coreutils
+      pkgs.gnused
+    ];
+    text = ''
+      fragment=${lib.escapeShellArg "${config.xdg.configHome}/niri/noctalia.kdl"}
+      [ -f "$fragment" ] || exit 0
+
+      surface="$(sed -n \
+        's/^[[:space:]]*inactive-color[[:space:]]*"\(#[0-9A-Fa-f]\{6\}\)".*/\1/p' \
+        "$fragment" | head -n1)"
+      [ -n "$surface" ] || exit 0
+
+      tmp="$(mktemp)"
+      trap 'rm -f "$tmp"' EXIT
+
+      sed \
+        '/^\/\/ >>> NOCTALIA NIRI OVERVIEW >>>$/,/^\/\/ <<< NOCTALIA NIRI OVERVIEW <<<$/d' \
+        "$fragment" > "$tmp"
+
+      printf '%s\n' \
+        "" \
+        '// >>> NOCTALIA NIRI OVERVIEW >>>' \
+        'overview {' \
+        "    backdrop-color \"$surface\"" \
+        '}' \
+        '// <<< NOCTALIA NIRI OVERVIEW <<<' >> "$tmp"
+
+      mv -f "$tmp" "$fragment"
+      trap - EXIT
     '';
   };
 
@@ -153,29 +199,23 @@ let
 
   # --- lock screen ------------------------------------------------------
   #
-  # noctalia draws the login box itself, centred and near the bottom, and it
-  # already carries the things a lock screen is asked for: who is logging in,
-  # what is playing, caps lock, the keyboard layout and the session buttons.
-  # Nothing here has to place it — a `login_box` entry in `lockscreen_widgets`
-  # only *overrides* its position, so leaving it out is what keeps the layout
-  # correct on a display whose resolution this file does not know.
+  # The desktop session panel and lock screen normally read one shared action
+  # list. Noctalia only filters `lock` and `lock_and_suspend` while locked, so
+  # putting reboot and power-off back in the desktop panel would put them on
+  # the lock screen too. There is no per-surface action list in v5.
   #
-  # What the login box has no equivalent for is the time, so that is the one
-  # widget below — and widgets *are* placed by pixel coordinate, per output.
-  # Hence the arithmetic: the position is derived from the mode already
-  # declared in `local.niri.outputs` rather than written down a second time,
-  # so a monitor change moves the clock with it. Coordinates are clamped to
-  # the output by noctalia, so being wrong here is off-centre rather than
-  # off-screen.
+  # Keep the desktop panel complete, hide the login box's shared action row,
+  # and draw two lockscreen button widgets instead: Suspend and Switch user.
+  # The login box, those buttons, and the clock are positioned from the mode
+  # already declared in `local.niri.outputs`; a monitor change therefore moves
+  # the whole composition rather than leaving fixed coordinates behind.
   #
   # **Battery is not here, and cannot be.** noctalia has no battery widget for
   # the lock screen or the desktop — the widget types are clock, label,
   # button, sysmon, media_player, weather, sticker, volume, the two
   # visualisers and login_box, and sysmon's stats are CPU, GPU, RAM, swap and
   # network with nothing for the power supply. There is no official plugin for
-  # it either. The charge is on the bar and in the control centre; the
-  # hyprlock screen under `local.niri.shell = "waybar"` still draws it, which
-  # is what `local.niri.lockBatteryIndicator` still controls.
+  # it either. The charge remains on the bar and in the control centre.
 
   # "2560x1440@180.000" -> { w = 2560; h = 1440; }, null if it doesn't parse.
   parseMode =
@@ -211,7 +251,7 @@ let
         scale = o.scale;
       }) config.local.niri.outputs;
 
-  # Two clock widgets per output rather than one with a two-line format.
+  # One login box, two lock-safe buttons, and two clock widgets per output.
   #
   # A clock widget has one font size, so "time bigger than the date" cannot be
   # done inside a single `format` string — it needs two widgets sized
@@ -224,10 +264,9 @@ let
   # scale, and they are fractions of the output rather than fixed pixels so
   # the proportions hold on a 1080p panel and a 1440p one alike.
   #
-  # Stacked with the time's box directly above the date's, both centred on the
-  # same x. The pair sits a little above the third of the screen — high enough
-  # to clear the login box noctalia draws near the bottom.
-  lockClockWidgets = lib.listToAttrs (
+  # The clock pair sits above the login box. The two buttons sit below it and
+  # replace the shared session-action row that is disabled on the login box.
+  lockWidgets = lib.listToAttrs (
     lib.concatMap (
       o:
       let
@@ -247,6 +286,20 @@ let
 
         cx = w / 2;
         timeCy = builtins.floor (h * 0.26);
+
+        # Noctalia's own default login box is capped at 810 logical pixels and
+        # sits 84px above the bottom edge. Declaring it here lets us turn off
+        # only its shared session row while keeping the rest of its regular
+        # layout (media, weather, password, caps lock, and keyboard layout).
+        loginW = lib.min 810 (w - 48);
+        loginH = 190;
+        loginCy = h - 84 - (loginH / 2);
+
+        buttonW = 170;
+        buttonH = 42;
+        buttonGap = 12;
+        buttonOffset = (buttonW + buttonGap) / 2;
+        buttonCy = h - 42;
 
         # Baselines touch rather than overlap: half of each box plus a small
         # gap. Derived from the boxes above so changing the type scale moves
@@ -280,8 +333,32 @@ let
             shadow = true;
           };
         };
+
+        lockButton = {
+          type = "button";
+          output = o.name;
+          cy = buttonCy;
+          box_width = buttonW;
+          box_height = buttonH;
+
+          settings = {
+            background = true;
+            font_family = "Poppins";
+            variant = "secondary";
+          };
+        };
       in
       [
+        (lib.nameValuePair "login_box_${o.name}" {
+          type = "login_box";
+          output = o.name;
+          cx = cx;
+          cy = loginCy;
+          box_width = loginW;
+          box_height = loginH;
+
+          settings.show_session_buttons = false;
+        })
         (lib.nameValuePair "clock_time_${o.name}" (
           lib.recursiveUpdate common {
             cx = cx;
@@ -298,6 +375,26 @@ let
             box_width = dateW;
             box_height = dateH;
             settings.format = "{:%A, %B %-d}";
+          }
+        ))
+        (lib.nameValuePair "lock_suspend_${o.name}" (
+          lib.recursiveUpdate lockButton {
+            cx = cx - buttonOffset;
+            settings = {
+              glyph = "moon";
+              label = "Suspend";
+              command = "${pkgs.systemd}/bin/systemctl suspend";
+            };
+          }
+        ))
+        (lib.nameValuePair "lock_switch_user_${o.name}" (
+          lib.recursiveUpdate lockButton {
+            cx = cx + buttonOffset;
+            settings = {
+              glyph = "users";
+              label = "Switch user";
+              command = lib.getExe niriScripts.switchUser;
+            };
           }
         ))
       ]
@@ -394,17 +491,12 @@ let
         open_near_click_clipboard = true;
       };
 
-      # --- what the session panel and the lock screen offer ---------------
+      # --- what the desktop session panel offers --------------------------
       #
-      # Two actions, and they are the same two in both places: the lock
-      # screen's buttons are these actions, not a separate list. Cutting the
-      # list to sleep and switch-user is therefore what makes the lock screen
-      # carry only those two.
-      #
-      # The default set is lock, logout, suspend, reboot and shutdown. Lock is
-      # meaningless *on* the lock screen; reboot and shutdown are one
-      # mis-click from throwing away a session you only meant to step away
-      # from, and are still a `Mod+Shift+Escape` away on the desktop.
+      # Noctalia has one shared action list, but the lock screen only needs
+      # Suspend and Switch user. Its shared row is disabled above and replaced
+      # with those two explicit lockscreen widgets, leaving this desktop list
+      # free to carry the complete set of requested actions.
       #
       # **Switch user is a `command`.** The action vocabulary is lock,
       # logout, suspend, lock_and_suspend, reboot, shutdown and command —
@@ -415,15 +507,27 @@ let
       # same one the waybar session menu called.
       session.actions = [
         {
-          action = "suspend";
-          label = "Sleep";
-          glyph = "moon";
+          action = "lock";
+          label = "Lock";
+        }
+        {
+          action = "lock_and_suspend";
+          label = "Lock and suspend";
         }
         {
           action = "command";
           label = "Switch user";
           glyph = "users";
           command = lib.getExe niriScripts.switchUser;
+        }
+        {
+          action = "reboot";
+          label = "Reboot";
+        }
+        {
+          action = "shutdown";
+          label = "Power off";
+          variant = "destructive";
         }
       ];
     };
@@ -528,6 +632,10 @@ let
         tooltip = "Applications";
         command = "noctalia msg panel-toggle launcher";
       };
+
+      # Make the numbered workspaces at the left edge easier to scan without
+      # increasing the height of the whole bar.
+      workspaces.scale = 1.25;
 
       clock = {
         format = "{:%I:%M %p   %a, %b %d}";
@@ -829,14 +937,18 @@ let
     };
 
     lockscreen_widgets = {
-      enabled = lockClockWidgets != { };
-      widget = lockClockWidgets;
+      enabled = lockWidgets != { };
+      widget = lockWidgets;
     };
 
     # --- hooks ------------------------------------------------------------
     hooks = {
+      started = lib.getExe niriOverviewSync;
       wallpaper_changed = lib.getExe sddmWallpaperSync;
-      colors_changed = lib.getExe themeResync;
+      colors_changed = [
+        (lib.getExe themeResync)
+        (lib.getExe niriOverviewSync)
+      ];
     };
 
     # Sampling for the control centre's system tab. Nothing here is on the
@@ -926,10 +1038,9 @@ let
     #
     # `widget_order` is what makes this a silent override rather than a merge:
     # the reader treats an order list as the definitive membership list, so a
-    # stale one naming `clock_DP-3` drops the `clock_time_DP-3` and
-    # `clock_date_DP-3` declared here entirely. Everything about the lock
-    # screen clock — the Poppins family, the two boxes that make the time
-    # bigger than the date — then looks like it did nothing.
+    # stale one naming `clock_DP-3` drops the login box, lock buttons,
+    # `clock_time_DP-3`, and `clock_date_DP-3` declared here entirely. The
+    # complete lockscreen composition would then look like it did nothing.
     #
     # Only these two sections. Everything else in that file is a real
     # preference, and the wallpaper in particular is genuine runtime state:

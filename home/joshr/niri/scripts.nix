@@ -2969,15 +2969,28 @@ lockNowPlaying = pkgs.writeShellApplication {
   # without this, switching back would land straight in an unlocked desktop.
   switchUser = pkgs.writeShellApplication {
     name = "switch-user";
-    runtimeInputs = [ lockNow ];
-    text = ''
-      # lock-now returns once the locker is up rather than when it ends, and
-      # carries the settle that the hand-rolled `lock-session & sleep 0.3`
-      # here used to do by hand.
-      lock-now
+    runtimeInputs = lib.optional (!useNoctalia) lockNow;
+    text =
+      if useNoctalia then
+        ''
+          # Switching seats does not lock the session on its own. Ask the
+          # shell that owns this session to claim the Wayland lock first, then
+          # give it the same short settle the legacy locker used before the
+          # greeter takes the DRM devices away.
+          ${lib.getExe pkgs.noctalia} msg session lock
+          ${pkgs.coreutils}/bin/sleep 0.3
 
-      exec ${lib.getExe switchToGreeter}
-    '';
+          exec ${lib.getExe switchToGreeter}
+        ''
+      else
+        ''
+          # lock-now returns once the locker is up rather than when it ends,
+          # and carries the settle that the hand-rolled
+          # `lock-session & sleep 0.3` here used to do by hand.
+          lock-now
+
+          exec ${lib.getExe switchToGreeter}
+        '';
   };
 
   sessionMenu = pkgs.writeShellApplication {
@@ -3971,12 +3984,7 @@ in
     wallpaperRandom
     wallpaperRestore
     screenshot
-    lockSession
-    lockNow
-    lockBlank
-    unlockSession
     switchUser
-    sessionMenu
     whenActive
     idleInhibit
     osd
@@ -3987,6 +3995,16 @@ in
     cavaBar
     capsLock
     gamemodeStatus
+  ]
+  ++ lib.optionals (!useNoctalia) [
+    # Noctalia owns locking, blanking, idling, and the session panel itself.
+    # Keeping these legacy entry points out of the profile is what keeps their
+    # Hyprlock and Swaylock runtime closures off a Noctalia system.
+    lockSession
+    lockNow
+    lockBlank
+    unlockSession
+    sessionMenu
   ];
 
   _module.args.niriScripts = {

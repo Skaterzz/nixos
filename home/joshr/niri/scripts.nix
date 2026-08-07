@@ -178,7 +178,12 @@ let
     lib.mapAttrsToList (n: d: ''${n}) target="${d}" ;;'') themeDirs
   );
 
-  themeNames = lib.concatStringsSep "\n" (lib.attrNames themes);
+  # Noctalia's builtin dark/light variants are internal sync targets, not
+  # duplicate entries for the manual custom-theme menu. They remain in
+  # themeCases so the colors_changed hook can apply them directly.
+  themeNames = lib.concatStringsSep "\n" (
+    lib.filter (name: !(lib.hasPrefix "noctalia-" name)) (lib.attrNames themes)
+  );
 
   # Apply a theme by name: repoint the symlink, then reload consumers.
   #

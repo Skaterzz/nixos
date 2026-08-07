@@ -32,7 +32,10 @@
 #
 # No home-manager module, and no flake input
 # ------------------------------------------
-# The shell is `pkgs.noctalia` and everything below is written out by hand.
+# The shell starts from `pkgs.noctalia` and everything below is written out
+# by hand. A small source patch adds the lock-screen entrance transition that
+# v5 does not expose as a setting, so the first rebuild after this change does
+# compile Noctalia locally; later builds reuse that store result.
 # Upstream ships a home-manager module in its flake, and this used to use it,
 # but it only generates the three files at the bottom of this comment and its
 # flake publishes no substituter — so having it in `inputs` meant an extra
@@ -52,10 +55,28 @@
 let
   useNoctalia = config.local.niri.shell == "noctalia";
 
-  pkg = pkgs.noctalia;
+  pkg = pkgs.noctalia.overrideAttrs (old: {
+    patches = (old.patches or [ ]) ++ [ ./noctalia-lock-transition.patch ];
+  });
   noctalia = lib.getExe pkg;
 
   paletteSet = import ./noctalia-palettes.nix { inherit lib; };
+  noctaliaBuiltinSet = import ./noctalia-builtin-themes.nix;
+
+  # Shell case arms mapping Noctalia's own palette/mode pair to the generated
+  # internal theme that feeds niri, SDDM, Limine, Spotify, kitty, and KDE.
+  builtinThemeCases = lib.concatStringsSep "\n" (
+    lib.concatLists (
+      lib.mapAttrsToList (
+        palette: modes:
+        lib.mapAttrsToList (
+          mode: theme: ''
+            ${lib.escapeShellArg "builtin:${palette}:${mode}"}) mapped=${lib.escapeShellArg theme} ;;
+          ''
+        ) modes
+      ) noctaliaBuiltinSet.selections
+    )
+  );
 
   tomlFormat = pkgs.formats.toml { };
   jsonFormat = pkgs.formats.json { };
@@ -171,9 +192,12 @@ let
   # system path units and Spotify's user path unit after a missed or
   # late-starting sync.
   #
-  # `color-scheme-get` prints `<source> <name>`; anything other than a `custom`
-  # source is a palette that did not come from themes.nix and that there is no
-  # theme directory for, so it is left alone rather than guessed at.
+  # `color-scheme-get` prints the source followed by the display name. Custom
+  # palettes already use a themes.nix key. Builtins need both their name and
+  # Noctalia's resolved dark/light mode; noctalia-builtin-themes.nix carries
+  # the exact upstream values for all twenty combinations. Wallpaper and
+  # community palettes are intentionally left alone because their colours are
+  # not a finite build-time set.
   themeResync = pkgs.writeShellApplication {
     name = "noctalia-theme-resync";
     runtimeInputs = [
@@ -183,15 +207,34 @@ let
     text = ''
       line="$(noctalia msg color-scheme-get 2>/dev/null || true)"
 
-      # shellcheck disable=SC2086
-      set -- $line
-      source="''${1:-}"
-      name="''${2:-}"
+      [ -n "$line" ] || exit 0
 
-      [ "$source" = "custom" ] || exit 0
+      # Keep everything after the first space as the name. One builtin is
+      # called "Rosé Pine", so splitting with `set --` silently turns it
+      # into "Rosé".
+      source="''${line%% *}"
+      name="''${line#* }"
+      [ "$line" != "$source" ] || name=""
       [ -n "$name" ] || exit 0
 
-      NIRI_THEME_FROM_NOCTALIA=1 theme-apply "$name"
+      mapped=""
+      case "$source" in
+        custom)
+          mapped="$name"
+          ;;
+        builtin)
+          mode="$(noctalia msg theme-mode-get 2>/dev/null || true)"
+          case "$source:$name:$mode" in
+${builtinThemeCases}
+            *) exit 0 ;;
+          esac
+          ;;
+        *)
+          exit 0
+          ;;
+      esac
+
+      NIRI_THEME_FROM_NOCTALIA=1 theme-apply "$mapped"
     '';
   };
 
@@ -594,25 +637,17 @@ let
           "network"
           "privacy"
 
-          # Battery and the requested Caffeine toggle drawn flush as one
-          # control. Caffeine takes the slot that previously showed the power
-          # profile, so the right-hand cluster does not grow wider.
-          "group:power"
+          # Caffeine takes the slot that previously showed the power profile.
+          # Keep it and the battery as ordinary bar widgets: a capsule group
+          # paints its own background, which made Caffeine look unlike the
+          # buttons around it.
+          "battery"
+          "caffeine"
 
           "wallpaper"
           "control-center"
           "session"
         ];
-
-      capsule_group = [
-        {
-          id = "power";
-          members = [
-            "battery"
-            "caffeine"
-          ];
-        }
-      ];
     };
 
     widget = {

@@ -1,0 +1,51 @@
+diff --git a/src/shell/lockscreen/lock_surface.cpp b/src/shell/lockscreen/lock_surface.cpp
+index 1ad629f..f771c47 100644
+--- a/src/shell/lockscreen/lock_surface.cpp
++++ b/src/shell/lockscreen/lock_surface.cpp
+@@ -605,8 +605,46 @@ void LockSurface::setLockedState(bool locked) {
+   }
+   m_locked = locked;
+   if (m_locked) {
++    m_animations.cancelForOwner(this);
++
++    if (m_backgroundLayer != nullptr) {
++      m_backgroundLayer->setOpacity(0.0f);
++    }
++    if (m_widgetLayer != nullptr) {
++      m_widgetLayer->setOpacity(0.0f);
++      m_widgetLayer->setScale(0.97f);
++    }
++
++    m_animations.animate(
++        0.0f,
++        1.0f,
++        360.0f,
++        Easing::EaseOutCubic,
++        [this](float progress) {
++          if (m_backgroundLayer != nullptr) {
++            m_backgroundLayer->setOpacity(progress);
++          }
++          if (m_widgetLayer != nullptr) {
++            const float contentProgress = std::clamp((progress - 0.12f) / 0.88f, 0.0f, 1.0f);
++            m_widgetLayer->setOpacity(contentProgress);
++            m_widgetLayer->setScale(0.97f + 0.03f * contentProgress);
++          }
++          requestUpdate();
++        },
++        {},
++        this
++    );
++
+     focusPasswordField();
+   } else {
++    m_animations.cancelForOwner(this);
++    if (m_backgroundLayer != nullptr) {
++      m_backgroundLayer->setOpacity(1.0f);
++    }
++    if (m_widgetLayer != nullptr) {
++      m_widgetLayer->setOpacity(1.0f);
++      m_widgetLayer->setScale(1.0f);
++    }
+     m_inputDispatcher.setFocus(nullptr);
+   }
+   requestUpdate();

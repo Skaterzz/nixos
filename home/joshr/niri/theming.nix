@@ -36,7 +36,10 @@
 # `@import`; that adds a resolution step that can silently no-op, and the
 # whole stylesheet is generated anyway, so there is nothing to gain from it.
 let
-  themeSet = import ./themes.nix { inherit lib; };
+  themeSet = import ./theme-set.nix {
+    inherit lib;
+    includeNoctaliaBuiltins = config.local.niri.shell == "noctalia";
+  };
   inherit (themeSet) themes;
 
   stateDir = "${config.home.homeDirectory}/.local/state/niri-theme";

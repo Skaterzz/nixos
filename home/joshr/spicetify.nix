@@ -13,7 +13,10 @@
 # Spicetify package, and the launcher selects the package matching the runtime
 # theme recorded in ~/.local/state/niri-theme/current.
 let
-  themeSet = import ./niri/themes.nix { inherit lib; };
+  themeSet = import ./niri/theme-set.nix {
+    inherit lib;
+    includeNoctaliaBuiltins = config.local.niri.shell == "noctalia";
+  };
   inherit (themeSet) themes;
 
   currentThemeFile = "${config.home.homeDirectory}/.local/state/niri-theme/current";

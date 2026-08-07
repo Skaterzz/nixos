@@ -93,7 +93,13 @@
 let
   cfg = config.local.boot;
 
-  themeSet = import ../../home/joshr/niri/themes.nix { inherit lib; };
+  themeSet = import ../../home/joshr/niri/theme-set.nix {
+    inherit lib;
+    # The shell choice lives in Home Manager; Limine is system-level. Keeping
+    # the finite builtin set available here lets the runtime state file select
+    # the right block without crossing module systems.
+    includeNoctaliaBuiltins = true;
+  };
   inherit (themeSet) themes;
 
   esp = config.boot.loader.efi.efiSysMountPoint;

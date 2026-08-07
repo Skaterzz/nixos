@@ -6,7 +6,13 @@
 # This replaces modules/nixos/desktop.nix on a host — importing both would
 # enable two desktop sessions and two display managers.
 let
-  themeSet = import ../../home/joshr/niri/themes.nix { inherit lib; };
+  themeSet = import ../../home/joshr/niri/theme-set.nix {
+    inherit lib;
+    # The shell choice is a Home Manager option, not a NixOS option. Build
+    # these finite variants here so the system path unit can resolve whatever
+    # the user's Noctalia session writes to `current`.
+    includeNoctaliaBuiltins = true;
+  };
   inherit (themeSet) themes;
 
   # The palette renderer lives with the home modules so both sides agree on

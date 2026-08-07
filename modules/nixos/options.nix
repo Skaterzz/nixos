@@ -159,6 +159,49 @@
     '';
   };
 
+  options.local.boot.plymouth.enable = lib.mkOption {
+    type = lib.types.bool;
+    default = false;
+    description = ''
+      Draw a boot splash — the NixOS logo, animated — over the gap between the
+      boot menu and the login screen. See modules/nixos/plymouth.nix, which is
+      also where the theme's misleading provenance is written down.
+
+      Off by default and turned on per host, because the hosts that want it
+      are exactly the ones with someone sitting in front of them. On the two
+      servers a splash has no audience and the console messages it replaces
+      are the only thing to look at when a headless machine doesn't come back.
+      The stick leaves it off too, for a reason of its own — see
+      hosts/usb/configuration.nix.
+
+      It costs the initrd: plymouth, its rendering module, the theme's frames
+      and a DRM-capable framebuffer all have to be there before the root
+      filesystem is, which is a few megabytes and a fraction of a second. It
+      does not hide a failure — a stage-1 that panics drops to the emergency
+      shell with the messages intact, and Escape at any point during the boot
+      switches to the console.
+    '';
+  };
+
+  options.local.boot.plymouth.quiet = lib.mkOption {
+    type = lib.types.bool;
+    default = true;
+    description = ''
+      Turn the kernel, udev and stage-1 down to errors so nothing prints over
+      the splash. Only read when `local.boot.plymouth.enable` is on.
+
+      This is the half of a splash screen that people actually mean by one: a
+      plymouth with a talkative kernel underneath is an animation with driver
+      messages landing on top of it, because the kernel writes to the console
+      directly and outranks anything userspace has drawn there.
+
+      Turn it off to keep the messages while still getting the animation —
+      worth doing on a machine that is misbehaving early in boot, where the
+      output is the diagnosis. `journalctl -b` has all of it either way; this
+      only decides what reaches the screen at the time.
+    '';
+  };
+
   options.local.power.noAutoSleepOnAC = lib.mkOption {
     type = lib.types.bool;
     default = true;

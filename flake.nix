@@ -47,6 +47,27 @@
     #  inputs.nixpkgs.follows = "nixpkgs";
     #};
 
+    # The boot splash: the NixOS logo over black with a progress bar under it,
+    # paced like a Mac's boot animation. Used by modules/nixos/plymouth.nix,
+    # which is where the reasoning lives — including why the theme it installs
+    # is called `mac-style` when the repository is called s4rchiso.
+    #
+    # Named `mac-style-plymouth` because that is the name the repository's own
+    # README gives this input, and the overlay that module applies
+    # (`overlays.default`) adds a package of the same name. The Arch theme the
+    # repository is named after is on its `archlinux` branch and is not what
+    # this input points at; the default branch is the NixOS flake.
+    #
+    # `follows` for the same reason as nvidia-patch above: it exists to build
+    # a package against *this* flake's nixpkgs, and letting it pin its own
+    # would put a second nixpkgs in flake.lock for nothing. Its flake-utils
+    # has nothing here to follow and stays pinned on its own; that one is a
+    # library of pure functions, so it costs a lock entry and no build.
+    mac-style-plymouth = {
+      url = "github:SergioRibera/s4rchiso-plymouth-theme";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+
     # joshrandall8478's existing chezmoi dotfiles repo. Used purely as a source
     # of static assets (fonts, custom Plasma themes/look-and-feel packages,
     # cursor theme, custom icons, wallpapers) that are pulled straight into the

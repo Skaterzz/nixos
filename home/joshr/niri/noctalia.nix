@@ -479,8 +479,7 @@ let
       # bluetooth, battery, power profile) or an indicator that means
       # something by being present at all (privacy, notifications).
       end =
-        [ "weather" ]
-        ++ visualiser
+	visualiser
         ++ [
           "media"
           "tray"

@@ -47,7 +47,7 @@ index 071b8c4..77f9edb 100644
    } catch (const sdbus::Error& e) {
      kLog.warn("set-volume dispatch failed name={} err={}", busName, e.what());
 diff --git a/src/shell/control_center/tabs/home_tab.cpp b/src/shell/control_center/tabs/home_tab.cpp
-index a6e3d1f..6c8098d 100644
+index a6e3d1f..e71adfe 100644
 --- a/src/shell/control_center/tabs/home_tab.cpp
 +++ b/src/shell/control_center/tabs/home_tab.cpp
 @@ -116,7 +116,7 @@ namespace {
@@ -59,6 +59,31 @@ index a6e3d1f..6c8098d 100644
 
    std::string noctaliaVersionLine() { return std::format("Noctalia {}", noctalia::build_info::displayVersion()); }
 
+@@ -335,21 +335,21 @@ std::unique_ptr<Flex> HomeTab::create() {
+               .out = &m_userHost,
+               .text = userHostLine(),
+               .fontSize = Style::fontSizeCaption * scale,
+-              .color = colorSpecFromRole(ColorRole::OnSurfaceVariant),
++              .color = colorSpecFromRole(ColorRole::OnSurface),
+               .configure = configureUserDetailLabel,
+           }),
+           ui::label({
+               .out = &m_userUptime,
+               .text = "…",
+               .fontSize = Style::fontSizeCaption * scale,
+-              .color = colorSpecFromRole(ColorRole::OnSurfaceVariant),
++              .color = colorSpecFromRole(ColorRole::OnSurface),
+               .configure = configureUserDetailLabel,
+           }),
+           ui::label({
+               .out = &m_userVersion,
+               .text = noctaliaVersionLine(),
+               .fontSize = Style::fontSizeCaption * scale,
+-              .color = colorSpecFromRole(ColorRole::OnSurfaceVariant),
++              .color = colorSpecFromRole(ColorRole::OnSurface),
+               .configure = configureUserDetailLabel,
+           })
+       )
 diff --git a/src/system/distro_info.cpp b/src/system/distro_info.cpp
 index 550fd4d..9a6ca72 100644
 --- a/src/system/distro_info.cpp

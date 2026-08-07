@@ -647,12 +647,12 @@ user. And `ddcutil` has to be on `PATH`: nixpkgs' noctalia wrapper only
 prefixes `gitMinimal`, and the code gates the whole backend on
 `commandExists("ddcutil")`, so it's in `home.packages`.
 
-What this leaves is two writers for the same monitors. The idle dim still goes
-through the `brightness` helper, which writes sysfs via ddcci-backlight, while
-noctalia writes over i2c directly. They agree — both end at the monitor's own
-luminance register — but a dim landing mid-`ddcutil detect` is one DDC/CI round
-trip contending with another, and DDC/CI is slow and not especially robust.
-Worth knowing if brightness ever feels sticky right as the screen dims.
+Noctalia is the only brightness writer under this shell. The old 4-minute idle
+action went through the legacy `brightness` helper and ddcci-backlight, racing
+Noctalia's ddcutil backend to the same monitor register. It is gone. Noctalia's
+own fullscreen pre-action fade now supplies the darkening before the 5-minute
+lock and 10-minute screen-off actions without changing the monitors' physical
+brightness or leaving a restore write behind.
 
 `local.niri.brightness.device` is unread under noctalia, and nothing is lost:
 it existed because waybar's backlight module and the `brightness` helper each
@@ -1149,7 +1149,7 @@ the same lines it describes `gruvbox`.
 | Spotify | live CSS over loopback — see below |
 | SDDM | `noctalia-resolved`, substituted into the greeter's config |
 | limine | `noctalia-resolved`, rewritten into the boot menu's theme block |
-| OBS, Discord, Papirus, PrismLauncher, Spicetify, zellij, Zen, Inkscape, Blender, fastfetch | community templates |
+| OBS, Discord, Papirus, PrismLauncher, zellij, Zen, Inkscape, Blender, fastfetch | community templates |
 
 **Three of those were quietly broken**, all for the same reason, and the fix
 is the reason this section exists.
@@ -1179,8 +1179,8 @@ What changed:
   loopback-only service on `127.0.0.1:38471` exposes it, and the theme's
   `theme.js` applies it. It has to be HTTP rather than a file read because
   that JavaScript runs in Spotify's renderer, where `fetch` on a `file://` URL
-  is blocked outright. See "Spotify" below — that route took two further goes
-  to actually work.
+  is blocked outright. See "Spotify" below — the network gate and Spicetify's
+  two colour families are the non-obvious parts.
 - `noctalia-builtin-themes.nix` — a 500-line hand transcription of noctalia's
   own builtin palettes, kept so the greeter and boot menu could be given a
   prebuilt match — is deleted. Nothing could ever select it.
@@ -1234,10 +1234,13 @@ template's hook edits the file in place:
   copied there once, which is a hundred megabytes or so of home directory and
   the price of that template working.
 
-`spicetify` is enabled and renders the Comfy and Colorful `color.ini` files,
-but its post-hook runs `spicetify apply`, which is inert here — that patches a
-mutable Spotify install and this one is a read-only store path. Spotify's
-actual colours come from the route described next.
+The community `spicetify` template is deliberately not enabled. Its Comfy and
+Colorful `color.ini` files are inputs to the Spicetify CLI, and its hook runs
+`spicetify apply` against a mutable Spotify tree. Neither exists at runtime
+here: `mkSpicetify` already applied the Text theme inside the read-only Nix
+store, and the CLI is only a build input. `~/.config/spicetify` is therefore not
+state this profile needs or regenerates. Spotify's live colours use the route
+described next instead.
 
 #### Spotify
 

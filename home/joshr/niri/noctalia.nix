@@ -435,7 +435,7 @@ let
             # Which makes the text shadow load-bearing rather than
             # decorative: with no panel behind it, it is the only thing
             # keeping the time legible over a pale wallpaper.
-            shadow = true;
+            shadow = false;
           };
         };
 
@@ -965,8 +965,7 @@ let
         # nothing else.
         #
         # `community_ids` takes catalog ids (the directory names in that
-        # repository), not the individual `[templates.*]` entry names: listing
-        # `spicetify` enables both its Comfy and Colorful entries, and
+        # repository), not the individual `[templates.*]` entry names:
         # `vscode` covers Code, Codium and Antigravity.
         #
         #   blender        renders a theme script and runs it headless;
@@ -982,10 +981,6 @@ let
         #   papirus-icons  recolours the folder icons in place, which needs a
         #                  writable copy of the icon theme — see the seed below
         #   prismlauncher  a "Matugen" theme under its data directory
-        #   spicetify      Comfy/Colorful color.ini. Its post-hook runs
-        #                  `spicetify apply`, which is inert here: Spotify is
-        #                  an immutable Nix build and its colours arrive
-        #                  through the `spotify` user template instead
         #   vscode         a NoctaliaTheme extension; ../vscode.nix ships the
         #                  manifest the rendered theme file belongs to
         #   zellij         a theme file; needs `theme "noctalia"` in zellij's
@@ -1001,7 +996,6 @@ let
           "obs"
           "papirus-icons"
           "prismlauncher"
-          "spicetify"
           "vscode"
           "zellij"
           "zen-browser"
@@ -1159,14 +1153,10 @@ let
     # gates the whole backend on `commandExists("ddcutil")`, so it is added to
     # home.packages below.
     #
-    # What this leaves: two writers for the same monitors. The idle dim in
-    # `idle.behavior.dim` still goes through the `brightness` helper, which
-    # writes sysfs through ddcci-backlight, while noctalia writes over i2c
-    # directly. They agree — both end at the monitor's own luminance register
-    # — but a dim landing in the middle of a `ddcutil detect` is a DDC/CI
-    # round trip contending with another, and DDC/CI is slow and not
-    # especially robust. Worth knowing if brightness ever feels sticky right
-    # as the screen dims.
+    # Noctalia is the only writer under this shell. The old 240-second idle
+    # action called the legacy `brightness` helper through ddcci-backlight,
+    # racing this ddcutil backend to the same monitor register. It is gone;
+    # Noctalia's own pre-action overlay supplies the idle darkening below.
     brightness.enable_ddcutil = true;
 
     # --- weather ----------------------------------------------------------
@@ -1191,34 +1181,24 @@ let
 
     # --- idle -------------------------------------------------------------
     #
-    # swayidle's three timers, at the same three timeouts.
-    #
-    # The 240s dim is a `command` because noctalia has no dim action, and it
-    # runs the same `brightness` helper swayidle ran — which matters for the
-    # reason that helper exists: it steps *every* backlight device, where
-    # anything driving only the first one moves one of the desk's two monitors.
-    # It also records the pre-dim level itself rather than using brightnessctl's
-    # `--save`, which had no idea whether it had already saved and would strand
-    # the screen at 20%.
-    idle.behavior = {
-      dim = {
-        enabled = true;
-        timeout = 240;
-        action = "command";
-        command = "${lib.getExe niriScripts.brightness} dim 20";
-        resume_command = "${lib.getExe niriScripts.brightness} restore";
-      };
+    # Noctalia owns this pipeline outright: its fullscreen pre-action overlay
+    # darkens the outputs before the native lock and screen-off actions. There
+    # is deliberately no separate brightness command and therefore no second
+    # DDC/CI writer to save and restore a physical level.
+    idle = {
+      pre_action_fade_seconds = 2;
+      behavior = {
+        lock = {
+          enabled = true;
+          timeout = 300;
+          action = "lock";
+        };
 
-      lock = {
-        enabled = true;
-        timeout = 300;
-        action = "lock";
-      };
-
-      screen-off = {
-        enabled = true;
-        timeout = 600;
-        action = "screen_off";
+        screen-off = {
+          enabled = true;
+          timeout = 600;
+          action = "screen_off";
+        };
       };
     };
 

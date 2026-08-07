@@ -48,13 +48,11 @@
 # that feature for this one Spotify process. The service remains bound to
 # 127.0.0.1 and serves only the generated stylesheet.
 #
-# The Spicetify community template is enabled too (`spicetify` in
-# `community_ids`) and renders the same palette into
-# ~/.config/spicetify/Themes/{Comfy,Colorful}/color.ini. Its post-hook runs
-# `spicetify apply`, which is inert here — that command patches a mutable
-# Spotify install, and this one is a read-only store path. The files it writes
-# are what a Spicetify CLI setup would consume; nothing on this machine reads
-# them.
+# The Spicetify community template is deliberately disabled. It renders
+# ~/.config/spicetify/Themes/{Comfy,Colorful}/color.ini and then runs
+# `spicetify apply`, but this profile has neither a runtime Spicetify CLI nor a
+# mutable Spotify tree for it to patch. `mkSpicetify` did that work at build
+# time in the Nix store; the live CSS route above is what changes its colours.
 let
   themeSet = import ./niri/themes.nix { inherit lib; };
   inherit (themeSet) themes;

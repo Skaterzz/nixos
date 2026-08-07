@@ -991,7 +991,7 @@ let
           "kitty"
           "niri"
           "qt"
-          "starship"
+          # "starship"
         ];
 
         # --- community templates ------------------------------------------

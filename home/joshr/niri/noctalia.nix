@@ -879,7 +879,7 @@ let
         # pointer costs nothing while the mouse is elsewhere — which is the
         # whole time — and means `max_length` is a layout choice rather than
         # an information limit.
-        title_scroll = "on_hover";
+        title_scroll = "always";
 
         # The app icon at 16px against the 13px body text: enough that the
         # icon leads and the title follows, which is the reading order the

@@ -742,20 +742,20 @@ let
         {
           action = "logout";
           label = "Log out";
-          countdown = "3";
+          countdown = 3;
           shortcut = "4";
         }
         {
           action = "reboot";
           label = "Reboot";
-          countdown = "5";
+          countdown = 5;
           shortcut = "5";
         }
         {
           action = "shutdown";
           label = "Power off";
           variant = "destructive";
-          countdown = "10";
+          countdown = 10;
           shortcut = "6";
         }
       ];

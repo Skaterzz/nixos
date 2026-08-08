@@ -444,7 +444,7 @@ let
             # Which makes the text shadow load-bearing rather than
             # decorative: with no panel behind it, it is the only thing
             # keeping the time legible over a pale wallpaper.
-            shadow = false;
+            shadow = true;
           };
         };
 

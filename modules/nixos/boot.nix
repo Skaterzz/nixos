@@ -104,14 +104,14 @@ let
 
   esp = config.boot.loader.efi.efiSysMountPoint;
 
-  # Limine keeps the familiar NixOS image unless a host deliberately replaces
-  # it. This is independent of Noctalia's runtime wallpaper; only the colour
-  # block below follows the session.
-  limineWallpaper =
-    if cfg.wallpaper != null then
-      cfg.wallpaper
-    else
-      inputs.dotfiles + "/dot_local/share/wallpapers/nixos.png";
+  # # Limine keeps the familiar NixOS image unless a host deliberately replaces
+  # # it. This is independent of Noctalia's runtime wallpaper; only the colour
+  # # block below follows the session.
+  # limineWallpaper =
+  #   if cfg.wallpaper != null then
+  #     cfg.wallpaper
+  #   else
+  #     inputs.dotfiles + "/dot_local/share/wallpapers/nixos.png";
 
   # The palette manifest Noctalia renders from its colour roles (the
   # `system_palette` user template in home/joshr/niri/noctalia.nix). The same
@@ -124,7 +124,7 @@ let
   # delete-what-I-didn't-write pass over that directory.
   espSubdir = "niri-theme";
   espThemeDir = "${esp}/${espSubdir}";
-  espWallpaper = "${espThemeDir}/wallpaper.png";
+  # espWallpaper = "${espThemeDir}/wallpaper.png";
 
   limineConf = "${esp}/limine/limine.conf";
 
@@ -345,9 +345,9 @@ let
       # Only name the image if it is actually there. New generations always
       # seed the fixed Limine wallpaper, but keeping this guard makes the sync
       # safe while switching from an older generation or repairing an ESP.
-      if [ -f "${espWallpaper}" ]; then
-        printf '%s\n' ${lib.escapeShellArg wallpaperLines} >> "$body"
-      fi
+      # if [ -f "${espWallpaper}" ]; then
+      #   printf '%s\n' ${lib.escapeShellArg wallpaperLines} >> "$body"
+      # fi
 
       # --- other operating systems --------------------------------------
       ${lib.optionalString cfg.detectOtherSystems ''
@@ -570,9 +570,9 @@ in
         # <esp>/limine so the installer's cleanup pass leaves it alone. The
         # copy on every rebuild is also what replaces a session wallpaper left
         # at this path by an older generation of the sync service.
-        additionalFiles = {
-          "${espSubdir}/wallpaper.png" = limineWallpaper;
-        };
+        # additionalFiles = {
+        #   "${espSubdir}/wallpaper.png" = limineWallpaper;
+        # };
 
         # Re-theme immediately after an install rather than at the next boot,
         # so `nixos-rebuild switch` and the boot menu never disagree.

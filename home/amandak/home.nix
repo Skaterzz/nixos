@@ -1,12 +1,14 @@
 { ... }:
 
-# raiden — Samuel Hunt.
+# amandak — Amanda Kast.
 #
 # There is no profile here. Each entrypoint next to this file imports the
 # matching one from home/joshr/, which is what pulls in the desktop base, the
 # session, and everything under home/common/; this file only says which
 # account is wearing it. Anything added to joshr's profile therefore arrives
-# here too, which is the point of importing rather than copying.
+# here too, which is the point of importing rather than copying — including
+# the choice of desktop shell, so this account runs noctalia on the two niri
+# hosts exactly as joshr does.
 #
 # It works because nothing under home/joshr/ writes the name "joshr" into a
 # path. The home directory, the Firefox profile directory and the private
@@ -21,17 +23,17 @@
 {
   # Overrides the `lib.mkDefault "joshr"` in home/joshr/home.nix and
   # home/joshr/server.nix. `home.homeDirectory` is derived from it on both
-  # sides, so /home/raiden follows without being written down anywhere.
+  # sides, so /home/amandak follows without being written down anywhere.
   home.username = "amandak";
 
   # Not overridden, and worth knowing: git commits from this account carry
   # joshr's identity — home/common/git.nix on the desktop hosts, stated again
-  # in home/joshr/server.nix on the server. To give raiden its own, take `lib`
-  # in the arguments above and force it past that definition; both are
+  # in home/joshr/server.nix on the server. To give this account its own, take
+  # `lib` in the arguments above and force it past that definition; both are
   # ordinary priority, so a plain assignment would be a conflict:
   #
   #   programs.git.settings.user = lib.mkForce {
-  #     name = "Samuel Hunt";
-  #     email = "samuel@example.com";
+  #     name = "Amanda Kast";
+  #     email = "amanda@example.com";
   #   };
 }

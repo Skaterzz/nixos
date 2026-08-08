@@ -50,14 +50,10 @@ in
     initialPassword = "changeme";
   };
 
-  # Second account, running the same profile — see home/raiden/, whose
-  # entrypoints import joshr's.
-  #
-  # joshr stays the primary user: `local.desktop.primaryUser` (unset here, so
-  # the "joshr" default in modules/nixos/options.nix stands) is what the login
-  # screen and the boot menu take their theme and wallpaper from, and it is
-  # the account the OpenRGB resume service runs as. Nothing about this one is
-  # # machine-wide.
+  # An account kept for the day it is wanted again. home/raiden/ is still
+  # there and still shaped like the two live ones below; uncommenting this
+  # block and the `raiden = …` lines in flake.nix is the whole of bringing it
+  # back. home/delta/ is the same, for the block further down.
   # users.users.raiden = {
   #   isNormalUser = true;
   #   description = "Samuel Hunt";
@@ -77,6 +73,21 @@ in
   #   initialPassword = "changeme";
   # };
 
+  # The other two accounts, both wearing joshr's profile — see home/amandak/
+  # and home/sabom/, whose entrypoints import joshr's for the same host. That
+  # includes the desktop shell, so on the niri hosts these sessions are the
+  # same noctalia as joshr's, each reading its own ~/.config/noctalia and
+  # writing its own ~/.local/state/niri-theme.
+  #
+  # Declaring an account here is only half of it: without a matching entry in
+  # that host's `homeModules` in flake.nix the account still exists and can
+  # still log in, to a session with no home-manager profile behind it at all.
+  #
+  # joshr stays the primary user either way. `local.desktop.primaryUser` is
+  # unset here, so the "joshr" default in modules/nixos/options.nix stands, and
+  # that is what the login screen and the boot menu take their theme and
+  # wallpaper from and what the OpenRGB resume service runs as. Nothing about
+  # these two is machine-wide.
   users.users.amandak = {
     isNormalUser = true;
     description = "Amanda Kast";

@@ -94,6 +94,29 @@ let
   # full-size terminal version.
   visualiser = lib.optional config.local.waybar.cavaInBar "audio_visualizer";
 
+  # --- the GameMode indicator -------------------------------------------
+  #
+  # The one bar slot that has no noctalia widget behind it, as a local Luau
+  # plugin in ./noctalia-plugins/gamemode-indicator. Its two files are built
+  # rather than copied verbatim for the reason every `command` in this file is
+  # an absolute store path: the widget shells out to `gamemode-status`, and the
+  # shell runs as a systemd user service, whose PATH is the user manager's
+  # rather than the one a login shell assembles from the profile. Substituting
+  # the script in makes "is it on PATH" not a question this depends on.
+  #
+  # Installing it is only half of it — see `plugins.enabled` in the settings
+  # below, without which the registry finds this and skips it.
+  #
+  # `--replace-fail` rather than `--subst-var-by`: a widget.luau that has lost
+  # the placeholder should stop the build, not ship a plugin quietly trying to
+  # execute the literal string.
+  gamemodeIndicator = pkgs.runCommand "noctalia-plugin-gamemode-indicator" { } ''
+    mkdir -p "$out"
+    cp ${./noctalia-plugins/gamemode-indicator/plugin.toml} "$out/plugin.toml"
+    substitute ${./noctalia-plugins/gamemode-indicator/widget.luau} "$out/widget.luau" \
+      --replace-fail '@gamemodeStatus@' ${lib.getExe niriScripts.gamemodeStatus}
+  '';
+
   # --- hooks ------------------------------------------------------------
   #
   # Carry changes noctalia made outward to the pieces of the session that do
@@ -838,7 +861,7 @@ let
       # Clipboard sits immediately to the right of Notifications and opens
       # the attached clipboard-history panel near the button.
       end =
-	visualiser
+        visualiser
         ++ [
           "media"
           "tray"
@@ -1007,6 +1030,32 @@ let
       privacy = {
         hide_inactive = true;
       };
+    };
+
+    # --- plugins ----------------------------------------------------------
+    #
+    # **Installed is not enabled**, and that distinction is the whole reason
+    # the GameMode slot was missing rather than merely empty. The registry
+    # scans ~/.local/share/noctalia/plugins as an implicit local source and
+    # parses every manifest it finds there, then drops the ones whose id is not
+    # in this list — "discovered but not enabled", one log line, no widget. A
+    # bar lane naming an entry of a plugin that never loaded is not an error
+    # either: `noctalia config validate` checks the *shape* of a lane list and
+    # has no registry to check the names against, so nothing upstream of the
+    # running shell notices.
+    #
+    # Toggling the plugin off in the Settings window writes an app-owned
+    # `[plugins].enabled` into ~/.local/state/noctalia/settings.toml, and that
+    # override wins over this until it is removed — the same read-after-config
+    # ordering the activation step below reconciles for widget placements.
+    #
+    # `auto_update` is off because nothing in this session comes from a git
+    # source. The two built-in sources ship enabled, and the default `true`
+    # fetches every one of them at startup and again every six hours, for
+    # plugins nothing here loads.
+    plugins = {
+      enabled = [ "joshr/gamemode-indicator" ];
+      auto_update = false;
     };
 
     # --- colour -----------------------------------------------------------
@@ -1747,9 +1796,11 @@ in
     ) paletteSet.palettes;
 
     # Local v5 plugin: the slot collapses completely unless GameMode has an
-    # active client. It sits immediately after Privacy in the bar list above.
+    # active client. It sits immediately after Privacy in the bar list above,
+    # and is enabled by `plugins.enabled` there — this only puts it where the
+    # registry's implicit local source will find it.
     xdg.dataFile."noctalia/plugins/gamemode-indicator" = {
-      source = ./noctalia-plugins/gamemode-indicator;
+      source = gamemodeIndicator;
       recursive = true;
     };
 
@@ -1799,7 +1850,9 @@ in
     # `wallpaper-menu` and `session-menu` in ./scripts.nix all use it as a
     # plain `--dmenu` and keep working; only Mod+D moves.
 
-    # GameMode is represented by the local plugin above. The old waybar signal
-    # hooks remain harmless; the plugin polls without starting gamemoded.
+    # GameMode is represented by the local plugin above, installed *and*
+    # enabled. The old waybar signal hooks remain harmless; the plugin polls
+    # `gamemode-status`, which refuses to ask a daemon that is not already
+    # running and so never starts gamemoded itself.
   };
 }

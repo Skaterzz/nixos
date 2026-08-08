@@ -1,9 +1,24 @@
 id = "joshr/gamemode-indicator"
 name = "GameMode indicator"
 description = "Shows a bar glyph while a GameMode client is active"
-version = "1.0.0"
-plugin_api = 19
-dependencies = ["gamemode-status", "id", "pgrep"]
+version = "1.1.0"
+author = "joshr"
+
+# The oldest plugin API level this needs, which is the floor: the widget only
+# uses setGlyph/setGlyphColor/setTooltip/setVisible, runAsync with a callback
+# and setUpdateInterval, all of which predate every numbered level.
+#
+# It is not a "which noctalia is this" field. It used to say 19 — the level
+# that happens to ship with the packaged v5.0.0-beta.7 — and the registry
+# compares it against `kOldestSupportedPluginApiVersion`..`kCurrentPluginApiVersion`
+# and drops anything outside that window with a log line and no widget. Naming
+# a level higher than the plugin uses only buys a version of this indicator
+# that stops existing the moment nixpkgs is behind noctalia's tip.
+plugin_api = 3
+
+# Nothing to install: the status command is baked into widget.luau as an
+# absolute store path by home/joshr/niri/noctalia.nix.
+dependencies = []
 
 [[widget]]
 id = "status"

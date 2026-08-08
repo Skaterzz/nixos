@@ -537,7 +537,6 @@ let
             box_width = dateW;
             box_height = dateH;
             settings.format = "{:%A, %B %-d}";
-            settings.shadow = true; # adds shadow to date
           }
         ))
         (lib.nameValuePair "lock_suspend_${o.name}" (

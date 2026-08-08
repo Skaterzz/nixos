@@ -59,6 +59,13 @@ the machine.
   - [Secrets](#secrets)
   - [A project that isn't yours](#a-project-that-isnt-yours)
   - [VS Code](#vs-code)
+- [Gaming performance](#gaming-performance)
+  - [`gaming-doctor`](#gaming-doctor)
+  - [The shader cache, and the sawtooth](#the-shader-cache-and-the-sawtooth)
+  - [The card is also the model server](#the-card-is-also-the-model-server)
+  - [Launch options](#launch-options)
+  - [The XWayland regression](#the-xwayland-regression)
+  - [The driver](#the-driver)
 - [Single GPU passthrough](#single-gpu-passthrough)
   - [What it costs](#what-it-costs)
   - [Turning it on](#turning-it-on)
@@ -3667,6 +3674,206 @@ direnv has already loaded is the quick way to tell the two apart.
 from `development.nix` rather than downloading its own — so on a host with
 that module still commented out, neither name resolves and both settings are
 inert.
+
+## Gaming performance
+
+The complaint this section exists for: a game that starts fine and is bad
+later. Frames stutter, the card is not delivering anything like what it
+should, and nothing in particular happened in between.
+
+That shape — fine, then not — is worth taking seriously, because it rules
+most things out. A machine that is simply misconfigured is slow from the first
+frame. Something that degrades has to be *accumulating*, and on this box there
+are only a few things that can accumulate: video memory that something else
+took and did not give back, a shader cache that filled up and got thrown away,
+heat, and pipelines being compiled over and over. They feel identical from the
+chair and they are told apart by numbers, so the first thing here is a way to
+get the numbers.
+
+### `gaming-doctor`
+
+`modules/nixos/gaming.nix` installs a `gaming-doctor` command on the two desk
+hosts. Run it **while it is bad** — almost everything it prints is an
+instantaneous reading, and a report taken after quitting the game says nothing:
+
+```
+gaming-doctor
+```
+
+It prints, in order: the driver version and whether this is the open kernel
+module; the card's memory, temperature, power and current-versus-maximum
+clocks; NVIDIA's own "Clocks Event Reasons" block; every process holding video
+memory, graphics and compute alike; what the local model server has resident;
+the size of the shader cache and whether the cleanup is switched off; the EGL
+external platform files; system memory and swap; the CPU governor, the power
+profile and gamemode's status; and the compositor's outputs.
+
+Reading it:
+
+- **Video memory at or near the card's total**, or a second process holding a
+  large chunk of it, is the eviction case. Past that line the NVIDIA driver
+  spills to system memory and the frame rate does not so much drop as fall
+  over, and it does not recover on its own.
+- **A graphics clock far below its maximum**, with something other than
+  `GpuIdle` marked Active under Clocks Event Reasons, is throttling. That is a
+  case, fans and paste answer; nothing in this repository will fix it.
+- **`~/.cache/nv` near a gigabyte with `SKIP_CLEANUP` unset** is the next
+  section.
+- **An empty EGL external platform listing** is the one after that.
+
+### The shader cache, and the sawtooth
+
+The driver caches compiled shaders under `~/.cache/nv`, and left alone it caps
+that directory at 1 GB — 128 MB before driver 460 — and *wipes* it when it goes
+over. Not evicts the oldest entries: wipes. There is no prune-to-N behaviour to
+fall back on.
+
+One Proton game's DXVK and VKD3D pipelines run to a few hundred megabytes, so
+three or four of them is enough to cross that line. What the wipe feels like is
+not a warning, it is the next hour of play recompiling pipelines mid-frame. And
+because the cache then refills and the whole thing happens again, the symptom
+is a sawtooth: fine for a while, hitching later, fine again, hitching again.
+That is very close to what "it gets worse after some time" describes.
+
+`modules/nixos/nvidia.nix` now sets, for the whole session:
+
+```nix
+environment.sessionVariables = {
+  __GL_SHADER_DISK_CACHE = "1";
+  __GL_SHADER_DISK_CACHE_SKIP_CLEANUP = "1";
+};
+```
+
+The cost is honest: the directory now grows without a bound. It grows in steps
+rather than continuously — an entry appears only when something compiles a
+shader it has never compiled before — and it is a cache, so `rm -rf
+~/.cache/nv` is safe at any time and costs one slow first launch per game.
+`du -sh ~/.cache/nv` says what it has actually become. The alternative,
+`__GL_SHADER_DISK_CACHE_SIZE`, only moves the same cliff further out.
+
+**It has to be set for the session, not per game.** The limit is enforced by
+whichever process happens to be writing, so one GL program started without it —
+a browser, a screen recorder, anything — trims the cache back under the limit
+behind the game's back. Putting this in one game's launch options achieves
+nothing, which is why it lives in the driver module.
+
+### The card is also the model server
+
+This applies to `gamestation-niri` and not to `gamestation`: it is the host
+that imports `modules/nixos/ai.nix`, so ollama, Open WebUI and the OpenClaw
+gateway all run on the same card the games do. See [Local AI](#local-ai) for
+what those are.
+
+ollama holds a model in video memory for five minutes after the last request
+and reloads it on the next one. `deepseek-r1:14b` is around nine gigabytes;
+`deepseek-coder-v2` is not much smaller. A game started while one of those is
+resident begins with a card that is already part full, and the eviction
+described above follows.
+
+The part that makes this look like degradation over time rather than a slow
+machine is that **none of it is driven from the chair**. Open WebUI in a
+background tab can load a model. The OpenClaw gateway lingers — `linger = true`
+in `hosts/gamestation-niri/configuration.nix`, which is what lets it be
+messaged with nobody logged in — so it can take nine gigabytes of the card
+mid-match in response to something arriving from somewhere else entirely.
+
+So gamemode's start hook now takes the card back:
+
+```
+local.gaming.releaseGpuOnGameMode = true;   # the default
+```
+
+It reads `/api/ps` for whatever is resident and sends each model a
+`keep_alive: 0`, which is ollama's documented "drop this now". No CLI, no
+privileges, one loopback request per model. There is deliberately no matching
+end hook: ollama loads on demand, so the next question brings the weights
+straight back — this takes the card, it does not keep it.
+
+It is inert on a host that has no model server, so `gamestation` is unaffected,
+and it is a `local.gaming.*` option rather than a fact of the module because
+"my game should be able to interrupt my agent" is a preference and not
+obviously true for everyone.
+
+Two things it does not do. It does not stop Open WebUI, whose torch/onnx
+embedding path can take a CUDA context of its own — that needs root, and the
+GPU-passthrough hook is the mechanism for that sort of thing
+(`local.virtualisation.singleGpuPassthrough.stopServices`). And it does not
+prevent a *new* load during the game; it only clears what was there when the
+game started. If that turns out to be the recurring case, the blunt answer is
+`local.ai.openclaw.linger = false`, and the bluntest is `local.ai.enable =
+false` for as long as the machine is being played on.
+
+### Launch options
+
+Steam's per-game launch options are not in this repository — nothing here can
+set them — but three of the usual ones are worth knowing about, because two of
+them cause exactly the symptom they are usually added to fix.
+
+**`dxvk.trackPipelineLifetime = True` makes stutter worse, not better.** Its
+default is `Auto`, which means *32-bit applications only*: DXVK frees pipeline
+libraries aggressively there because 32-bit address space is scarce, and does
+not elsewhere because the pipelines then have to be compiled again. Forcing
+`True` on a 64-bit game opts it into that trade for no benefit, and the cost is
+recompilation that accumulates over a session. Drop it.
+
+**`DXVK_ASYNC=1` does nothing.** It was a setting of the old async fork.
+Upstream DXVK ignores the variable; what replaced it is
+`VK_EXT_graphics_pipeline_library`, which DXVK uses by default when the driver
+offers it — and which the setting above switches off the benefit of. It is
+harmless, it is just not doing what it looks like it is doing.
+
+**`DXVK_HUD=compiler` is worth keeping while diagnosing.** It shows pipeline
+compilation as it happens, which is how to confirm or rule out the
+recompilation case in a few minutes of play rather than by inference.
+
+On the wrappers: `mangohud gamescope -- %command%` puts MangoHud on
+*gamescope*, so the numbers on screen are the compositor's rather than the
+game's. The order that measures the game is `gamescope … -- mangohud
+%command%`. And nested gamescope is not free on this card — it composites
+again, and on NVIDIA the `gamescope-wsi` layer adds a frame copy on top of
+that. It buys resolution and refresh-rate control; if neither is wanted for a
+given game, the fastest configuration is not to nest at all.
+
+### The XWayland regression
+
+Every Proton game here is an XWayland client, reaching the compositor through
+`xwayland-satellite`. There was a stretch where that path collapsed on NixOS:
+the driver package stopped installing the EGL external platform JSON files, so
+NVIDIA's EGL had no Wayland or X11 platform to load, and XWayland clients fell
+back to a route that ran at a fraction of the speed with tearing on top.
+[nixpkgs#524342](https://github.com/NixOS/nixpkgs/issues/524342) and [the sway
+thread on Discourse](https://discourse.nixos.org/t/nvidia-severe-performance-regression-in-xwayland-on-sway/77861)
+are the two write-ups; the workaround in the thread was to point
+`__EGL_EXTERNAL_PLATFORM_CONFIG_DIRS` at an older driver's copies by hand.
+
+**This is fixed at the nixpkgs this flake is locked to**, and no workaround is
+carried here. The NixOS module now pulls `egl-wayland`, `egl-gbm`,
+`egl-wayland2` and `egl-x11` into `hardware.graphics.extraPackages` and points
+`/etc/egl/egl_external_platform.d` at `/run/opengl-driver`. It is listed in
+`gaming-doctor` anyway, because it is the sort of thing that comes back with a
+`nix flake update` and because an empty directory there is unambiguous:
+
+```
+ls /run/opengl-driver/share/egl/egl_external_platform.d/
+```
+
+Files there, good. Nothing there, that is the bug and the environment variable
+from the thread is the stopgap until nixpkgs moves again.
+
+### The driver
+
+`modules/nixos/nvidia.nix` pins `nvidiaPackages.latest`, which on the current
+lock resolves to **610.43.03** — `latest` is the higher of the production and
+new-feature branches, and the new-feature branch is ahead. That is deliberate
+and it should stay: newer titles regularly need a driver newer than production,
+and dropping back to `production` (595.84) to chase a performance report is a
+trade that costs games.
+
+`open = true` is set, so this is the open kernel module, which also means GSP
+firmware is in use and cannot be turned off — the `NVreg_EnableGpuFirmware=0`
+advice that turns up in stutter threads does not apply to a configuration built
+this way. `gaming-doctor` prints which module is loaded so there is no need to
+guess.
 
 ## Single GPU passthrough
 

@@ -35,11 +35,11 @@
   # syncing, but use the stock cache.nixos.org binary on the laptop. The C++
   # extras remain enabled by default on the desk, where compiling the custom
   # derivation is intentional.
-  local.niri.noctaliaSourcePatches = false;
+  local.niri.noctaliaSourcePatches = true;
 
   # The same existing option owns both visualizers under Noctalia. It defaults
   # on everywhere else; the laptop keeps both the bar and lock screen quiet.
-  local.waybar.cavaInBar = false;
+  local.waybar.cavaInBar = true;
 
   # The lock screen's clock is placed by pixel coordinate per output, and this
   # host deliberately declares no `local.niri.outputs` (./displays/laptop.nix

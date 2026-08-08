@@ -345,9 +345,6 @@ let
       # Only name the image if it is actually there. New generations always
       # seed the fixed Limine wallpaper, but keeping this guard makes the sync
       # safe while switching from an older generation or repairing an ESP.
-      # if [ -f "${espWallpaper}" ]; then
-      #   printf '%s\n' ${lib.escapeShellArg wallpaperLines} >> "$body"
-      # fi
 
       # --- other operating systems --------------------------------------
       ${lib.optionalString cfg.detectOtherSystems ''
@@ -570,9 +567,6 @@ in
         # <esp>/limine so the installer's cleanup pass leaves it alone. The
         # copy on every rebuild is also what replaces a session wallpaper left
         # at this path by an older generation of the sync service.
-        # additionalFiles = {
-        #   "${espSubdir}/wallpaper.png" = limineWallpaper;
-        # };
 
         # Re-theme immediately after an install rather than at the next boot,
         # so `nixos-rebuild switch` and the boot menu never disagree.

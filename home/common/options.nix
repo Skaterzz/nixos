@@ -17,11 +17,66 @@
   };
 
 
+  options.local.niri.shell = lib.mkOption {
+    type = lib.types.enum [
+      "waybar"
+      "noctalia"
+    ];
+    default = "waybar";
+    description = ''
+      Which desktop shell the niri session runs.
+
+      "waybar" is the assembled stack: waybar, dunst, swayosd, wofi, cliphist,
+      swayidle and hyprlock, each configured by its own module under
+      home/joshr/niri/ and themed by theming.nix rendering themes.nix into
+      seven different config formats.
+
+      "noctalia" replaces all seven with one Quickshell process reading one
+      TOML file — home/joshr/niri/noctalia.nix — which disables the daemons it
+      subsumes. themes.nix stays the source of colour either way: the palettes
+      are rendered into noctalia's own format by noctalia-palettes.nix, and
+      `theme-apply` remains the switcher, so kitty, Dolphin and VS Code follow
+      a theme change exactly as they do under waybar.
+
+      Not everything survives the crossing, and both losses are indicators
+      that were rarely on screen: the gamemode pad has no noctalia widget
+      (its waybar module was a polled script, and custom_button has no exec),
+      and the lock screen loses the album art, media buttons, battery readout
+      and greetings that `lock-session` builds hyprlock configs for. The
+      `local.niri.lock*` options are therefore only read under "waybar".
+    '';
+  };
+
+  options.local.niri.noctaliaSourcePatches = lib.mkOption {
+    type = lib.types.bool;
+    default = true;
+    description = ''
+      Whether to build Noctalia with this repository's C++ extras: animated
+      lock/unlock transitions, content-sized text OSDs, the customized
+      control-panel identity and detail colours, and a `shadow_offset` setting
+      on the clock widget so a small one can carry a shadow that is visible at
+      its size, plus the relative MPRIS IPC actions retained for compatibility.
+
+      Enabling this changes the Noctalia derivation and therefore compiles it
+      locally instead of using the binary from cache.nixos.org. Disabling it
+      keeps the complete generated Noctalia configuration, palettes, plugins,
+      templates and theme-sync hooks, but uses stock pkgs.noctalia and its
+      upstream behaviour for those source-only features.
+    '';
+  };
+
   options.local.waybar.cavaInBar = lib.mkOption {
     type = lib.types.bool;
-    default = false;
+    default = true;
     description = ''
-      Enable cava in waybar in niri
+      Whether the bar and Noctalia lock screen carry audio visualisers.
+
+      Named for waybar because that is where it started, and still read by
+      both shells — it answers the same question either way. Under waybar it
+      adds the `custom/cava` module, a script feeding the bar one frame of
+      glyphs per line (cavaBar in home/joshr/niri/scripts.nix); under noctalia
+      it adds the compact bar widget and the full-output lock-screen visualizer,
+      both of which read PipeWire directly and need no helper.
     '';
   };
 
@@ -167,6 +222,29 @@
         };
       }
     );
+  };
+
+  options.local.niri.lockClockOutputs = lib.mkOption {
+    type = lib.types.listOf lib.types.str;
+    default = [ ];
+    example = [ "eDP-1" ];
+    description = ''
+      Connectors that get a clock on noctalia's lock screen, for hosts that
+      do not pin their display layout.
+
+      Only consulted when `local.niri.outputs` is empty. noctalia places lock
+      screen widgets by pixel coordinate per output, so the clock's position
+      is normally computed from the mode already declared there — one place
+      for the resolution, and a monitor change moves the clock with it. A host
+      that leaves the layout to niri's auto-detection has no mode to read, so
+      this names the connectors instead and the position falls back to a 1080p
+      centre. noctalia clamps widget coordinates to the output, so on a panel
+      that is not 1080p the clock is off-centre rather than off-screen.
+
+      `niri msg outputs` prints the connector names. Only read under
+      `local.niri.shell = "noctalia"`; the hyprlock screen the waybar stack
+      uses draws its own clock and needs none of this.
+    '';
   };
 
   options.local.niri.brightness.device = lib.mkOption {

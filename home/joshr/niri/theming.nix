@@ -39,8 +39,14 @@ let
   themeSet = import ./themes.nix { inherit lib; };
   inherit (themeSet) themes;
 
+  useNoctalia = config.local.niri.shell == "noctalia";
+
   stateDir = "${config.home.homeDirectory}/.local/state/niri-theme";
   activeDir = "${stateDir}/active";
+
+  # Where Noctalia writes the same set of files this module renders. It owns
+  # `active` under that shell — see the activation block at the bottom.
+  liveDir = "${stateDir}/noctalia-live";
 
   # niri KDL fragment: focus ring, borders, overview backdrop.
   renderNiri = name: t: ''
@@ -1638,16 +1644,51 @@ in
   #
   # The selected theme *name* is preserved; only the path it resolves to is
   # refreshed. An unknown or missing name falls back to the default.
-  home.activation.linkNiriTheme = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
-    $DRY_RUN_CMD mkdir -p "${stateDir}"
+  #
+  # --- and why noctalia gets a different branch --------------------------
+  #
+  # Under noctalia the palette is not one of these prebuilt directories. The
+  # shell renders its own into `noctalia-live` and repoints `active` there
+  # itself, from the `colors_changed` and `started` hooks, and writes
+  # `noctalia-live` into `current` as the sentinel the system path units wake
+  # on.
+  #
+  # Running the case below on that was actively destructive, and it is the
+  # reason Spotify, the greeter and the boot menu drifted. `noctalia-live`
+  # matches no arm, so every `home-manager switch` — which is every
+  # `nixos-rebuild switch` — fell through to the default: it pulled `active`
+  # off the live directory, putting Dolphin and VS Code back on a build-time
+  # palette, and it overwrote `current` with a themes.nix name, which is
+  # exactly the string the Spotify launcher, the SDDM sync and the limine sync
+  # were each keying off. The desktop stayed on the palette noctalia was
+  # holding in memory; everything downstream quietly went somewhere else.
+  #
+  # Those three no longer read `current` at all. This still has to keep its
+  # hands off it, because noctalia owns the file and there is nothing here to
+  # decide.
+  home.activation.linkNiriTheme = lib.hm.dag.entryAfter [ "writeBoundary" ] (
+    if useNoctalia then
+      ''
+        $DRY_RUN_CMD mkdir -p "${stateDir}"
 
-    current="$(cat "${stateDir}/current" 2>/dev/null || true)"
-    case "$current" in
+        # Idempotent with what the shell's own hook does, so activation and
+        # the hook can run in either order. It may dangle until noctalia has
+        # started once on a fresh machine, which costs Dolphin and VS Code
+        # their colours for the length of one login and nothing more.
+        $DRY_RUN_CMD ln -sfn "${liveDir}" "${activeDir}"
+      ''
+    else
+      ''
+        $DRY_RUN_CMD mkdir -p "${stateDir}"
+
+        current="$(cat "${stateDir}/current" 2>/dev/null || true)"
+        case "$current" in
 ${themeCaseArms}
-      *) target="${themeDirs.${themeSet.default}}"; current="${themeSet.default}" ;;
-    esac
+          *) target="${themeDirs.${themeSet.default}}"; current="${themeSet.default}" ;;
+        esac
 
-    $DRY_RUN_CMD ln -sfn "$target" "${activeDir}"
-    $DRY_RUN_CMD sh -c "printf %s '$current' > '${stateDir}/current'"
-  '';
+        $DRY_RUN_CMD ln -sfn "$target" "${activeDir}"
+        $DRY_RUN_CMD sh -c "printf %s '$current' > '${stateDir}/current'"
+      ''
+  );
 }

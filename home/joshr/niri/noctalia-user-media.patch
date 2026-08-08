@@ -1,0 +1,137 @@
+diff --git a/src/dbus/mpris/mpris_service.cpp b/src/dbus/mpris/mpris_service.cpp
+index 071b8c4..77f9edb 100644
+--- a/src/dbus/mpris/mpris_service.cpp
++++ b/src/dbus/mpris/mpris_service.cpp
+@@ -692,7 +692,7 @@ void MprisService::registerIpc(IpcService& ipc) {
+         const auto parts = noctalia::ipc::splitWords(args);
+         if (parts.size() != 1) {
+           return "error: media requires exactly one action "
+-                 "<next|previous|toggle|play|pause|stop|next-player|previous-player>\n";
++                 "<next|previous|toggle|play|pause|stop|next-player|previous-player|volume-up|volume-down>\n";
+         }
+
+         const std::string& action = parts[0];
+@@ -720,11 +720,22 @@ void MprisService::registerIpc(IpcService& ipc) {
+         if (action == "previous-player") {
+           return cycleActivePlayer(-1) ? "ok\n" : "error: no media players available\n";
+         }
++        if (action == "volume-up" || action == "volume-down") {
++          const auto current = volumeActive();
++          if (!current.has_value()) {
++            return "error: no active player\n";
++          }
++          constexpr double kMediaVolumeStep = 0.05;
++          const double direction = action == "volume-up" ? 1.0 : -1.0;
++          const double target = std::clamp(*current + direction * kMediaVolumeStep, 0.0, 1.0);
++          return setVolumeActive(target) ? "ok\n" : "error: active player does not support Volume updates\n";
++        }
+
+         return "error: invalid media action (use next, previous, toggle, play, pause, stop, next-player, "
+-               "previous-player)\n";
++               "previous-player, volume-up, volume-down)\n";
+       },
+-      "<next|previous|toggle|play|pause|stop|next-player|previous-player>", "Control active media playback"
++      "<next|previous|toggle|play|pause|stop|next-player|previous-player|volume-up|volume-down>",
++      "Control active media playback"
+   );
+ }
+
+@@ -1021,6 +1032,9 @@ bool MprisService::setVolume(const std::string& busName, double volume) {
+         .onInterface(kPropertiesInterface)
+         .withArguments(std::string{kMprisPlayerInterface}, std::string{"Volume"}, sdbus::Variant{volume})
+         .uponReplyInvoke(makeAsyncReplyHandler("set-volume", busName));
++    // Keep relative changes cumulative while a wheel produces several steps
++    // before the player echoes PropertiesChanged back over D-Bus.
++    it->second.volume = volume;
+     return true;
+   } catch (const sdbus::Error& e) {
+     kLog.warn("set-volume dispatch failed name={} err={}", busName, e.what());
+diff --git a/src/shell/control_center/tabs/home_tab.cpp b/src/shell/control_center/tabs/home_tab.cpp
+index a6e3d1f..e71adfe 100644
+--- a/src/shell/control_center/tabs/home_tab.cpp
++++ b/src/shell/control_center/tabs/home_tab.cpp
+@@ -116,7 +116,7 @@ namespace {
+     return formatLocalTime(format);
+   }
+
+-  std::string userHostLine() { return std::format("{}@{}", sessionDisplayName(), hostName()); }
++  std::string userHostLine() { return std::format("{}@{}", sessionUserName(), hostName()); }
+
+   std::string noctaliaVersionLine() { return std::format("Noctalia {}", noctalia::build_info::displayVersion()); }
+
+@@ -335,21 +335,21 @@ std::unique_ptr<Flex> HomeTab::create() {
+               .out = &m_userHost,
+               .text = userHostLine(),
+               .fontSize = Style::fontSizeCaption * scale,
+-              .color = colorSpecFromRole(ColorRole::OnSurfaceVariant),
++              .color = colorSpecFromRole(ColorRole::OnSurface),
+               .configure = configureUserDetailLabel,
+           }),
+           ui::label({
+               .out = &m_userUptime,
+               .text = "…",
+               .fontSize = Style::fontSizeCaption * scale,
+-              .color = colorSpecFromRole(ColorRole::OnSurfaceVariant),
++              .color = colorSpecFromRole(ColorRole::OnSurface),
+               .configure = configureUserDetailLabel,
+           }),
+           ui::label({
+               .out = &m_userVersion,
+               .text = noctaliaVersionLine(),
+               .fontSize = Style::fontSizeCaption * scale,
+-              .color = colorSpecFromRole(ColorRole::OnSurfaceVariant),
++              .color = colorSpecFromRole(ColorRole::OnSurface),
+               .configure = configureUserDetailLabel,
+           })
+       )
+diff --git a/src/system/distro_info.cpp b/src/system/distro_info.cpp
+index 550fd4d..9a6ca72 100644
+--- a/src/system/distro_info.cpp
++++ b/src/system/distro_info.cpp
+@@ -151,22 +151,26 @@ std::string osAgeLabel() {
+   return i18n::trp("time.units.day", static_cast<long>(days));
+ }
+
+-std::string sessionDisplayName() {
++std::string sessionUserName() {
+   struct passwd* pw = getpwuid(getuid());
+   const char* loginEnv = std::getenv("USER");
+-  std::string login = "user";
+-  if (pw != nullptr) {
+-    login = pw->pw_name;
+-  } else if (loginEnv != nullptr) {
+-    login = loginEnv;
++  if (pw != nullptr && pw->pw_name != nullptr && pw->pw_name[0] != '\0') {
++    return pw->pw_name;
++  }
++  if (loginEnv != nullptr && loginEnv[0] != '\0') {
++    return loginEnv;
+   }
++  return "user";
++}
+
++std::string sessionDisplayName() {
++  struct passwd* pw = getpwuid(getuid());
+   if (pw != nullptr && pw->pw_gecos != nullptr && pw->pw_gecos[0] != '\0') {
+     std::string gecos = pw->pw_gecos;
+     const auto comma = gecos.find(',');
+     return comma == std::string::npos ? gecos : gecos.substr(0, comma);
+   }
+-  return login;
++  return sessionUserName();
+ }
+
+ std::string hostName() {
+diff --git a/src/system/distro_info.h b/src/system/distro_info.h
+index 73d8bf3..94d3220 100644
+--- a/src/system/distro_info.h
++++ b/src/system/distro_info.h
+@@ -28,5 +28,8 @@ public:
+ // Display name of the current session user (gecos or login).
+ [[nodiscard]] std::string sessionDisplayName();
+
++// Login name of the current session user.
++[[nodiscard]] std::string sessionUserName();
++
+ // Machine hostname (uname nodename), or "unknown" on failure.
+ [[nodiscard]] std::string hostName();

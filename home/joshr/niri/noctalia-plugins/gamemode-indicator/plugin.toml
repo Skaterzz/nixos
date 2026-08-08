@@ -1,0 +1,10 @@
+id = "joshr/gamemode-indicator"
+name = "GameMode indicator"
+description = "Shows a bar glyph while a GameMode client is active"
+version = "1.0.0"
+plugin_api = 19
+dependencies = ["gamemode-status", "id", "pgrep"]
+
+[[widget]]
+id = "status"
+entry = "widget.luau"

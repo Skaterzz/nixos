@@ -26,6 +26,28 @@
     ./emu-hackathon.nix
   ];
 
+  # noctalia rather than the waybar stack — see the same line in
+  # ./gamestation-niri.nix, and `local.niri.shell` in home/common/options.nix.
+  local.niri.shell = "noctalia";
+
+  # Keep the generated Noctalia configuration, palettes, plugins and theme
+  # syncing, but use the stock cache.nixos.org binary on the laptop. The C++
+  # extras remain enabled by default on the desk, where compiling the custom
+  # derivation is intentional.
+  local.niri.noctaliaSourcePatches = false;
+
+  # The same existing option owns both visualizers under Noctalia. It defaults
+  # on everywhere else; the laptop keeps both the bar and lock screen quiet.
+  local.waybar.cavaInBar = false;
+
+  # The lock screen's clock is placed by pixel coordinate per output, and this
+  # host deliberately declares no `local.niri.outputs` (./displays/laptop.nix
+  # leaves the layout to niri, because a laptop's external displays change).
+  # So the connector is named here instead. eDP-1 is the internal panel;
+  # `niri msg outputs` confirms it, and the position falls back to a 1080p
+  # centre that noctalia clamps onto whatever the panel actually is.
+  local.niri.lockClockOutputs = [ "eDP-1" ];
+
   local.niri.randomLockGreetings = false;
   local.niri.timeBasedLockGreetings = true;
 
@@ -51,5 +73,10 @@
   # either. If a docked keyboard or mouse ever needs it, `nix run nixpkgs#openrgb`
   # is a one-off, and importing modules/nixos/gaming.nix on this host is the
   # permanent version.
+  # Only read under `local.niri.shell = "waybar"`, where swayidle runs at all.
+  # noctalia's idle timers are in home/joshr/niri/noctalia.nix and are the same
+  # on both niri hosts: lock at 300s, outputs off at 600s. This host's tighter
+  # "lock and blank together" is not carried across; set the `screen-off`
+  # behaviour's timeout to 300 there if it turns out to be wanted.
   services.swayidle.events.lock = lib.mkForce (lib.getExe niriScripts.lockBlank);
 }

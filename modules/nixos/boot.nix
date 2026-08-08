@@ -1,4 +1,4 @@
-{ config, lib, pkgs, ... }:
+{ config, inputs, lib, pkgs, ... }:
 
 # Bootloader: which one is installed, how it finds other operating systems,
 # and — for limine — how the boot menu follows the desktop's theme.
@@ -43,10 +43,16 @@
 # ------------------------------------------------
 #
 # The boot menu is drawn before any of the desktop exists, from a plain text
-# file on the EFI System Partition. So the palette and the wallpaper have to be
-# *pushed* there ahead of time, the same way the SDDM greeter is fed in
+# file on the EFI System Partition. So the palette has to be *pushed* there
+# ahead of time, the same way the SDDM greeter is fed in
 # modules/nixos/niri.nix — and for the same reason: the thing being themed
 # can't read joshr's home directory, or anything else that isn't the ESP.
+#
+# What gets pushed is Noctalia's resolved palette manifest, not the name of a
+# theme. That distinction is the whole of this module's history with the
+# feature: a name only ever described one of Noctalia's four palette sources,
+# and the other three — builtin, wallpaper-derived, community — have no name
+# a Nix derivation could have been built against.
 #
 # The NixOS limine module generates `<esp>/limine/limine.conf` on every
 # `nixos-rebuild`, so a runtime edit can't just be dropped anywhere in it. What
@@ -98,19 +104,27 @@ let
 
   esp = config.boot.loader.efi.efiSysMountPoint;
 
-  # Written by home/joshr/niri/scripts.nix as the user picks a theme and a
-  # wallpaper. Same two files the SDDM sync in niri.nix watches, and the same
-  # owner — `local.desktop.primaryUser`, which is joshr unless a host says
-  # otherwise.
+  # # Limine keeps the familiar NixOS image unless a host deliberately replaces
+  # # it. This is independent of Noctalia's runtime wallpaper; only the colour
+  # # block below follows the session.
+  # limineWallpaper =
+  #   if cfg.wallpaper != null then
+  #     cfg.wallpaper
+  #   else
+  #     inputs.dotfiles + "/dot_local/share/wallpapers/nixos.png";
+
+  # The palette manifest Noctalia renders from its colour roles (the
+  # `system_palette` user template in home/joshr/niri/noctalia.nix). The same
+  # file the SDDM sync in niri.nix reads, with the same owner —
+  # `local.desktop.primaryUser`, which is joshr unless a host says otherwise.
   niriStateDir = "/home/${config.local.desktop.primaryUser}/.local/state/niri-theme";
-  themeStateFile = "${niriStateDir}/current";
-  wallpaperStateFile = "${niriStateDir}/wallpaper";
+  resolvedThemeFile = "${niriStateDir}/noctalia-resolved";
 
   # Outside `<esp>/limine/` — see the header note about the installer's
   # delete-what-I-didn't-write pass over that directory.
   espSubdir = "niri-theme";
   espThemeDir = "${esp}/${espSubdir}";
-  espWallpaper = "${espThemeDir}/wallpaper.png";
+  # espWallpaper = "${espThemeDir}/wallpaper.png";
 
   limineConf = "${esp}/limine/limine.conf";
 
@@ -169,18 +183,20 @@ let
       ++ lib.optional (cfg.branding != null) "interface_branding: ${cfg.branding}"
     );
 
-  # One rendered block per theme, in a directory the sync script indexes by
-  # name. A directory rather than a `case` over store paths because the lookup
-  # is then just "is there a file called $name.conf", with the default as the
-  # fallback — no generated shell to keep in step with themes.nix.
-  themeBlocks = pkgs.runCommand "limine-theme-blocks" { } (
-    lib.concatStringsSep "\n" (
-      [ "mkdir -p \"$out\"" ]
-      ++ lib.mapAttrsToList (
-        name: t: "cp ${pkgs.writeText "limine-${name}.conf" (themeBlock t)} \"$out/${name}.conf\""
-      ) themes
-    )
-  );
+  # The one rendered block that is not read from the manifest.
+  #
+  # This used to be a directory of them — one file per palette in themes.nix
+  # plus one per Noctalia builtin — which the sync indexed by the name in
+  # `~/.local/state/niri-theme/current`. Under Noctalia that lookup can never
+  # hit: the shell writes `noctalia-live` there, deliberately, because a
+  # wallpaper-derived or community palette has no name a Nix derivation could
+  # have been built for. Every run therefore fell through to the default and
+  # the boot menu wore it regardless of the desktop.
+  #
+  # What is left is that fallback, and only that: the palette the machine is
+  # built with, for the first boot before Noctalia has written a manifest, and
+  # for the Plasma hosts that never write one at all.
+  defaultBlock = pkgs.writeText "limine-default-theme.conf" (themeBlock defaultTheme);
 
   wallpaperLines = ''
     wallpaper: boot():/${espSubdir}/wallpaper.png
@@ -204,20 +220,23 @@ let
   entriesBegin = "# >>> detected systems — rewritten by limine-theme-sync >>>";
   entriesEnd = "# <<< detected systems <<<";
 
-  # Mirrors the desktop's theme and wallpaper onto the ESP, and re-scans for
-  # other operating systems.
+  # Mirrors the desktop's palette onto the ESP, and re-scans for other
+  # operating systems.
   #
   # Runs at three moments, which between them cover every way the inputs can
-  # change: at boot, whenever the user picks a theme or wallpaper (a path unit
-  # watches both state files), and at the end of every bootloader install, so a
-  # rebuild doesn't leave the menu on the default palette until the next reboot.
+  # change: at boot, whenever the session's palette changes (a path unit
+  # watches the manifest), and at the end of every bootloader install, so a
+  # rebuild doesn't leave the menu on the default palette until the next
+  # reboot — the install rewrites limine.conf from `extraConfig`, which is the
+  # build-time block, so without that third moment every rebuild would undo
+  # this until something else woke it.
   limineSync = pkgs.writeShellApplication {
     name = "limine-theme-sync";
     runtimeInputs = with pkgs; [
       coreutils
       findutils
       gawk
-      imagemagick
+      gnused
       # lsblk, blkid, findmnt, mount, umount — for the other-ESP scan.
       util-linux
     ];
@@ -229,35 +248,19 @@ let
       # on any host using grub or systemd-boot.
       [ -f "$conf" ] || exit 0
 
-      # --- palette ------------------------------------------------------
-      # An unknown or missing name means the user has never switched themes,
-      # or is running a theme this generation no longer builds.
-      name="$(cat "${themeStateFile}" 2>/dev/null || true)"
-      block="${themeBlocks}/$name.conf"
-      [ -f "$block" ] || block="${themeBlocks}/${themeSet.default}.conf"
-
       # --- wallpaper ----------------------------------------------------
-      # Converted rather than copied: the state file may name a JPEG, and the
-      # ESP is FAT — small and shared with the firmware — so the image is also
-      # flattened to 1080p rather than parked there at whatever the monitor's
-      # native resolution happens to be.
       #
-      # A failed conversion leaves the previous image alone. Blanking the boot
-      # menu's background over one unreadable file is a worse outcome than
-      # showing a stale picture.
-      install -d -m 0755 "${espThemeDir}"
-
-      # Commented out temporarily
-      # wp="$(cat "${wallpaperStateFile}" 2>/dev/null || true)"
-      # if [ -n "$wp" ] && [ -f "$wp" ]; then
-      #   tmp="${espWallpaper}.tmp"
-      #   if magick "$wp" -strip -resize '1920x1080^' \
-      #        -gravity center -extent 1920x1080 "png:$tmp" 2>/dev/null; then
-      #     mv -f "$tmp" "${espWallpaper}"
-      #   else
-      #     rm -f "$tmp"
-      #   fi
-      # fi
+      # Left off. `limineWallpaper` seeds a fixed image onto the ESP at build
+      # time (`additionalFiles` below) and the sync still names it if it is
+      # there, but the session's own wallpaper is never mirrored: on a FAT
+      # partition shared with the firmware, a fresh 1080p PNG written on every
+      # wallpaper change is a lot of churn for a screen that is up for two
+      # seconds.
+      #
+      # The `install -d` that used to stand here is gone with it. Nothing after
+      # this point writes into that directory, and `install -d` also chmods —
+      # which on a vfat ESP mounted with a restrictive dmask fails outright,
+      # and under `set -e` took the palette rewrite below down with it.
 
       body="$(mktemp)"
       entries="$(mktemp)"
@@ -277,14 +280,71 @@ let
       }
       trap cleanup EXIT
 
-      cp "$block" "$body"
+      # --- palette ------------------------------------------------------
+      #
+      # Noctalia's manifest is the authority whenever it is there and complete.
+      # It is the only input that can describe a wallpaper-derived or community
+      # palette, i.e. one created long after this NixOS generation was built,
+      # and it describes a custom or builtin one in exactly the same lines.
+      read_colour() {
+        [ -f ${resolvedThemeFile} ] || return 0
+        sed -n "s/^$1=\\(#[0-9A-Fa-f]\\{6\\}\\)$/\\1/p" ${resolvedThemeFile} | head -n1 || true
+      }
+      rgb() {
+        printf '%s' "''${1#\#}" | tr '[:lower:]' '[:upper:]'
+      }
 
-      # Only name the image if it is actually there — on a host that has never
-      # picked a wallpaper and sets no local.boot.wallpaper, there is nothing
-      # to point at and limine should be left to draw the backdrop colour.
-      if [ -f "${espWallpaper}" ]; then
-        printf '%s\n' ${lib.escapeShellArg wallpaperLines} >> "$body"
+      bg="$(read_colour bg)"
+      bg_alt="$(read_colour bg_alt)"
+      fg="$(read_colour fg)"
+      fg_dim="$(read_colour fg_dim)"
+      accent="$(read_colour accent)"
+      live_palette=""
+      live_bright_palette=""
+      palette_ok=1
+
+      for number in $(seq 0 15); do
+        value="$(read_colour "color$number")"
+        if [ -z "$value" ]; then
+          palette_ok=0
+          break
+        fi
+        value="$(rgb "$value")"
+        if [ "$number" -lt 8 ]; then
+          [ -z "$live_palette" ] || live_palette="$live_palette;"
+          live_palette="$live_palette$value"
+        else
+          [ -z "$live_bright_palette" ] || live_bright_palette="$live_bright_palette;"
+          live_bright_palette="$live_bright_palette$value"
+        fi
+      done
+
+      if [ -n "$bg" ] && [ -n "$bg_alt" ] && [ -n "$fg" ] \
+         && [ -n "$fg_dim" ] && [ -n "$accent" ] && [ "$palette_ok" -eq 1 ]; then
+        {
+          printf 'backdrop: %s\n' "$(rgb "$bg")"
+          printf 'term_foreground: %s\n' "$(rgb "$fg")"
+          printf 'term_foreground_bright: %s\n' "$(rgb "$accent")"
+          printf 'term_background: %s%s\n' ${lib.escapeShellArg (lib.toUpper cfg.menuTransparency)} "$(rgb "$bg")"
+          printf 'term_background_bright: %s\n' "$(rgb "$bg_alt")"
+          printf 'term_palette: %s\n' "$live_palette"
+          printf 'term_palette_bright: %s\n' "$live_bright_palette"
+          printf 'interface_branding_colour: %s\n' "$(rgb "$accent")"
+          printf 'interface_help_colour: %s\n' "$(rgb "$fg_dim")"
+          printf 'interface_help_colour_bright: %s\n' "$(rgb "$accent")"
+          ${lib.optionalString (cfg.branding != null) "printf '%s\\n' ${lib.escapeShellArg "interface_branding: ${cfg.branding}"}"}
+        } > "$body"
+      else
+        # No manifest, or one missing a colour. The seven roles and all
+        # sixteen terminal colours or none of them: a half-read manifest
+        # producing a menu with the desktop's background and the build-time
+        # palette's foreground is worse than one that is simply out of date.
+        cp ${defaultBlock} "$body"
       fi
+
+      # Only name the image if it is actually there. New generations always
+      # seed the fixed Limine wallpaper, but keeping this guard makes the sync
+      # safe while switching from an older generation or repairing an ESP.
 
       # --- other operating systems --------------------------------------
       ${lib.optionalString cfg.detectOtherSystems ''
@@ -494,7 +554,7 @@ in
         extraConfig = ''
           ${themeBegin}
           ${themeBlock defaultTheme}
-          ${lib.optionalString (cfg.wallpaper != null) wallpaperLines}
+          ${wallpaperLines}
           ${themeEnd}
         '';
 
@@ -503,13 +563,10 @@ in
           ${entriesEnd}
         '';
 
-        # Seeds the image the boot menu falls back to before niri has ever
-        # written a wallpaper. Copied to the ESP but outside <esp>/limine, so
-        # the installer's cleanup pass leaves it alone — and so the sync can
-        # overwrite the same path later.
-        additionalFiles = lib.optionalAttrs (cfg.wallpaper != null) {
-          "${espSubdir}/wallpaper.png" = cfg.wallpaper;
-        };
+        # Pins the boot menu's fixed image. Copied to the ESP but outside
+        # <esp>/limine so the installer's cleanup pass leaves it alone. The
+        # copy on every rebuild is also what replaces a session wallpaper left
+        # at this path by an older generation of the sync service.
 
         # Re-theme immediately after an install rather than at the next boot,
         # so `nixos-rebuild switch` and the boot menu never disagree.
@@ -517,7 +574,7 @@ in
       };
 
       systemd.services.limine-theme-sync = {
-        description = "Mirror the desktop theme and wallpaper to the limine boot menu";
+        description = "Mirror the desktop palette to the limine boot menu";
         wantedBy = [ "multi-user.target" ];
 
         # The ESP is usually mounted early, but it is not guaranteed to be up
@@ -542,10 +599,14 @@ in
 
       systemd.paths.limine-theme-sync = {
         wantedBy = [ "multi-user.target" ];
-        pathConfig.PathChanged = [
-          themeStateFile
-          #wallpaperStateFile
-        ];
+
+        # The manifest, and nothing else. `current` used to be watched too,
+        # from when it named which prebuilt block to use; it selects nothing
+        # now, and Noctalia rewrites the manifest on the same hook, so
+        # watching both only meant running the sync twice per theme change.
+        # `wallpaper` is not watched because the wallpaper is not mirrored —
+        # see the note in the script.
+        pathConfig.PathChanged = [ resolvedThemeFile ];
       };
     })
 

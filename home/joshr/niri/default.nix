@@ -11,12 +11,26 @@
 #
 # Import order matters a little: theming.nix and scripts.nix publish
 # `_module.args` (niriTheming, niriScripts) that the others consume.
+#
+# Two shells live here, picked per host with `local.niri.shell`. Everything
+# from ./waybar.nix down to ./emoji.nix is the assembled stack; ./noctalia.nix
+# is the single-process alternative that replaces all of it. Both are imported
+# on every niri host and each is gated internally, because `imports` cannot
+# read `config` without sending the module system round in a circle.
+#
+# The theme machinery below is shared rather than switched. theming.nix renders
+# themes.nix into every app's own format either way, and the two symlinks at
+# the bottom of this file — kdeglobals for Dolphin, the kitty include — are
+# what carries a theme change into apps that are not the shell. noctalia's own
+# template system is deliberately off for exactly that reason; see the `theme`
+# block in ./noctalia.nix.
 {
   imports = [
     ./theming.nix
     ./scripts.nix
     ./niri.nix
     ./waybar.nix
+    ./noctalia.nix
     ./notifications.nix
     ./osd.nix
     ./lock.nix
@@ -218,10 +232,19 @@
   # and without it the merge order between two modules isn't defined.
   #
   # The theme switcher reloads running terminals; see scripts.nix.
-  programs.kitty.extraConfig = lib.mkAfter ''
+  #
+  # Only under the waybar stack. noctalia's `kitty` template renders the same
+  # palette to ~/.config/kitty/themes/noctalia.conf and ./noctalia.nix adds
+  # the include for it; carrying both would leave two `include` lines setting
+  # the same colours, where kitty takes the last value for any key and which
+  # one that is would come down to the merge order of two `mkAfter`s. One
+  # writer per shell instead.
+  programs.kitty.extraConfig = lib.mkIf (config.local.niri.shell == "waybar") (
+    lib.mkAfter ''
 
-    include ${niriTheming.activeDir}/kitty.conf
-  '';
+      include ${niriTheming.activeDir}/kitty.conf
+    ''
+  );
 
   # Enable Dolphin's Git version-control integration while leaving dolphinrc
   # writable, so Dolphin can still save its other preferences normally.

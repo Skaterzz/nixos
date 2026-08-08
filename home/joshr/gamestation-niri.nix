@@ -31,11 +31,18 @@
     ./emu-hackathon.nix
   ];
 
+  # noctalia rather than the waybar stack. See home/joshr/niri/noctalia.nix,
+  # and `local.niri.shell` in home/common/options.nix for what moves and what
+  # is lost. Setting this back to "waybar" is the whole way back.
+  #
+  # The lock-screen options below are only read under "waybar" — noctalia's
+  # lock screen has no album art or greetings — and are left as they were so
+  # that going back restores the screen this host had.
+  local.niri.shell = "noctalia";
+
   local.niri.randomLockGreetings = false;
   local.niri.timeBasedLockGreetings = true;
 
-  local.waybar.cavaInBar = true;
-  
   local.niri.lockAlbumArtBackground = true;
   local.niri.lockAlbumArtCover = true;
 }

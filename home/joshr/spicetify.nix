@@ -8,15 +8,55 @@
 
 # Port of the existing Spicetify setup from the dotfiles repository.
 #
-# The Text theme's CSS remains sourced from dotfiles, while color.ini is
-# generated from niri/themes.nix. Each Niri palette is built as an immutable
-# Spicetify package, and the launcher selects the package matching the runtime
-# theme recorded in ~/.local/state/niri-theme/current.
+# The Text theme's CSS comes from the dotfiles; its colours come from
+# Noctalia, at runtime.
+#
+# One Spotify, not one per palette
+# --------------------------------
+# A Spicetify build is immutable — `mkSpicetify` patches Spotify's xpui bundle
+# in a derivation, so the colours are baked in. The way that was reconciled
+# with a runtime theme switcher was to build *every* palette: thirty-odd
+# Spotify packages, and a launcher that read `~/.local/state/niri-theme/current`
+# and `exec`d whichever one matched.
+#
+# Under Noctalia that cannot work, and it did not. The palette can be derived
+# from a wallpaper or downloaded from api.noctalia.dev, so there is no Nix
+# build for it and the shell writes `noctalia-live` to `current` — a name no
+# arm of that case ever matched, so the launcher fell through to the default
+# every single time. Spotify was pinned to the palette in themes.nix no matter
+# what the desktop was wearing, which is exactly the symptom that prompted
+# this.
+#
+# So: one build, with the live colours mounted into it at launch.
+#
+#   * Noctalia's `spotify` user template renders the live palette to
+#     ~/.local/state/noctalia-spotify/colors.css as `--spice-*` custom
+#     properties, on every colour-scheme change (see niri/noctalia.nix).
+#   * The launcher gives Spotify a private mount namespace and bind-mounts that
+#     file over the `colors.css` Spicetify already linked from xpui/index.html.
+#   * theme.js, appended to the Text theme below, polls that same-origin URL and
+#     swaps a single <style> element when Noctalia rewrites the file.
+#
+# There is no loopback server and no Chromium security exception. The earlier
+# version crossed from https://xpui.app.spotify.com to 127.0.0.1 and depended
+# on Spotify's embedded Chromium accepting PNA/LNA flags. The visible Nord
+# palette proved that request never became effective. Mounting the file over
+# xpui's own stylesheet keeps both the initial load and the polling fetch on
+# Spotify's origin, while the Nix store remains untouched outside this one
+# process's namespace.
+#
+# The Spicetify community template is deliberately disabled. It renders
+# ~/.config/spicetify/Themes/{Comfy,Colorful}/color.ini and then runs
+# `spicetify apply`, but this profile has neither a runtime Spicetify CLI nor a
+# mutable Spotify tree for it to patch. `mkSpicetify` did that work at build
+# time in the Nix store; the live CSS route above is what changes its colours.
 let
+  useNoctalia = config.local.niri.shell == "noctalia";
+
   themeSet = import ./niri/themes.nix { inherit lib; };
   inherit (themeSet) themes;
 
-  currentThemeFile = "${config.home.homeDirectory}/.local/state/niri-theme/current";
+  spotifyPaletteDir = "${config.home.homeDirectory}/.local/state/noctalia-spotify";
 
   stripHash = lib.removePrefix "#";
 
@@ -37,6 +77,12 @@ let
     text               = ${stripHash theme.fg}
   '';
 
+  # Every palette is still rendered into color.ini, and only one of them is
+  # ever selected. That is not waste: Spicetify wants a `[scheme]` section to
+  # exist for the name it is built with, and shipping the whole set keeps
+  # `colorScheme` below a one-word change rather than a new render. What the
+  # scheme actually decides is the two seconds between the window appearing
+  # and the live CSS landing on it.
   generatedColorIni = lib.concatStringsSep "\n" (lib.mapAttrsToList renderScheme themes);
 
   textThemeSource = inputs.dotfiles + "/dot_config/private_spicetify/private_Themes/text";
@@ -49,6 +95,49 @@ let
     cat > "$out/color.ini" <<'COLOR_INI'
     ${generatedColorIni}
     COLOR_INI
+
+    cat >> "$out/theme.js" <<'THEME_JS'
+
+    // Noctalia derives palettes from a wallpaper or a downloaded community
+    // scheme at runtime, long after this immutable theme was built. The
+    // launcher mounts the shell's rendered file over xpui/colors.css, which
+    // Spicetify already loads with a same-origin <link>. Poll that same URL so
+    // an already-open Spotify also follows later palette changes.
+    (() => {
+      const endpoint = "/colors.css";
+      const styleId = "noctalia-live-colors";
+
+      async function syncNoctaliaColors() {
+        try {
+          const response = await fetch(endpoint, { cache: "no-store" });
+          if (!response.ok) return;
+          const css = await response.text();
+          let style = document.getElementById(styleId);
+          if (!style) {
+            style = document.createElement("style");
+            style.id = styleId;
+            document.head.appendChild(style);
+          }
+          if (style.textContent !== css) style.textContent = css;
+        } catch (_) {
+          // The static color.ini baked into this theme remains the fallback.
+        }
+      }
+
+      function start() {
+        syncNoctaliaColors();
+        setInterval(syncNoctaliaColors, 2000);
+      }
+
+      // Spicetify injects this with `defer`, so the head is parsed by now.
+      // The guard is for the case where it is loaded some other way.
+      if (document.head) {
+        start();
+      } else {
+        document.addEventListener("DOMContentLoaded", start, { once: true });
+      }
+    })();
+    THEME_JS
   '';
 
   marketplaceSource =
@@ -81,7 +170,7 @@ let
         fi
       '';
 
-  spicetifyConfig = colorScheme: {
+  spicedSpotify = inputs.spicetify-nix.lib.mkSpicetify pkgs {
     theme = {
       name = "text";
       src = textTheme;
@@ -91,7 +180,9 @@ let
       overwriteAssets = false;
     };
 
-    inherit colorScheme;
+    # What the window wears for the moment before theme.js has fetched the
+    # live palette, and on a machine where the shell has never run.
+    colorScheme = themeSet.default;
 
     alwaysEnableDevTools = false;
     experimentalFeatures = true;
@@ -108,78 +199,62 @@ let
     ];
   };
 
-  # The Spicetify output is immutable, so runtime switching is implemented by
-  # selecting among prebuilt variants rather than trying to rewrite the Nix
-  # store after theme-apply runs.
-  spicedSpotifys = lib.mapAttrs (
-    name: _: inputs.spicetify-nix.lib.mkSpicetify pkgs (spicetifyConfig name)
-  ) themes;
-
-  spotifyCases = lib.concatStringsSep "\n" (
-    lib.mapAttrsToList (name: package: ''
-      ${name}) target="${package}/bin/spotify" ;;
-    '') spicedSpotifys
-  );
-
-  defaultSpotify = spicedSpotifys.${themeSet.default};
-
+  # `mkSpicetify` puts the generated stylesheet here and injects a relative
+  # `<link href='colors.css'>` into xpui/index.html. Under Noctalia, replace
+  # that one file with the live template output in a private mount namespace.
+  # `--bind / /` preserves the host filesystem and permissions; this is only a
+  # mount view, not a sandbox. A normal bind is deliberately `nodev`, though,
+  # so /dev has to be overlaid with a device-enabled bind afterwards. Without
+  # that, Spotify reaches /dev/urandom but gets EACCES and aborts before opening
+  # a window. The final bind is read-only from Spotify's side and does not
+  # mutate the Nix store.
   spotifyLauncher = pkgs.writeShellApplication {
     name = "spotify";
-    text = ''
-      current="$(cat "${currentThemeFile}" 2>/dev/null || true)"
-      target=""
-
-      case "$current" in
-      ${spotifyCases}
-        *) target="${defaultSpotify}/bin/spotify" ;;
-      esac
-
-      exec "$target" "$@"
-    '';
-  };
-
-  # A changed Niri theme should also repaint an already-running Spotify. The
-  # launcher itself handles the correct package on normal startup; this helper
-  # only restarts Spotify when a Spotify process was already running.
-  spotifyThemeSync = pkgs.writeShellApplication {
-    name = "spotify-theme-sync";
-    runtimeInputs = with pkgs; [
-      coreutils
-      procps
-      systemd
+    runtimeInputs = lib.optionals useNoctalia [
+      pkgs.bubblewrap
+      pkgs.coreutils
     ];
     text = ''
-      if ! pgrep -x spotify >/dev/null; then
-        exit 0
-      fi
+      ${lib.optionalString useNoctalia ''
+        palette=${lib.escapeShellArg "${spotifyPaletteDir}/colors.css"}
+        target=${lib.escapeShellArg "${spicedSpotify}/share/spotify/Apps/xpui/colors.css"}
 
-      pkill -TERM -x spotify || true
+        # Noctalia renders its user templates during shell startup. Waiting a
+        # few seconds closes the login race without creating mutable state.
+        for _ in $(seq 1 50); do
+          [ -s "$palette" ] && break
+          sleep 0.1
+        done
 
-      for _ in $(seq 1 50); do
-        if ! pgrep -x spotify >/dev/null; then
-          break
+        if [ -s "$palette" ]; then
+          exec bwrap \
+            --die-with-parent \
+            --bind / / \
+            --dev-bind /dev /dev \
+            --ro-bind "$palette" "$target" \
+            -- ${lib.getExe spicedSpotify} "$@"
         fi
-        sleep 0.1
-      done
 
-      unit="spotify-theme-$(date +%s%N)"
-      systemd-run --user --quiet --collect \
-        --unit="$unit" \
-        "${spotifyLauncher}/bin/spotify"
+        echo "spotify: Noctalia palette missing at $palette; using static fallback" >&2
+      ''}
+      exec ${lib.getExe spicedSpotify} "$@"
     '';
   };
 in
 {
+  # The launcher carries the immutable Spicetify package in its closure and is
+  # the one `spotify` placed on PATH. Under Noctalia it supplies the live
+  # colors.css mount above; other shells run the static Spicetify build.
   home.packages = [ spotifyLauncher ];
 
-  # The selected immutable package is not added directly to home.packages, so
-  # provide a desktop entry that targets the theme-aware launcher.
+  # spicedSpotify is no longer installed directly, so publish its desktop entry
+  # against the launcher and keep the package's icon.
   xdg.desktopEntries.spotify = {
     name = "Spotify";
     genericName = "Music Player";
     comment = "Listen to music and podcasts";
-    exec = "${spotifyLauncher}/bin/spotify %U";
-    icon = "${defaultSpotify}/share/icons/hicolor/256x256/apps/spotify-client.png";
+    exec = "${lib.getExe spotifyLauncher} %U";
+    icon = "${spicedSpotify}/share/icons/hicolor/256x256/apps/spotify-client.png";
     terminal = false;
     type = "Application";
     categories = [
@@ -192,20 +267,4 @@ in
     settings.StartupWMClass = "spotify";
   };
 
-  systemd.user.services.spotify-theme-sync = {
-    Unit = {
-      Description = "Restart Spotify with the active Niri theme";
-      After = [ "graphical-session.target" ];
-    };
-    Service = {
-      Type = "oneshot";
-      ExecStart = "${spotifyThemeSync}/bin/spotify-theme-sync";
-    };
-  };
-
-  systemd.user.paths.spotify-theme-sync = {
-    Unit.Description = "Watch the active Niri theme for Spotify";
-    Path.PathChanged = currentThemeFile;
-    Install.WantedBy = [ "default.target" ];
-  };
 }

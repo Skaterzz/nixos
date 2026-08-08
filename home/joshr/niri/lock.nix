@@ -9,6 +9,11 @@
 # `swaylock` needs a PAM entry to authenticate; that's set at system level in
 # modules/nixos/niri.nix, since home-manager can't write /etc/pam.d.
 let
+  # Noctalia owns the lock screen and idle pipeline itself. Keep this legacy
+  # module available only for the optional Waybar stack so its Hyprlock and
+  # Swaylock packages never enter a Noctalia generation.
+  useWaybar = config.local.niri.shell == "waybar";
+
   # `lock-now`, never `lock-session`, and that is the difference between this
   # timer working and stopping dead the moment it locks.
   #
@@ -50,7 +55,7 @@ let
   # actually at the machine.
   whenActive = lib.getExe niriScripts.whenActive;
 in
-{
+lib.mkIf useWaybar {
   services.swayidle = {
     enable = true;
 

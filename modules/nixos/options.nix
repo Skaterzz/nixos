@@ -8,10 +8,11 @@
   # Whose session the machine-wide surfaces follow.
   #
   # Three things outside any session are dressed from one user's choices: the
-  # SDDM greeter and the limine boot menu both read the theme and wallpaper
-  # out of that user's `~/.local/state/niri-theme` (modules/nixos/niri.nix,
-  # modules/nixos/boot.nix), and plasmalogin copies Plasma's settings out of
-  # their `~/.config` (modules/nixos/plasmalogin.nix).
+  # SDDM greeter reads the theme and wallpaper out of that user's
+  # `~/.local/state/niri-theme`, the limine boot menu reads only the theme
+  # there, and plasmalogin copies Plasma's settings out of their `~/.config`
+  # (modules/nixos/niri.nix, modules/nixos/boot.nix and
+  # modules/nixos/plasmalogin.nix).
   #
   # Each of those is a singleton — one login screen, one boot menu — so this
   # can't be generalised to "every user" without the last one to log in
@@ -23,8 +24,8 @@
     default = "joshr";
     example = "alice";
     description = ''
-      Account whose theme and wallpaper the login screen and boot menu
-      follow.
+      Account whose theme the login screen and boot menu follow, and whose
+      wallpaper the login screen follows. Limine keeps its build-time image.
 
       The user has to exist and have a home directory at /home/<name> —
       nothing here creates one. Their session writes the state these modules
@@ -51,8 +52,8 @@
       Which bootloader to install. See modules/nixos/boot.nix.
 
       "limine" is the default because it is the only one of the three that
-      can draw the desktop's wallpaper and palette on the boot menu, which
-      is the point of the module. It finds other operating systems by
+      can draw a wallpaper and the desktop's live palette on the boot menu,
+      which is the point of the module. It finds other operating systems by
       scanning the EFI System Partition for their boot loaders.
 
       "grub" is the fallback for anything limine can't handle — BIOS/MBR
@@ -125,13 +126,13 @@
     type = lib.types.nullOr lib.types.path;
     default = null;
     description = ''
-      Image to show on the boot menu until a wallpaper has been picked in
-      niri, and on hosts that don't run niri at all.
+      Optional replacement for the fixed image shown behind the boot menu.
+      Under Limine, null selects the familiar NixOS wallpaper from the
+      dotfiles input; under grub, null disables the splash image.
 
-      The niri wallpaper always wins when the state file names a readable
-      file — see the limine-theme-sync service in modules/nixos/boot.nix.
-      null means no image, which limine treats as "draw the backdrop
-      colour", not as an error.
+      Noctalia still supplies Limine's colours at runtime, but changing the
+      session wallpaper never overwrites this image on the EFI System
+      Partition.
     '';
   };
 

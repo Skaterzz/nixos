@@ -21,8 +21,8 @@
   # entrypoints in home/raiden/ import the ones next to this file and then say
   # their own name, at ordinary priority, which is what wins here. Everything
   # downstream — the home directory below, the Firefox profile directory, the
-  # private desktop-entry IDs, the OBS theme ID — is derived rather than
-  # written out, so that one line is the whole of the difference.
+  # private desktop-entry IDs — is derived rather than written out, so that
+  # one line is the whole of the difference.
   home.username = lib.mkDefault "joshr";
   home.homeDirectory = lib.mkDefault "/home/${config.home.username}";
 

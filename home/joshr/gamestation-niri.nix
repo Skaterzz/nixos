@@ -29,6 +29,7 @@
     ./browser.nix
     ./wallhaven.nix
     ./emu-hackathon.nix
+    ./image-editing.nix
   ];
 
   # noctalia rather than the waybar stack. See home/joshr/niri/noctalia.nix,

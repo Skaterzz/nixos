@@ -951,7 +951,7 @@ let
       # deliberately no custom wheel action here: scrolling must not change
       # the MPRIS player's volume.
       media = {
-        max_length = 270;
+        max_length = 200;
         min_length = 0;
         title_scroll = "always";
         hide_when_no_media = true;

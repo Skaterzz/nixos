@@ -62,6 +62,7 @@ let
         patches = (old.patches or [ ]) ++ [
           ./noctalia-lock-transition.patch
           ./noctalia-user-media.patch
+          ./noctalia-clock-shadow-offset.patch
         ];
       })
     else
@@ -420,6 +421,34 @@ let
         # the date with it instead of leaving a hole.
         dateCy = timeCy + builtins.floor (timeH * 0.5) + builtins.floor (dateH * 0.5) + builtins.floor (h * 0.012);
 
+        # The date's drop shadow, in the units noctalia measures one in.
+        #
+        # A clock widget's shadow is drawn at `shadow_offset * contentScale`
+        # with no blur (`applyShadow`, desktop_clock_widget.cpp), and
+        # contentScale is exactly what the box does to the type. So the
+        # `shadow = true` both clocks share buys the time a shadow several
+        # pixels clear of its glyphs, and the date — whose box is about three
+        # times smaller — one hard pixel at 60% black: on, and invisible. That
+        # is what this fixes. The setting was never missing; it was scaled away.
+        #
+        # Multiplying by the boxes' ratio cancels the content scale out, so the
+        # date's shadow falls the same distance in real pixels as the time's
+        # and the two read as one composition. Derived from the boxes rather
+        # than written down as 4.3 so it follows the type scale if those move:
+        # both widgets fit on height (a label's natural height doesn't depend
+        # on its text, and neither box is narrow enough for width to bind
+        # first), which makes their content scales the ratio of the heights.
+        #
+        # `shadow_offset` is ours — ./noctalia-clock-shadow-offset.patch, since
+        # upstream hardcodes 1.5 and exposes no way to reach it. Emitted only
+        # where that patch is: `noctalia config validate` runs against whichever
+        # package the host selected, so on `noctaliaSourcePatches = false` an
+        # unknown key would fail the build rather than be ignored, and the
+        # laptop keeps upstream's proportional-and-invisible shadow.
+        dateShadow = lib.optionalAttrs config.local.niri.noctaliaSourcePatches {
+          shadow_offset = 1.5 * timeH / dateH;
+        };
+
         common = {
           type = "clock";
           output = o.name;
@@ -444,6 +473,10 @@ let
             # Which makes the text shadow load-bearing rather than
             # decorative: with no panel behind it, it is the only thing
             # keeping the time legible over a pale wallpaper.
+            #
+            # Enough on its own only for the time. The date is small enough
+            # that the same setting draws a shadow nobody can see, and it needs
+            # the offset below as well — see dateShadow.
             shadow = true;
           };
         };
@@ -536,7 +569,10 @@ let
             cy = dateCy;
             box_width = dateW;
             box_height = dateH;
-            settings.format = "{:%A, %B %-d}";
+            settings = {
+              format = "{:%A, %B %-d}";
+            }
+            // dateShadow;
           }
         ))
         (lib.nameValuePair "lock_suspend_${o.name}" (

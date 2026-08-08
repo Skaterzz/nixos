@@ -1,0 +1,104 @@
+diff --git a/src/shell/desktop/desktop_widget_factory.cpp b/src/shell/desktop/desktop_widget_factory.cpp
+index 25792c4..38cacfe 100644
+--- a/src/shell/desktop/desktop_widget_factory.cpp
++++ b/src/shell/desktop/desktop_widget_factory.cpp
+@@ -198,6 +198,7 @@ std::unique_ptr<DesktopWidget> DesktopWidgetFactory::create(
+         .format = getStringSetting(settings, "format", "{:%H:%M}"),
+         .color = getColorSpecSetting(settings, "color", colorSpecFromRole(ColorRole::OnSurface)),
+         .shadow = getBoolSetting(settings, "shadow", true),
++        .shadowOffset = getFloatSetting(settings, "shadow_offset", 1.5f),
+         .showCircle = getBoolSetting(settings, "circle", true),
+         .centerText = getBoolSetting(settings, "center_text", false),
+         .timezone = getStringSetting(settings, "timezone", ""),
+diff --git a/src/shell/desktop/desktop_widget_settings_registry.cpp b/src/shell/desktop/desktop_widget_settings_registry.cpp
+index aacded3..e71cd87 100644
+--- a/src/shell/desktop/desktop_widget_settings_registry.cpp
++++ b/src/shell/desktop/desktop_widget_settings_registry.cpp
+@@ -264,6 +264,12 @@ namespace desktop_settings {
+       auto shadow = boolSpec("shadow", true);
+       shadow.visibleWhen = digitalOnly;
+       add(std::move(shadow));
++      // The offset is multiplied by the widget's content scale, so a widget
++      // sized down to fit a small box loses its shadow along with its type
++      // size. This is the knob that puts it back.
++      auto shadowOffset = doubleSpec("shadow_offset", 1.5, 0.0, 16.0, 0.1);
++      shadowOffset.visibleWhen = digitalOnly;
++      add(std::move(shadowOffset));
+       auto circle = boolSpec("circle", true);
+       circle.visibleWhen = analogOnly;
+       add(std::move(circle));
+diff --git a/src/shell/desktop/widgets/desktop_clock_widget.cpp b/src/shell/desktop/widgets/desktop_clock_widget.cpp
+index 003b291..e995f6d 100644
+--- a/src/shell/desktop/widgets/desktop_clock_widget.cpp
++++ b/src/shell/desktop/widgets/desktop_clock_widget.cpp
+@@ -62,7 +62,6 @@ namespace {
+   }
+ 
+   constexpr float kShadowAlpha = 0.6f;
+-  constexpr float kShadowOffset = 1.5f;
+   constexpr float kHourHandReach = 0.54f;
+   constexpr float kMinuteHandReach = 0.90f;
+   constexpr float kSecondHandReach = 0.84f;
+@@ -208,7 +207,8 @@ DesktopClockWidget::Style DesktopClockWidget::styleFromSetting(std::string_view
+ 
+ DesktopClockWidget::DesktopClockWidget(Options options)
+     : m_style(options.style), m_format(std::move(options.format)), m_color(options.color), m_shadow(options.shadow),
+-      m_showCircle(options.showCircle), m_timezone(std::move(options.timezone)), m_centerText(options.centerText),
++      m_shadowOffset(options.shadowOffset), m_showCircle(options.showCircle), m_timezone(std::move(options.timezone)),
++      m_centerText(options.centerText),
+       m_showsSeconds(m_style == Style::Analog || formatShowsSeconds(m_format)) {}
+ 
+ void DesktopClockWidget::create() {
+@@ -514,6 +514,21 @@ bool DesktopClockWidget::applySetting(
+     }
+     return false;
+   }
++  if (key == "shadow_offset") {
++    if (const auto* v = std::get_if<double>(&value)) {
++      m_shadowOffset = static_cast<float>(*v);
++      applyShadow();
++      requestRedraw();
++      return true;
++    }
++    if (const auto* v = std::get_if<std::int64_t>(&value)) {
++      m_shadowOffset = static_cast<float>(*v);
++      applyShadow();
++      requestRedraw();
++      return true;
++    }
++    return false;
++  }
+   if (key == "circle") {
+     if (const auto* v = std::get_if<bool>(&value)) {
+       m_showCircle = *v;
+@@ -648,7 +663,7 @@ void DesktopClockWidget::applyShadow() {
+     return;
+   }
+   if (m_shadow) {
+-    const float offset = kShadowOffset * contentScale();
++    const float offset = m_shadowOffset * contentScale();
+     m_label->setShadow(colorSpecFromRole(ColorRole::Shadow, kShadowAlpha), offset, offset);
+   } else {
+     m_label->clearShadow();
+diff --git a/src/shell/desktop/widgets/desktop_clock_widget.h b/src/shell/desktop/widgets/desktop_clock_widget.h
+index 02f5165..0b83fbf 100644
+--- a/src/shell/desktop/widgets/desktop_clock_widget.h
++++ b/src/shell/desktop/widgets/desktop_clock_widget.h
+@@ -22,6 +22,9 @@ public:
+     std::string format;
+     ColorSpec color = colorSpecFromRole(ColorRole::OnSurface);
+     bool shadow = true;
++    // Text-shadow offset before the content scale is applied. The default
++    // reproduces the previous hardcoded constant.
++    float shadowOffset = 1.5f;
+     bool showCircle = true;
+     bool centerText = false;
+     std::string timezone;
+@@ -58,6 +61,7 @@ private:
+   std::string m_format;
+   ColorSpec m_color;
+   bool m_shadow;
++  float m_shadowOffset;
+   bool m_showCircle;
+   std::string m_timezone;
+   bool m_centerText = false;

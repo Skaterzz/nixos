@@ -174,6 +174,36 @@ let
   # ring and border colours from the same palette, and one writer is the rule
   # everywhere else in this migration.
   themeInclude = lib.optionalString (!useNoctalia) ''include "${activeDir}/niri.kdl"'';
+
+  # Window borders, and why they only need saying under noctalia.
+  #
+  # The waybar stack's include carries the whole decision: `renderNiri` in
+  # theming.nix turns the focus ring off and draws a 3px border instead,
+  # active and inactive coloured from the palette. noctalia's builtin niri
+  # template writes colours and nothing else, so under that shell the geometry
+  # fell back to niri's own defaults — focus ring on at 4px, borders off — and
+  # the borders went away at the migration rather than at any edit to this
+  # file. They were never removed; the file that turned them on stopped being
+  # included.
+  #
+  # Geometry only, and deliberately after the include. niri merges duplicate
+  # sections property by property, with the later definition winning, so
+  # naming `on` and `width` here leaves noctalia's active-color and
+  # inactive-color exactly where they are — the template stays the only writer
+  # of the colours, this stays the only writer of the shape.
+  #
+  # Pre-indented lines rather than an indented string: Nix strips the common
+  # leading whitespace out of one of those, and these have to land inside
+  # `layout` in the generated file with everything else at that level.
+  borderGeometry = lib.optionalString useNoctalia (
+    lib.concatStringsSep "\n" [
+      "        // Geometry only: the focus ring off, a 3px border on. The"
+      "        // colours are the noctalia.kdl include's, and stay its."
+      "        focus-ring { off; }"
+      "        border { on; width 3; }"
+    ]
+  );
+
   # finalPackage rather than pkgs.firefox: that's the wrapper home-manager
   # actually installs, carrying whatever ../firefox.nix declares beyond plain
   # prefs. Naming the raw package here would launch a second, unwrapped build.
@@ -284,6 +314,8 @@ in
         }
         // Sets the fallback background fill color to solid black
         background-color "#303030"
+
+${borderGeometry}
     }
 
     // Named workspaces. waybar's niri/workspaces module shows these, and the

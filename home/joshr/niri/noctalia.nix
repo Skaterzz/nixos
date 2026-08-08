@@ -742,20 +742,26 @@ let
         {
           action = "logout";
           label = "Log out";
-          countdown_seconds = "3";
+          # A bare number, not a string: countdown_seconds binds to a plain
+          # double in noctalia's schema (config_schema.cpp), read through
+          # finiteDouble() — which accepts a TOML int or float node and
+          # nothing else. A quoted "3" fails that read silently (no
+          # diagnostic, no error), leaving the field at its default of 0,
+          # which arms no countdown at all.
+          countdown_seconds = 3;
           shortcut = "4";
         }
         {
           action = "reboot";
           label = "Reboot";
-          countdown_seconds = "5";
+          countdown_seconds = 5;
           shortcut = "5";
         }
         {
           action = "shutdown";
           label = "Power off";
           variant = "destructive";
-          countdown_seconds = "10";
+          countdown_seconds = 10;
           shortcut = "6";
         }
       ];

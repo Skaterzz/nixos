@@ -878,8 +878,8 @@ let
       # the SVG's own two blues as a thing that could come back.
       launcher_button = {
         type = "custom_button";
-        glyph = "";
-        label = "";
+        custom_image = "${pkgs.nixos-icons}/share/icons/hicolor/scalable/apps/nix-snowflake.svg";
+        custom_image_colorize = true;
         tooltip = "Applications — ${config.home.username}";
         command = "noctalia msg panel-toggle launcher";
       };

@@ -977,7 +977,18 @@ let
         #   fastfetch      merges colours into ~/.config/fastfetch/config.jsonc,
         #                  which has to exist and be strict JSON — see the
         #                  seed in the activation block
+        #   gimp           ui/gimp.css; gated on ~/.config/GIMP existing, so it
+        #                  is inert until GIMP is installed and has run once
         #   inkscape       ui/user.css; gated on ~/.config/inkscape existing
+        #   libreoffice    the awkward one: it renders an .xcu, converts the
+        #                  hex to the decimal integers LibreOffice's schema
+        #                  actually wants, zips an .oxt and installs it with
+        #                  `unopkg`. Needs python3 and zip on PATH — see
+        #                  home.packages — and skips the install while
+        #                  soffice is running, because `unopkg add` against a
+        #                  live install corrupts the registration. So a
+        #                  colour change lands on the *second* apply after
+        #                  closing LibreOffice, not on a restart
         #   obs            the Matugen .obt theme, which ../obs.nix selects
         #   papirus-icons  recolours the folder icons in place, which needs a
         #                  writable copy of the icon theme — see the seed below
@@ -997,7 +1008,9 @@ let
           "blender"
           "discord"
           "fastfetch"
+          "gimp"
           "inkscape"
+          "libreoffice"
           "obs"
           "papirus-icons"
           "prismlauncher"
@@ -1384,12 +1397,23 @@ in
       pkgs.ddcutil
       pkgs.procps
 
-      # The community fastfetch hook is jq from end to end — it parses the
-      # config, merges the rendered colours in and writes it back — and jq is
-      # not one of the tools NixOS puts in the system profile by default.
-      # Everything else those hooks reach for (bash, sed, awk, coreutils,
-      # findutils) already is.
+      # What the community hooks shell out to and NixOS does not put in the
+      # system profile by default. Everything else they reach for (bash, sed,
+      # awk, coreutils, findutils) already is there.
+      #
+      #   jq       the fastfetch hook is jq from end to end — it parses the
+      #            config, merges the rendered colours in and writes it back
+      #   python3  the LibreOffice hook converts the rendered .xcu's hex
+      #            colours to the decimal integers its schema requires
+      #   zip      and then packs the result into the .oxt that `unopkg`
+      #            installs
+      #
+      # `unopkg` itself comes with LibreOffice (../office.nix) and `pgrep`,
+      # which that hook uses to refuse to install over a running soffice, is
+      # procps above.
       pkgs.jq
+      pkgs.python3
+      pkgs.zip
 
       # Poppins, for the lock screen clock. A font referenced by family name
       # in a config file has to actually be installed for fontconfig to

@@ -1149,7 +1149,7 @@ the same lines it describes `gruvbox`.
 | Spotify | live CSS over loopback — see below |
 | SDDM | `noctalia-resolved`, substituted into the greeter's config |
 | limine | `noctalia-resolved`, rewritten into the boot menu's theme block |
-| OBS, Discord, Papirus, PrismLauncher, Spicetify, zellij, Zen, Inkscape, Blender, fastfetch | community templates |
+| OBS, Discord, Papirus, PrismLauncher, Spicetify, zellij, Zen, Inkscape, GIMP, Blender, LibreOffice, fastfetch | community templates |
 
 **Three of those were quietly broken**, all for the same reason, and the fix
 is the reason this section exists.
@@ -1233,6 +1233,20 @@ template's hook edits the file in place:
   which does not exist on NixOS. Papirus, Papirus-Dark and Papirus-Light are
   copied there once, which is a hundred megabytes or so of home directory and
   the price of that template working.
+- **LibreOffice** is the involved one. It renders an `.xcu`, converts the hex
+  to the decimal integers LibreOffice's `ColorScheme` schema actually wants,
+  zips an `.oxt` and installs it with `unopkg` — so `python3` and `zip` join
+  `jq` in `home.packages`; `unopkg` comes with LibreOffice itself. It also
+  refuses to install while `soffice` is running, because `unopkg add` against
+  a live install has been seen to corrupt the registration. A colour change
+  therefore lands on the *second* apply after closing LibreOffice, not on a
+  restart — closing it and changing the scheme once more is the way through.
+
+**GIMP, Inkscape and Blender are gated on their config directories existing**
+(`requires_path`), so listing them costs nothing on a machine that does not
+have them and they start working the first time one is installed and run.
+GIMP is not installed here; the other two are not either. LibreOffice is
+(`home/joshr/office.nix`).
 
 `spicetify` is enabled and renders the Comfy and Colorful `color.ini` files,
 but its post-hook runs `spicetify apply`, which is inert here — that patches a
@@ -1287,6 +1301,34 @@ colour scheme changes far less often than Spotify is launched. The polling
 `fetch` is what makes an *already open* Spotify follow a change; it is the one
 subject to the preflight above, and it writes a `<style>` appended after the
 link, so when both work the later one wins and they agree anyway.
+
+**`spotify-theme-doctor`** checks all four links and names the one that is
+down. Spotify is the only themed application here whose failure is completely
+silent — three of the four hops are invisible from a terminal, and every one
+of them fails by simply leaving Spotify on the scheme it was built with, which
+looks identical to "the feature does not exist". Two rounds of this were spent
+inferring the answer from the outside, which is a script's worth of work
+either way:
+
+```
+$ spotify-theme-doctor
+1. noctalia renders the palette
+  ok    ~/.local/state/noctalia-spotify/colors.css exists and is not empty
+  ok    it carries the --spice-rgb-* half of the palette
+2. the palette service
+  ok    noctalia-spotify-palette is running
+3. the transport Spotify's renderer uses
+  ok    GET http://127.0.0.1:38471/colors.css
+  ok    CORS/Private-Network preflight answered 204
+4. spicetify injected the script
+  ok    xpui/extensions/theme.js carries the injector
+  ok    index.html loads it
+```
+
+It reads the *generation's own* package rather than whatever `spotify`
+resolves to on `PATH`, so the xpui it reports on is exactly the one the
+current configuration installs. All four up and Spotify still wrong means
+Spotify has been running since before one of them came up — restart it.
 
 ### Keys
 

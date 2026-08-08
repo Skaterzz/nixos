@@ -261,6 +261,108 @@ let
       }
     ];
   };
+
+  # Which link in the chain is broken.
+  #
+  # Spotify is the one themed application here whose failure is completely
+  # silent: the palette travels through four hops, three of them invisible
+  # from a terminal, and every one of them fails by simply leaving Spotify on
+  # the scheme it was built with. Two rounds of this were spent inferring the
+  # answer from the outside — worth a script rather than a third.
+  #
+  # It checks the *generation's own* package rather than whatever `spotify`
+  # resolves to on PATH, so the xpui it reports on is exactly the one this
+  # configuration installs.
+  spotifyThemeDoctor = pkgs.writeShellApplication {
+    name = "spotify-theme-doctor";
+    runtimeInputs = with pkgs; [
+      coreutils
+      curl
+      gnugrep
+      systemd
+    ];
+    text = ''
+      css=${lib.escapeShellArg "${spotifyPaletteDir}/colors.css"}
+      url="http://127.0.0.1:38471/colors.css"
+      xpui=${lib.escapeShellArg "${spicedSpotify}/share/spotify/xpui"}
+
+      bad=0
+      pass() { printf '  ok    %s\n' "$1"; }
+      fail() { printf '  FAIL  %s\n' "$1"; bad=$((bad + 1)); }
+
+      echo "1. noctalia renders the palette"
+      if [ -s "$css" ]; then
+        pass "$css exists and is not empty"
+        if grep -q -- '--spice-rgb-main' "$css"; then
+          pass "it carries the --spice-rgb-* half of the palette"
+        else
+          fail "no --spice-rgb-* variables — the template predates the fix for
+              the translucent surfaces. Change the colour scheme once, or
+              restart noctalia, to re-render it."
+        fi
+      else
+        fail "$css is missing or empty. Noctalia's 'spotify' user template has
+              not run: check 'systemctl --user status noctalia' and change the
+              colour scheme once."
+      fi
+
+      echo "2. the palette service"
+      if systemctl --user is-active --quiet noctalia-spotify-palette 2>/dev/null; then
+        pass "noctalia-spotify-palette is running"
+      else
+        fail "noctalia-spotify-palette is not running —
+              'systemctl --user status noctalia-spotify-palette' says why.
+              Nothing downstream of this can work."
+      fi
+
+      echo "3. the transport Spotify's renderer uses"
+      if curl -fsS --max-time 5 "$url" >/dev/null 2>&1; then
+        pass "GET $url"
+      else
+        fail "GET $url failed. The service is not listening on 38471."
+      fi
+
+      # The one that was actually broken: Spotify's UI is a document on a
+      # public origin reaching a loopback address, which Chromium preflights
+      # under Private Network Access. A 501 here means the GET above never
+      # gets issued by the browser, however well it works from curl.
+      preflight="$(curl -s -o /dev/null --max-time 5 -w '%{http_code}' \
+        -X OPTIONS "$url" \
+        -H 'Origin: https://xpui.app.spotify.com' \
+        -H 'Access-Control-Request-Method: GET' \
+        -H 'Access-Control-Request-Private-Network: true' || true)"
+      if [ "$preflight" = "204" ]; then
+        pass "CORS/Private-Network preflight answered $preflight"
+      else
+        fail "preflight answered '$preflight', not 204. Chromium will refuse to
+              issue the request. A 501 means this generation predates the
+              do_OPTIONS handler in home/joshr/spicetify.nix."
+      fi
+
+      echo "4. spicetify injected the script"
+      if [ -s "$xpui/extensions/theme.js" ] \
+        && grep -q noctalia-live-colors "$xpui/extensions/theme.js"; then
+        pass "xpui/extensions/theme.js carries the injector"
+      else
+        fail "xpui/extensions/theme.js is missing or is not ours — 'spicetify
+              apply' did not copy the theme's script. inject_theme_js."
+      fi
+      if grep -q "extensions/theme.js" "$xpui/index.html" 2>/dev/null; then
+        pass "index.html loads it"
+      else
+        fail "index.html has no <script> for extensions/theme.js."
+      fi
+
+      echo
+      if [ "$bad" -eq 0 ]; then
+        echo "All four links are up. If Spotify is still on the wrong palette,"
+        echo "it has been running since before one of them came up — restart it."
+      else
+        echo "$bad check(s) failed; the first FAIL above is the one to fix."
+        exit 1
+      fi
+    '';
+  };
 in
 {
   # Straight into the profile, with the desktop entry the package ships.
@@ -269,7 +371,13 @@ in
   # by palette name, which also meant an `xdg.desktopEntries.spotify` here to
   # point launchers at the wrapper rather than at Spotify. With one build
   # there is nothing to choose and both go away.
-  home.packages = [ spicedSpotify ];
+  home.packages = [
+    spicedSpotify
+
+    # `spotify-theme-doctor` — see the comment on it above. Only where the
+    # chain it checks exists.
+  ]
+  ++ lib.optional (config.local.niri.shell == "noctalia") spotifyThemeDoctor;
 
   # A plain long-running service rather than a socket unit: it has to be up
   # before Spotify's first request and stay up for the life of the session,

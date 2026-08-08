@@ -992,7 +992,7 @@ let
       };
 
       network = {
-        show_label = true;
+        show_label = false;
       };
 
       # Camera, microphone and screen-share indicators, and only while one of

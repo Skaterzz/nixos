@@ -853,20 +853,33 @@ let
       # belongs to, which is the only one of the three that a stranger could
       # read correctly.
       #
-      # `custom_image` overrides `glyph`, and `custom_image_colorize` is what
-      # keeps it from being the one thing on the bar that ignores the palette:
-      # the snowflake is drawn as a flat accent-coloured mark, the same weight
-      # as the glyphs in the right-hand cluster, and it follows a colour-scheme
-      # change with everything else. Set `custom_image_colorize = false` for
-      # the artwork's own two blues instead.
+      # The mark itself is U+F313, `nf-linux-nixos` from the Nerd Fonts logo
+      # set, and it is in `label` rather than in `glyph` on purpose.
       #
-      # `nixos-icons` is the NixOS artwork repository packaged in Freedesktop
-      # icon layout; the scalable copy is the same shape of file as every
-      # application icon the launcher itself resolves.
+      # `glyph` is not a character: noctalia resolves the name against the
+      # Tabler icon set it ships (`GlyphRegistry::lookup`), which has no NixOS
+      # mark, and the `U+XXXX` literal that field also accepts is a codepoint
+      # *in that font* — the private-use area both Tabler and the Nerd Fonts
+      # occupy, so asking for F313 there answers with whichever Tabler icon
+      # happens to live at F313. A label is drawn in the shell's own
+      # `font_family`, which is FiraCode Nerd Font, so this is the one field
+      # on the widget where a Nerd Font codepoint means what it says.
+      #
+      # `glyph = ""` is load-bearing rather than tidy. The widget's default is
+      # `heart` and it draws the glyph beside the label, so leaving it unset
+      # puts a heart next to the snowflake.
+      #
+      # This replaces the `nixos-icons` SVG that was here through
+      # `custom_image`. No colour is lost with it: an image drawn with
+      # `custom_image_colorize` and a label are both painted from the widget's
+      # own foreground chain, so the mark is the bar's text colour either way
+      # and follows a colour-scheme change with everything else. What it drops
+      # is a store path in the bar config, a PNG rasterised per repaint, and
+      # the SVG's own two blues as a thing that could come back.
       launcher_button = {
         type = "custom_button";
-        custom_image = "${pkgs.nixos-icons}/share/icons/hicolor/scalable/apps/nix-snowflake.svg";
-        custom_image_colorize = true;
+        glyph = "";
+        label = "";
         tooltip = "Applications — ${config.home.username}";
         command = "noctalia msg panel-toggle launcher";
       };
@@ -1136,6 +1149,28 @@ let
               "${config.xdg.configHome}/vesktop/themes/noctalia.theme.css"
             ];
             index = 140;
+          };
+          # The one correction to the builtin `niri` template, as a second
+          # include rather than a second writer of its file.
+          #
+          # That template paints an unfocused window's border in `surface` —
+          # the theme's background — which on these palettes is a border
+          # against the desktop that nothing can pick out. Overwriting
+          # noctalia.kdl to fix one line would mean owning the whole file,
+          # including the four colours and three sections the builtin gets
+          # right; writing a second file and including it after instead leaves
+          # every one of those where it is, because niri merges duplicate
+          # sections property by property with the later definition winning.
+          #
+          # Rendered by noctalia rather than written from themes.nix for the
+          # reason the whole template mechanism exists here: under this shell
+          # the palette is live — wallpaper-derived and community schemes
+          # included — and a colour written into config.kdl would be the
+          # generation's idea of the theme rather than the session's.
+          niri_borders = {
+            input_path = "${config.xdg.configHome}/noctalia/templates/niri-borders.kdl";
+            output_path = "${config.xdg.configHome}/niri/noctalia-borders.kdl";
+            index = 150;
           };
           system_palette = {
             input_path = "${config.xdg.configHome}/noctalia/templates/system-palette.conf";
@@ -1660,6 +1695,7 @@ in
 
       "noctalia/config.toml".source = validatedConfig;
       "noctalia/templates/kdeglobals".source = ./noctalia-templates/kdeglobals;
+      "noctalia/templates/niri-borders.kdl".source = ./noctalia-templates/niri-borders.kdl;
       "noctalia/templates/spotify.css".source = ./noctalia-templates/spotify.css;
       "noctalia/templates/system-palette.conf".source = ./noctalia-templates/system-palette.conf;
       "noctalia/templates/vencord.css".source = ./noctalia-templates/vencord.css;

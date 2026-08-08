@@ -52,9 +52,10 @@
     default = true;
     description = ''
       Whether to build Noctalia with this repository's C++ extras: animated
-      lock/unlock transitions, content-sized text OSDs, and the customized
-      control-panel identity and detail colours, plus the relative MPRIS IPC
-      actions retained for compatibility.
+      lock/unlock transitions, content-sized text OSDs, the customized
+      control-panel identity and detail colours, and a `shadow_offset` setting
+      on the clock widget so a small one can carry a shadow that is visible at
+      its size, plus the relative MPRIS IPC actions retained for compatibility.
 
       Enabling this changes the Noctalia derivation and therefore compiles it
       locally instead of using the binary from cache.nixos.org. Disabling it

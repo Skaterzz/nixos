@@ -306,8 +306,9 @@ every rebuild. Stock `pkgs.noctalia` is on the ordinary binary cache.
 
 `local.niri.noctaliaSourcePatches` controls the remaining fork. It defaults to
 true and adds the animated lock/unlock transitions, content-sized text OSDs,
-the customized control-panel identity and colours, and relative MPRIS IPC
-actions retained for compatibility. Source changes create a different
+the customized control-panel identity and colours, the lock-screen clock's
+`shadow_offset` setting, and relative MPRIS IPC actions retained for
+compatibility. Source changes create a different
 derivation, so that side compiles locally. `laptop-niri` sets the option false:
 it uses cached `pkgs.noctalia`, while keeping exactly the same generated TOML,
 palettes, templates, plugins and theme-sync hooks. The desktop keeps the default
@@ -512,6 +513,19 @@ activation used to repoint `active` at a prebuilt directory on every switch,
 which is the same clobbering that put the greeter, the boot menu and Spotify
 on the wrong palette. Removing that is what exposed this.
 
+**Window borders are the part of that swap nobody declared.** The two includes
+are not equivalent: `renderNiri` in `theming.nix` writes the focus ring *off*,
+a 3px border *on*, and the palette's active, inactive and urgent colours, where
+noctalia's `niri` template writes colours and nothing else. So the shell change
+quietly handed the geometry back to niri's defaults — focus ring on at 4px,
+borders off — and the borders disappeared without anything in this repository
+having removed them. `niri.nix` now emits `focus-ring { off; }` and
+`border { on; width 3; }` into `layout` under `"noctalia"`, which is only the
+shape: niri merges duplicate sections property by property with the later one
+winning, and since these land after the include and name neither colour,
+noctalia's stay in force. The same split as everywhere else in this migration —
+one writer for the colours, one for everything else.
+
 **The overrides file can silently shadow all of this.**
 `~/.local/state/noctalia/settings.toml` is read after `config.toml` and wins,
 which is right for something changed in the Settings window and wrong for the
@@ -620,6 +634,24 @@ lands off-centre rather than off-screen.
 Switch user runs the same `switch-user` script the waybar session menu called.
 They sit outside `[shell.session]`, whose complete Lock / suspend / switch /
 logout / reboot / power-off list remains available from the desktop panel.
+
+**The date's shadow needs a patch, and the reason is the type scale.** A clock
+widget draws its text shadow at `shadow_offset * contentScale` with no blur,
+and `contentScale` is precisely what the box does to the type — so the
+`shadow = true` both clocks share is worth several pixels of offset on the time
+and about one on the date, which is a hard pixel at 60% black under a glyph
+nobody is looking that closely at. It was on the whole time and it could not be
+seen. Nothing in the config could fix that: the offset is a hardcoded `1.5f`,
+and the only lever a widget has over its own size is the box, which moves the
+font with it. `noctalia-clock-shadow-offset.patch` turns that constant into a
+`shadow_offset` setting, defaulting to upstream's value, and the date sets it to
+`1.5 × timeH / dateH` — the boxes' ratio, which cancels the content scale out
+and lands the date's shadow the same number of real pixels off its glyphs as
+the time's. Derived from the boxes rather than written down as 4.3, so it
+follows if the type scale moves. It is emitted only where the patch is:
+`noctalia config validate` runs against whichever package the host chose, so on
+`noctaliaSourcePatches = false` the key would fail the build instead of being
+ignored, and `laptop-niri` keeps upstream's invisible shadow.
 
 Two choices are about cost rather than looks. Neither clock has a background,
 which drops a rounded rect and an alpha layer per widget per output per frame

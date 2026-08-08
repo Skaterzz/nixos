@@ -1,0 +1,23 @@
+// One line noctalia's builtin niri template gets wrong for this session, and
+// nothing else. Rendered from the live palette on every colour-scheme change
+// like every other template here — see the `niri_borders` user template in
+// home/joshr/niri/noctalia.nix.
+//
+// The builtin template draws an unfocused window's border in `surface`, which
+// is the theme's background: on the dark palettes this repository ships that
+// is a border you cannot see against the desktop behind it, so an unfocused
+// window read as having no border at all rather than a quiet one. This says
+// `on_surface_variant` instead — the same role `fg_dim` is rendered from in
+// system-palette.conf, and the colour every other dimmed thing in the session
+// already uses.
+//
+// One property, and deliberately only one. config.kdl includes this after
+// noctalia.kdl, and niri merges duplicate sections property by property with
+// the later definition winning, so everything else the builtin template
+// renders — the active and urgent colours, the focus ring, the shadow, the
+// tab indicator — is still its to decide.
+layout {
+    border {
+        inactive-color "{{colors.on_surface_variant.default.hex}}"
+    }
+}

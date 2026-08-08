@@ -151,6 +151,24 @@ let
   #
   noctaliaInclude = lib.optionalString useNoctalia ''include "noctalia.kdl" optional=true'';
 
+  # And the one line of that file this session disagrees with, as its own
+  # include placed *after* it.
+  #
+  # noctalia's builtin niri template paints an unfocused window's border in
+  # `surface` — the theme's own background — so an unfocused window had a
+  # border only in the sense that one was being drawn. The `niri_borders` user
+  # template in ./noctalia.nix renders `on_surface_variant` (the role `fg_dim`
+  # comes from) into ~/.config/niri/noctalia-borders.kdl, and this include is
+  # what makes it win: niri merges duplicate sections property by property and
+  # later definitions replace earlier ones, so one property in a later file
+  # takes that colour and leaves the rest of the builtin's output — active,
+  # urgent, the focus ring, the shadow, the tab indicator — untouched.
+  #
+  # `optional=true` for the same reason as the line above: it does not exist
+  # until noctalia has rendered a palette at least once, and a missing include
+  # without that property is a hard parse error rather than a missing colour.
+  noctaliaBorderInclude = lib.optionalString useNoctalia ''include "noctalia-borders.kdl" optional=true'';
+
   # The waybar stack's theme include, and *only* the waybar stack's.
   #
   # `theming.nix` renders a `niri.kdl` into every prebuilt palette directory
@@ -255,6 +273,7 @@ in
     // niri reloads its config automatically when the target changes.
     ${themeInclude}
     ${noctaliaInclude}
+    ${noctaliaBorderInclude}
 
     // Displays. Set per host in home/joshr/<host>-niri.nix via
     // local.niri.outputs; nothing here means niri auto-detects.

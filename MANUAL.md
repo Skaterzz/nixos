@@ -382,10 +382,18 @@ launcher's clipboard provider remain available as well.
 
 **The left cluster is deliberately quiet**: one icon, one row of pills, one
 line of text. The first slot is the NixOS snowflake and it opens the launcher
-— the entry point wofi never had a bar slot for. It is drawn through
-`custom_image` with `custom_image_colorize`, so it is a flat accent-coloured
-mark that follows a colour-scheme change like every other glyph on the bar;
-`custom_image_colorize = false` gets the artwork's own two blues instead. The
+— the entry point wofi never had a bar slot for. It is U+F313
+(`nf-linux-nixos`) in the widget's `label`, not in its `glyph`: `glyph` is a
+name resolved against the Tabler icon set noctalia ships, which has no NixOS
+mark, and the `U+XXXX` literal that field also takes is a codepoint *in that
+font* — the same private-use area the Nerd Fonts use, so it would answer with
+whichever Tabler icon sits at F313. A label is drawn in the shell's own
+`font_family`, which is FiraCode Nerd Font. `glyph = ""` goes with it, because
+the widget's default glyph is `heart` and it would be drawn beside the label.
+It replaced a `nixos-icons` SVG through `custom_image` and lost no colour
+doing it — a colorized image and a label are painted from the same foreground
+chain, so it is the bar's text colour and follows a colour-scheme change
+either way. The
 username lives in its tooltip rather than beside it — the one person who can
 read this bar already knows whose session it is. Workspaces label only the
 occupied ones, so the empty workspace niri always keeps at the end of the row
@@ -525,6 +533,29 @@ shape: niri merges duplicate sections property by property with the later one
 winning, and since these land after the include and name neither colour,
 noctalia's stay in force. The same split as everywhere else in this migration —
 one writer for the colours, one for everything else.
+
+**One of those colours is wrong, and it is fixed with a third include.** The
+builtin `niri` template paints `border.inactive-color` from `surface`, which is
+the theme's own background: an unfocused window's border is then the colour of
+the desktop behind it, which is a border being drawn and not a border you can
+see. `config.kdl` therefore carries a second noctalia include —
+`noctalia-borders.kdl`, rendered by the `niri_borders` user template in
+`noctalia.nix` — holding exactly one property, `inactive-color` from
+`on_surface_variant`. That is the role `fg_dim` is rendered from in
+`system-palette.conf`, so an unfocused border is the same dimmed foreground
+every other quiet thing in the session uses.
+
+It is a second file rather than an edit to the first for the reason the
+property-by-property merge exists: correcting one line by overwriting
+`noctalia.kdl` would mean owning the four colours and three sections the
+builtin template gets right, forever, including whatever it grows next. A later
+include naming one property takes that property and nothing else. And it is a
+template rather than a colour written into `config.kdl` because under this
+shell the palette is live — wallpaper-derived and community schemes included —
+so a value baked into the generation would be this rebuild's idea of the theme
+rather than the session's. `optional=true` for the same reason the first
+include carries it: the file does not exist until noctalia has rendered a
+palette once.
 
 **The overrides file can silently shadow all of this.**
 `~/.local/state/noctalia/settings.toml` is read after `config.toml` and wins,
@@ -1187,6 +1218,7 @@ the same lines it describes `gruvbox`.
 | Follows | How |
 |---|---|
 | kitty, btop, cava, GTK, Qt, niri, starship | noctalia's own builtin templates |
+| niri's inactive border | `noctalia-borders.kdl`, a user template overriding one line of the builtin niri one |
 | Dolphin and every Qt app | `kdeglobals`, via the `active` symlink |
 | VS Code | a generated one-theme extension, via the same symlink |
 | wofi | `wofi.css` and `wofi-emoji.css`, via the same symlink |

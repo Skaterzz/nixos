@@ -1,4 +1,4 @@
-{ config, lib, pkgs, ... }:
+{ lib, pkgs, ... }:
 
 # Graphical applications used by the gamestation-niri Home Manager profile.
 #
@@ -49,18 +49,12 @@ let
     "audio/x-opus+ogg"
   ];
 
-  # Prefix for this profile's private desktop entries — see xdg.desktopEntries
-  # below. Each one is written to ~/.local/share/applications/<id>.desktop, so
-  # the id is a filename: taking it from `config.home.username` rather than
-  # writing "joshr" keeps it the account's own on every profile that imports
-  # this file, home/raiden/ included. It resolves to "joshr" here, so the
-  # entries and the mimeapps.list pointing at them are unchanged.
-  entryPrefix = config.home.username;
-
+  # These name the entries declared in xdg.desktopEntries below, which are the
+  # upstream KDE ids — see the comment there for why they are not private ones.
   mediaDefaults =
-    lib.genAttrs imageMimes (_: "${entryPrefix}-gwenview.desktop")
-    // lib.genAttrs videoMimes (_: "${entryPrefix}-haruna.desktop")
-    // lib.genAttrs audioMimes (_: "${entryPrefix}-elisa.desktop");
+    lib.genAttrs imageMimes (_: "org.kde.gwenview.desktop")
+    // lib.genAttrs videoMimes (_: "org.kde.haruna.desktop")
+    // lib.genAttrs audioMimes (_: "org.kde.elisa.desktop");
 
   # KService requires a valid XDG menu before it will index desktop entries.
   # Plasma normally provides plasma-applications.menu and sets
@@ -141,10 +135,30 @@ in
     "mimeapps.list".force = true;
   };
 
-  # Use private entry IDs rather than overriding KDE's upstream files. This
-  # avoids D-Bus activation metadata and launches the exact Nix-store binary.
+  # Override KDE's upstream entries in place, keeping their ids.
+  #
+  # These three still exist for the same reason they always did: an absolute
+  # store path in `Exec` and `DBusActivatable=false` make KDE start the process
+  # directly, in Dolphin's working niri/Wayland environment, instead of handing
+  # the open off to D-Bus activation.
+  #
+  # They used to carry a private `<username>-gwenview` id and sit *beside* the
+  # package's own entry, which is why every launcher listed two Gwenviews, two
+  # Harunas and two Elisas. A desktop entry is identified by its file name and
+  # the first match in the search path wins, so writing the upstream id into
+  # $XDG_DATA_HOME shadows the copy in ~/.nix-profile/share/applications rather
+  # than adding to it — one entry per application, still launched our way. The
+  # same override-by-id that home/joshr/obs.nix does for OBS.
+  #
+  # Two consequences worth knowing. Shadowing replaces the package's file
+  # wholesale rather than merging with it, so what is written below is the
+  # whole entry: the MimeType lists above are the complete set of types these
+  # apps are offered for, and upstream's translations and keywords are gone.
+  # In exchange the id matches again what these Qt/KDE apps set as their
+  # desktop-file name — and therefore their WM_CLASS — so window-to-launcher
+  # matching works, which it never did while they were called `<name>-haruna`.
   xdg.desktopEntries = {
-    "${entryPrefix}-gwenview" = {
+    "org.kde.gwenview" = {
       name = "Gwenview";
       genericName = "Image Viewer";
       comment = "Open images with Gwenview";
@@ -159,7 +173,7 @@ in
       settings.DBusActivatable = "false";
     };
 
-    "${entryPrefix}-haruna" = {
+    "org.kde.haruna" = {
       name = "Haruna";
       genericName = "Video Player";
       comment = "Open videos with Haruna";
@@ -175,7 +189,7 @@ in
       settings.DBusActivatable = "false";
     };
 
-    "${entryPrefix}-elisa" = {
+    "org.kde.elisa" = {
       name = "Elisa";
       genericName = "Music Player";
       comment = "Open audio with Elisa";

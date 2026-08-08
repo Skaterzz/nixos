@@ -39,6 +39,7 @@ the machine.
 - [Dates and times](#dates-and-times)
 - [The browser](#the-browser)
   - [File associations, and why they're in /etc](#file-associations-and-why-theyre-in-etc)
+  - [The media handlers, and why they replace KDE's own entries](#the-media-handlers-and-why-they-replace-kdes-own-entries)
   - [Why Firefox is still here](#why-firefox-is-still-here)
   - [How it follows the theme](#how-it-follows-the-theme)
   - [What Nix owns and what Sync owns](#what-nix-owns-and-what-sync-owns)
@@ -2991,6 +2992,54 @@ Default Applications (`kcm_componentchooser`) is in `plasma-desktop`, which is
 deliberately not pulled in — it's a large chunk of Plasma, and that panel only
 covers the browser/email/terminal/file-manager four rather than file types.
 
+### The media handlers, and why they replace KDE's own entries
+
+Images, video and audio are the one set of associations that isn't handled in
+`/etc`. `home/joshr/desktop-apps.nix` — the niri profile, and the only place
+Gwenview, Haruna and Elisa are installed — declares them through
+home-manager's `xdg.mimeApps`, and writes its own desktop entries for the
+three applications to point them at.
+
+Those entries exist because of *how* the app gets started, not which one.
+Upstream's files are `DBusActivatable=true` and name a bare command, so an
+open from Dolphin goes through D-Bus activation into a service with none of
+the session's niri/Wayland environment. The entries here name an absolute
+store path and set `DBusActivatable=false`, so KDE starts the process directly
+and it inherits the environment that works.
+
+**They use KDE's own ids** — `org.kde.gwenview`, `org.kde.haruna`,
+`org.kde.elisa` — rather than a private spelling. That matters more than it
+looks. A desktop entry is identified by its file name, and the first match in
+the XDG data path wins, so an entry written to `~/.local/share/applications`
+under an upstream id *replaces* the package's copy in
+`~/.nix-profile/share/applications` instead of sitting next to it. Written
+under any other name, both files survive and every launcher shows the
+application twice — which is exactly what an earlier `<username>-gwenview`
+spelling did, two Gwenviews, two Harunas and two Elisas in the menu.
+`home/joshr/obs.nix` overrides `com.obsproject.Studio` the same way and for
+the same reason.
+
+Two things follow from shadowing an upstream entry:
+
+- **It is a replacement, not a merge.** What that file says is the whole
+  entry. The MIME lists in `desktop-apps.nix` are therefore the complete set
+  of types these applications are offered for, and upstream's translated names
+  and search keywords are not inherited. Adding a format means adding it to
+  the list there.
+- **`WM_CLASS` lines up again.** Qt applications set their window class from
+  their own desktop-file name, which for these three is the `org.kde.*` id;
+  while the entries were called `<name>-haruna` nothing could match a running
+  window back to the entry that launched it.
+
+Ranger is unaffected either way — `home/joshr/ranger.nix` binds image, video
+and audio to the same three store paths in `rifle.conf` directly, without
+going through desktop entries at all.
+
+The system baseline in `modules/nixos/default-apps.nix` still has these three
+types commented out. That is deliberate: it reaches every graphical host, and
+the Plasma ones don't install these applications, so naming them there would
+resolve to nothing. The profile that does install them declares them itself.
+
 ### Why Firefox is still here
 
 The requirement when it took over was cloud sync, a Chromium or Firefox base,
@@ -4148,12 +4197,17 @@ priority, and everything downstream is derived from it:
 |---|---|
 | `~` and everything under it | `home.homeDirectory` |
 | `~/.mozilla/firefox/<name>` | `home/joshr/firefox.nix`, read back by `niri/firefox.nix` |
-| `<name>-gwenview.desktop` and friends | `home/joshr/desktop-apps.nix` |
 | `com.<name>.NiriSystem` | `home/joshr/obs.nix` |
 
-All four resolve to exactly what they were for `joshr`, so nothing of joshr's
-moved when raiden was added — no Firefox profile to migrate, no desktop
-entries to re-associate.
+Both resolve to exactly what they were for `joshr`, so nothing of joshr's
+moved when raiden was added — no Firefox profile to migrate, no D-Bus name to
+rename.
+
+The desktop entries in `home/joshr/desktop-apps.nix` used to be on that list
+too, as `<name>-gwenview.desktop` and friends. They aren't any more — they now
+carry KDE's own ids, and don't need to be told apart per account because each
+one is written into that account's own `~/.local/share/applications`. See
+[the media handlers](#the-media-handlers-and-why-they-replace-kdes-own-entries).
 
 One thing raiden does *not* get its own of: the git identity — joshr's name
 and address, from `home/common/git.nix` on the desktop hosts and from

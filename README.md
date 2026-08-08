@@ -1,7 +1,7 @@
 # nixos-config
 
 A NixOS flake for `joshr`'s gaming + development workstation: KDE Plasma 6 or
-niri on Wayland, NVIDIA, Steam/ProtonUp-Qt/MangoHud, Docker, and a
+niri on Wayland (using Noctalia v5), NVIDIA, Steam/ProtonUp-Qt/MangoHud, Docker, and a
 home-manager profile (with
 [plasma-manager](https://github.com/nix-community/plasma-manager)) ported from
 the [joshrandall8478/dotfiles](https://github.com/joshrandall8478/dotfiles)

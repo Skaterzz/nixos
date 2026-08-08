@@ -728,7 +728,8 @@ let
         }
         {
           action = "lock_and_suspend";
-          label = "Lock and suspend";
+          label = "Suspend";
+          glyph = "moon";
           shortcut = "2";
         }
         {
@@ -741,17 +742,20 @@ let
         {
           action = "logout";
           label = "Log out";
+          countdown = "3";
           shortcut = "4";
         }
         {
           action = "reboot";
           label = "Reboot";
+          countdown = "5";
           shortcut = "5";
         }
         {
           action = "shutdown";
           label = "Power off";
           variant = "destructive";
+          countdown = "10";
           shortcut = "6";
         }
       ];

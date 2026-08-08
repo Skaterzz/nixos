@@ -1,6 +1,6 @@
 { ... }:
 
-# raiden's home profile on the server.
+# amandak's home profile on the server.
 #
 # joshr's entrypoint for this host, verbatim — which on this machine is the
 # shared shell and nothing else, deliberately not built on the desktop base.

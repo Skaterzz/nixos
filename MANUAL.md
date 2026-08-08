@@ -78,8 +78,8 @@ the machine.
   - [When not to use it](#when-not-to-use-it)
 - [The accounts](#the-accounts)
   - [What "primary user" actually decides](#what-primary-user-actually-decides)
-  - [One profile, two accounts](#one-profile-two-accounts)
-  - [Adding a third](#adding-a-third)
+  - [One profile, several accounts](#one-profile-several-accounts)
+  - [Adding another account](#adding-another-account)
 - [The root account](#the-root-account)
 - [Where things came from](#where-things-came-from)
 - [Before you build this](#before-you-build-this)
@@ -179,11 +179,11 @@ home/joshr/
     vscode.nix lock.nix            #   editor theming, idle handling
   plasma.nix                       # KDE Plasma settings/panels/shortcuts (plasma-manager)
   files/                           # DarkObsidianII.colors
-home/raiden/
+home/amandak/ home/sabom/          # the other two accounts, same shape each
   home.nix                         # names the account, and nothing else
   gamestation.nix laptop.nix       # host entrypoints, each importing joshr's
-  gamestation-niri.nix             #   counterpart verbatim
-  laptop-niri.nix server.nix
+  gamestation-niri.nix             #   counterpart verbatim — which is what
+  laptop-niri.nix server.nix       #   puts them on the same noctalia session
 home/root/
   home.nix                         # fish + starship only, no desktop
 templates/                         # `nix flake init -t` dev environments
@@ -248,6 +248,15 @@ local.niri.shell = "noctalia";   # or "waybar"
 Both niri hosts are on `"noctalia"`. Setting it back to `"waybar"` is the
 whole way back; nothing else needs editing, and the previous generation is
 still in the boot menu regardless.
+
+It is set per *host* rather than per account, and it lives in joshr's
+entrypoint for that host — which the entrypoints in `home/amandak/` and
+`home/sabom/` import verbatim, so every account on a niri host runs the same
+shell from the same generated config. Each session's state is its own: the
+config, palettes, plugin, wallpaper and `~/.local/state/niri-theme` are all
+built from `config.home.homeDirectory`. What stays with one account is the
+machine's own surfaces, which follow `local.desktop.primaryUser` — see
+[What "primary user" actually decides](#what-primary-user-actually-decides).
 
 **`"waybar"`** is the assembled stack, and it is eight programs:
 
@@ -4124,30 +4133,54 @@ yourself: `... 2>&1 | systemd-cat -t backup`.
 
 ## The accounts
 
-Three, on every host, all declared in `modules/nixos/users.nix` and all given
-a home-manager profile in `flake.nix`:
+Three interactive ones and `root`, on the four desktop hosts. The three are
+declared in `modules/nixos/users.nix` and each is given a home-manager profile
+in `flake.nix`:
 
 | Account | Description | Profile | `wheel` |
 |---|---|---|---|
 | `joshr` | Josh Randall | `home/joshr/<host>.nix` | yes |
-| `raiden` | Samuel Hunt | `home/raiden/<host>.nix` → joshr's | no |
+| `amandak` | Amanda Kast | `home/amandak/<host>.nix` → joshr's | no |
+| `sabom` | Michael Sabo | `home/sabom/<host>.nix` → joshr's | no |
 | `root` | — | `home/root/home.nix` | — |
 
-Both interactive accounts get fish, `networkmanager`, `video` and `input`, plus
+`home/raiden/` and `home/delta/` are the same shape and are wired to nothing:
+both the `users.users.<name>` block in `users.nix` and the `<name> = …` lines
+in `flake.nix` are commented out. Uncommenting both is the whole of bringing
+one back.
+
+The headless and portable hosts have their own, shorter account lists —
+`modules/nixos/server-users.nix` and `modules/nixos/usb-users.nix`, both
+`joshr` and nobody else. Those are separate files rather than an option
+because a list of accounts merges by union: a host that imported `users.nix`
+could add people but could never take one away.
+
+**Both lists have to agree.** `users.nix` decides who can log in; the
+`homeModules` attrset in `flake.nix` decides what they log in *to*, and
+nothing checks one against the other. An account declared in the first and
+missing from the second evaluates cleanly, builds cleanly, and appears at the
+greeter — and the session it opens has no home-manager profile behind it at
+all: under niri that is a bare compositor with no bar, no keybinds and no
+shell, because nothing ever wrote that account a `~/.config`. `sabom` was in
+exactly that state on `gamestation`, `gamestation-niri` and `laptop` until the
+three missing lines were added.
+
+All three get fish, `networkmanager`, `video` and `input`, plus
 `docker` and `libvirtd` on the hosts whose imports enable those daemons. Only
 `joshr` is in `wheel`, so `sudo nixos-rebuild` is joshr's; add `"wheel"` to
-`extraGroups` in `users.nix` to change that. Both are created with
+`extraGroups` in `users.nix` to change that. All are created with
 `initialPassword = "changeme"` — which applies at first creation only, so
 `passwd` after the first login is the whole of the fix.
 
 `mkHost` in `flake.nix` takes its users as an attrset:
 
 ```nix
-gamestation = mkHost {
-  hostModule = ./hosts/gamestation/configuration.nix;
+gamestation-niri = mkHost {
+  hostModule = ./hosts/gamestation-niri/configuration.nix;
   homeModules = {
-    joshr = ./home/joshr/gamestation.nix;
-    raiden = ./home/raiden/gamestation.nix;
+    joshr = ./home/joshr/gamestation-niri.nix;
+    amandak = ./home/amandak/gamestation-niri.nix;
+    sabom = ./home/sabom/gamestation-niri.nix;
   };
 };
 ```
@@ -4166,32 +4199,52 @@ colours from there, and the OpenRGB after-resume service runs as it.
 
 Each of those is a singleton — one login screen, one boot menu, one set of
 lights — so they follow one named account rather than whoever logged in last.
-Everything else is per-account and per-session: `raiden` switching themes
-restyles `raiden`'s niri, kitty, waybar, Firefox and Dolphin, and leaves the
+Everything else is per-account and per-session: `amandak` switching themes
+restyles `amandak`'s niri, kitty, Noctalia, Firefox and Dolphin, and leaves the
 greeter and the boot menu alone.
 
-### One profile, two accounts
+That holds under Noctalia specifically, which is worth saying because Noctalia
+is what actually *writes* the machine-wide palette now (see
+[Theme sync under noctalia](#theme-sync-under-noctalia)). The shell renders
+`noctalia-resolved` into the home directory of whichever account is running
+it, and the two syncs that carry a palette out of the session —
+`sddm-theme-sync` in `modules/nixos/niri.nix` and the limine one in
+`modules/nixos/boot.nix` — name
+`/home/${config.local.desktop.primaryUser}/.local/state/niri-theme` outright,
+both in the file they read and in the `systemd.paths` unit that watches for a
+change. A non-primary account picking a wallpaper-derived scheme therefore
+repaints its own session, its own kitty, its own Dolphin, and nothing on the
+login screen or in the boot menu.
 
-`home/raiden/` contains no configuration. Each entrypoint imports joshr's for
-the same host and `./home.nix`, which sets one thing:
+### One profile, several accounts
+
+`home/amandak/` and `home/sabom/` contain no configuration. Each entrypoint
+imports joshr's for the same host and `./home.nix`, which sets one thing:
 
 ```nix
-# home/raiden/gamestation.nix
+# home/amandak/gamestation-niri.nix
 {
   imports = [
     ./home.nix
-    ../joshr/gamestation.nix
+    ../joshr/gamestation-niri.nix
   ];
 }
 ```
 
-So anything added to joshr's profile arrives in raiden's on the next rebuild,
-which is the point of importing rather than copying.
+So anything added to joshr's profile arrives in the others' on the next
+rebuild, which is the point of importing rather than copying. **The desktop
+shell is one of those things**: `local.niri.shell = "noctalia"` is set in
+joshr's two `*-niri.nix` entrypoints, so importing one is what puts an account
+on Noctalia — the same bar, launcher, notifications, OSD, lock screen, idle
+timers and wallpaper handling, from the same generated `config.toml`. There is
+no per-account switch to throw, and no account on a niri host is on the waybar
+stack while another is on Noctalia; setting `local.niri.shell` in one of the
+`home/<name>/` files is how one would be, and nothing does that.
 
 That works because nothing under `home/joshr/` writes the name `joshr` into a
 path. `home.username` in `home/joshr/home.nix` (and `home/joshr/server.nix`)
-is a `lib.mkDefault`, raiden's `home.username` outranks it at ordinary
-priority, and everything downstream is derived from it:
+is a `lib.mkDefault`, each account's own `home.username` outranks it at
+ordinary priority, and everything downstream is derived from it:
 
 | Derived from the account name | Where |
 |---|---|
@@ -4200,8 +4253,12 @@ priority, and everything downstream is derived from it:
 | `com.<name>.NiriSystem` | `home/joshr/obs.nix` |
 
 Both resolve to exactly what they were for `joshr`, so nothing of joshr's
-moved when raiden was added — no Firefox profile to migrate, no D-Bus name to
-rename.
+moved when the other accounts were added — no Firefox profile to migrate, no
+D-Bus name to rename. The Noctalia state paths behave the same way: the
+config, the palettes, the plugin, `~/.local/state/niri-theme` and the live
+theme directory the Qt and VS Code symlinks follow are all built from
+`config.home.homeDirectory`, so two sessions running at once on one machine
+never write to each other's.
 
 The desktop entries in `home/joshr/desktop-apps.nix` used to be on that list
 too, as `<name>-gwenview.desktop` and friends. They aren't any more — they now
@@ -4209,19 +4266,25 @@ carry KDE's own ids, and don't need to be told apart per account because each
 one is written into that account's own `~/.local/share/applications`. See
 [the media handlers](#the-media-handlers-and-why-they-replace-kdes-own-entries).
 
-One thing raiden does *not* get its own of: the git identity — joshr's name
-and address, from `home/common/git.nix` on the desktop hosts and from
-`home/joshr/server.nix` on the server. Commits from `raiden` carry it until
-it's overridden, and `home/raiden/home.nix` has the `lib.mkForce` to do that
+One thing the other accounts do *not* get their own of: the git identity —
+joshr's name and address, from `home/common/git.nix` on the desktop hosts and
+from `home/joshr/server.nix` on the server. Their commits carry it until it's
+overridden, and each `home/<name>/home.nix` has the `lib.mkForce` to do that
 sitting commented out.
 
-### Adding a third
+### Adding another account
 
-1. An account in `modules/nixos/users.nix`. Copy the `raiden` block; the
+1. An account in `modules/nixos/users.nix`. Copy the `amandak` block; the
    `sessionGroups` list above it is the shared membership.
-2. A `home/<name>/` directory shaped like `home/raiden/` — a `home.nix` with
+2. A `home/<name>/` directory shaped like `home/amandak/` — a `home.nix` with
    the username, and one entrypoint per host importing joshr's.
 3. The name and its entrypoint in each host's `homeModules` in `flake.nix`.
+
+Step 3 is the one that is easy to half-do, and it fails quietly: the account
+exists and can log in without it, to a session with nothing in it. Add the
+line for **every** host whose configuration imports the users module that
+declares the account — which for `users.nix` is all four desktop hosts, both
+the Plasma pair and the niri pair.
 
 Nothing else. In particular, don't change `local.desktop.primaryUser` unless
 you mean to hand the login screen and boot menu to the new account.
@@ -4403,9 +4466,10 @@ passwd
 That new password persists — `initialPassword` only applies at account
 creation, and editing it later does nothing.
 
-`raiden` is created with the same initial password and wants the same
-treatment. It isn't in `wheel`, so do it from that account's own session or
-`sudo passwd raiden` from joshr's — see [The accounts](#the-accounts).
+`amandak` and `sabom` are created with the same initial password and want the
+same treatment. Neither is in `wheel`, so do it from that account's own
+session or `sudo passwd <name>` from joshr's — see
+[The accounts](#the-accounts).
 
 **8. Commit `flake.lock`.** The first build generates one, pinning every
 input to an exact revision. Commit it:

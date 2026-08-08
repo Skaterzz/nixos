@@ -151,6 +151,15 @@
           # than named in each call: it gets the same fish + starship setup
           # everywhere, minus everything graphical, so there is nothing
           # per-host to say about it.
+          #
+          # **Every account the host's users module creates belongs in here.**
+          # The two lists are separate — modules/nixos/users.nix decides who can
+          # log in, this decides what they log in *to* — and an account named
+          # there but not here is not an error at any point: it evaluates, it
+          # builds, SDDM lists it, and the session it opens is a bare
+          # compositor with no bar, no keybinds and no shell, because nothing
+          # ever wrote that account a ~/.config. That is the state `sabom` was
+          # in on every desktop host except laptop-niri.
           mkHost =
             { hostModule, homeModules }:
             nixpkgs.lib.nixosSystem {
@@ -192,6 +201,7 @@
               joshr = ./home/joshr/gamestation.nix;
               # raiden = ./home/raiden/gamestation.nix;
               amandak = ./home/amandak/gamestation.nix;
+              sabom = ./home/sabom/gamestation.nix;
             };
           };
 
@@ -201,6 +211,7 @@
               joshr = ./home/joshr/laptop.nix;
               # raiden = ./home/raiden/laptop.nix;
               amandak = ./home/amandak/laptop.nix;
+              sabom = ./home/sabom/laptop.nix;
             };
           };
 
@@ -211,12 +222,22 @@
           #
           #   sudo nixos-rebuild switch --flake .#gamestation-niri
           #   sudo nixos-rebuild switch --flake .#gamestation
+          #
+          # Which shell the session runs is a property of the *profile*, not of
+          # the account: `local.niri.shell = "noctalia"` is set in joshr's
+          # entrypoint for each of these two hosts, and the entrypoints named
+          # beside it import that file, so every account listed here gets the
+          # same noctalia session. What stays with one account is the machine's
+          # own surfaces — the greeter, the boot menu and the OpenRGB profile
+          # follow `local.desktop.primaryUser`, and each session's palette,
+          # wallpaper and Noctalia settings live under its own home.
           gamestation-niri = mkHost {
             hostModule = ./hosts/gamestation-niri/configuration.nix;
             homeModules = {
               joshr = ./home/joshr/gamestation-niri.nix;
               # raiden = ./home/raiden/gamestation-niri.nix;
               amandak = ./home/amandak/gamestation-niri.nix;
+              sabom = ./home/sabom/gamestation-niri.nix;
             };
           };
 

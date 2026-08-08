@@ -44,13 +44,15 @@ generation stays in the boot menu.
 
 ## Accounts
 
-`joshr` (primary), `raiden` and `root`, on every host.
+`joshr` (primary), `amandak`, `sabom` and `root`, on the four desktop hosts.
 
-`raiden` runs joshr's profile unchanged — the entrypoints in `home/raiden/`
-import the ones in `home/joshr/` and say nothing but their own name. Primary
-means the machine-wide surfaces: the login screen and the boot menu wear
-joshr's theme and wallpaper, and administering the box is joshr's, since
-`raiden` isn't in `wheel`.
+`amandak` and `sabom` run joshr's profile unchanged — the entrypoints in
+`home/amandak/` and `home/sabom/` import the ones in `home/joshr/` and say
+nothing but their own name, so on the niri hosts they get the same noctalia
+session, each with its own theme and wallpaper state. Primary means the
+machine-wide surfaces: the login screen and the boot menu wear joshr's theme
+and wallpaper, and administering the box is joshr's, since neither of the
+other two is in `wheel`.
 
 `usb` is the exception: `joshr` and `root`, and no one else. It auto-logs in,
 so the account that exists is the account the stick hands to whoever plugs it
@@ -67,7 +69,8 @@ modules/nixos/     # the system side, imported per host
 home/common/       # home-manager bits shared by every account
 home/joshr/        # the user profile; one entrypoint file per host
 home/joshr/niri/   # the niri desktop: compositor, bar, themes, scripts
-home/raiden/       # a second account wearing the same profile
+home/amandak/      # the other accounts, each wearing the same profile
+home/sabom/
 templates/         # `nix flake init -t` dev environments
 ```
 

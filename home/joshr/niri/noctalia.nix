@@ -910,6 +910,7 @@ let
         # says the same thing with less ink and makes "where are my windows"
         # answerable without reading.
         labels_only_when_occupied = true;
+        display = "none";
       };
 
       clock = {
@@ -1109,6 +1110,7 @@ let
           "vscode"
           "zellij"
           "zen-browser"
+          "libreoffice"
         ];
 
         # These are local user templates, so Noctalia itself resolves every

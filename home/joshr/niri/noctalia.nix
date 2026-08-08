@@ -402,12 +402,35 @@ let
         # puts the player above the message rather than across it.
         promptClearance = 30;
 
-        # Narrower than the login box below it rather than the same width.
-        # Two stacked panels of equal width read as one broken-up slab; the
-        # player being visibly inset makes the login box the thing the eye
-        # lands on, which is the one that wants attention.
-        mediaW = lib.min 320 (w - 48);
-        mediaH = 132;
+        # The same width as the login box below it, so the two panels read as
+        # one column rather than as a narrow slab floating over a wider one.
+        mediaW = loginW;
+        mediaPad = 10;
+        mediaInnerW = mediaW - (2 * mediaPad);
+
+        # Upstream's horizontal media_player at content scale 1: a 120px cover,
+        # 6px of spacing, and a text column one and a half covers wide. The
+        # cover is the full height of that layout — the title, artist and
+        # transport controls all live in the column beside it — so the widget's
+        # natural content box is 306x120 and its height *is* the album art.
+        mediaArt = 120.0;
+        mediaNaturalW = mediaArt + 6.0 + (mediaArt * 1.5);
+
+        # Which is what makes the height worth deriving rather than writing
+        # down. A boxed widget paints its panel at the full box, but scales its
+        # content to fit inside it aspect-preserved, at
+        # `min(innerW / naturalW, innerH / naturalH)` over the box less its
+        # background padding on each edge (`contentScaleForBox`). So the
+        # smaller of those two ratios sizes the cover, and a fixed height
+        # against a box this wide is the smaller one every time: 132 under the
+        # width above scales the content to 0.93 and centres it in a panel
+        # 57px wider than it on either side, which is the squeezed art.
+        #
+        # Solving for the height that makes the *width* bind instead gives a
+        # cover of `innerW * 120 / 306` and content that fills the padded box
+        # on both axes. Ceiling rather than rounding, so the height is never
+        # the fractional pixel short that would hand the fit back to it.
+        mediaH = builtins.ceil (mediaInnerW * mediaArt / mediaNaturalW) + (2 * mediaPad);
         mediaCy = loginCy - (loginH / 2) - promptClearance - 32 - (mediaH / 2);
 
         buttonW = 170;
@@ -550,7 +573,7 @@ let
             background = true;
             background_opacity = 0.82;
             background_radius = 16;
-            background_padding = 10;
+            background_padding = mediaPad;
             shadow = true;
           };
         })

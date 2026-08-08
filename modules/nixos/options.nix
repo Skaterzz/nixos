@@ -860,6 +860,37 @@
     '';
   };
 
+  # Gaming — modules/nixos/gaming.nix. "Gaming performance" in MANUAL.md is
+  # the prose version, including how to tell the failure modes apart.
+  options.local.gaming.releaseGpuOnGameMode = lib.mkOption {
+    type = lib.types.bool;
+    default = true;
+    description = ''
+      Unload the local model server's weights from video memory when a game
+      takes gamemode, so the game starts on a card that isn't already half
+      full.
+
+      This only does anything on a host that runs both — `services.ollama`
+      and `programs.gamemode` on one machine, which here is
+      `gamestation-niri`. Elsewhere it is inert.
+
+      ollama holds a model in VRAM for five minutes after the last request
+      and reloads it on the next one, so on a machine that is both the desk
+      and the model server the card can be carrying eight or nine gigabytes
+      of weights that nobody is using. A game started into that has less
+      video memory than the card has, and NVIDIA's Linux driver does not
+      degrade gracefully when it runs out — it evicts to system memory and
+      the frame rate falls off a cliff and stays there. That it can happen
+      *mid-game*, because an agent or a chat window asked a question while
+      you were playing, is what makes it look like the machine gets slower
+      the longer you play.
+
+      There is no matching end hook and there shouldn't be: ollama loads a
+      model on demand, so the next request after the game brings the weights
+      straight back. This only takes the card back, it doesn't keep it.
+    '';
+  };
+
   # The headless NVIDIA card — modules/nixos/nvidia-server.nix, which is where
   # the mechanics are written down and these are the knobs. "The NVIDIA
   # server" in MANUAL.md is the prose version.

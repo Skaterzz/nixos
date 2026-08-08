@@ -104,4 +104,40 @@
     nvidiaSettings = true;
     package = config.boot.kernelPackages.nvidiaPackages.latest;
   };
+
+  # Stop the driver from throwing the shader cache away.
+  #
+  # Compiled shaders are cached under ~/.cache/nv, and by default the driver
+  # caps that directory at 1 GB — 128 MB before driver 460 — and *wipes* it
+  # when it goes over rather than evicting the oldest entries. There is no
+  # "prune to N" behaviour to fall back on; it is the whole cache or none of
+  # it.
+  #
+  # A single Proton game's DXVK/VKD3D pipelines run to a few hundred
+  # megabytes, so three or four of them is enough to trip that, and what the
+  # wipe feels like is not a warning but the next hour of play recompiling
+  # pipelines mid-frame. That is the shape of the complaint it answers: fine
+  # for a while, hitching later, fine again after the cache has refilled, then
+  # hitching again — a sawtooth, not a machine that is simply slow.
+  #
+  # SKIP_CLEANUP takes the cap off entirely. `__GL_SHADER_DISK_CACHE_SIZE` is
+  # the other half of the pair and only moves the same cliff further out, so
+  # the choice is really between a cliff and unbounded growth. Unbounded wins
+  # here: the directory only gains an entry when something compiles a shader
+  # it has never compiled before, so it grows in steps and then stops, and it
+  # is a cache — deleting it costs one slow first launch per game.
+  #
+  #     du -sh ~/.cache/nv        # what it has actually grown to
+  #     rm -rf ~/.cache/nv        # safe at any time; rebuilt on demand
+  #
+  # It has to be set for the whole session rather than in one game's launch
+  # options, which is why it is here and not in home/joshr/gaming.nix. The
+  # limit is enforced by whichever process happens to be writing, so one GL
+  # program started without it — a browser, a screen recorder — trims the
+  # cache back under 1 GB behind the game's back and the launch-option
+  # version of this achieves nothing.
+  environment.sessionVariables = {
+    __GL_SHADER_DISK_CACHE = "1";
+    __GL_SHADER_DISK_CACHE_SKIP_CLEANUP = "1";
+  };
 }

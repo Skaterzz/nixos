@@ -1307,7 +1307,7 @@ let
     # neither of which is on here.
     weather = {
       enabled = true;
-      unit = "fahrenheit";
+      unit = "imperial";
       refresh_minutes = 30;
     };
 

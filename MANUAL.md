@@ -639,6 +639,21 @@ is disabled; Suspend and Switch user are explicit lock-safe buttons beneath
 it, so the desktop session menu can keep its complete action list without
 putting reboot and shutdown on the locked screen.
 
+**The media player's box is the login box's width, and its height comes out of
+that.** A boxed widget paints its panel at the full box but scales its
+*content* to fit inside it aspect-preserved, at
+`min(innerW / naturalW, innerH / naturalH)` over the box less its background
+padding on each edge. A horizontal `media_player`'s natural content is a 120px
+cover, 6px of spacing and a text column one and a half covers wide — 306×120,
+where the cover is the full height and everything else is in the column beside
+it — so the smaller of those two ratios is what sizes the album art. Against a
+box as wide as the login panel a written-down height is the smaller one every
+time: the old 132 scaled the content to 0.93 and centred it in a panel 57px
+wider than it on either side. The height is therefore solved for instead —
+`innerW × 120 / 306`, plus the padding back — which makes the width the binding
+edge, fills the padded box on both axes, and gives the cover every pixel the
+panel can hold. Change the width and the height follows.
+
 With `local.waybar.cavaInBar` enabled, an `audio_visualizer` is the first entry
 in the explicit `widget_order`, which also makes it the backmost custom widget.
 Its box is the full logical width and height of the output, with no panel or

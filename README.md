@@ -112,6 +112,11 @@ This is one person's machine, not a distribution. On any other hardware:
 3. **Panel layout** in `home/joshr/plasma.nix` assumes this monitor
    arrangement — the `screen = N` numbers are worth a look.
 4. **Git identity** in `home/joshr/home.nix` is joshr's.
+5. **The desk hosts boot a third-party kernel** — CachyOS/BORE, from the
+   `nix-cachyos-kernel` flake input and its binary cache. Both are opt-in
+   (`local.kernel.cachyos.*`), and the first rebuild after enabling them needs
+   the cache passed on the command line or it compiles a kernel —
+   [The kernel](MANUAL.md#the-kernel).
 
 [Fresh install from the NixOS ISO](MANUAL.md#fresh-install-from-the-nixos-iso)
 walks the whole thing from a live ISO.
@@ -146,6 +151,8 @@ walks the whole thing from a live ISO.
   [scheduled jobs](MANUAL.md#scheduled-jobs) ·
   [the root account](MANUAL.md#the-root-account)
 - **Working in it** —
+  [gaming performance](MANUAL.md#gaming-performance) ·
+  [the kernel](MANUAL.md#the-kernel) ·
   [development environments](MANUAL.md#development-environments) ·
   [local AI](MANUAL.md#local-ai) ·
   [the NVIDIA server](MANUAL.md#the-nvidia-server) ·

@@ -203,6 +203,120 @@
     '';
   };
 
+  # Which kernel a host boots — modules/nixos/kernel.nix, and "The kernel" in
+  # MANUAL.md. Only the two desk hosts import that module; everything else
+  # stays on the nixpkgs default and never sees these.
+  options.local.kernel.cachyos.enable = lib.mkOption {
+    type = lib.types.bool;
+    default = false;
+    description = ''
+      Boot the CachyOS kernel instead of the one nixpkgs would pick.
+
+      Mainline Linux with CachyOS's patch set and their kconfig, taken
+      prebuilt from the `nix-cachyos-kernel` flake input. The default variant
+      is BORE — see `local.kernel.cachyos.variant` for what that means and
+      what else is on offer.
+
+      Off by default because it is a third-party kernel from a third-party
+      binary cache, and neither is something to hand a host that has no use
+      for it. A machine that is not gaming gains close to nothing here and
+      takes on both.
+
+      **A kernel change is a reboot, and `nixos-rebuild test` cannot help.**
+      The way back is the previous generation in the boot menu, so switch
+      this on a rebuild you can reboot into and watch — and note that a
+      kernel the driver won't build against fails at build time, before
+      anything is activated, which is the failure mode you want.
+    '';
+  };
+
+  options.local.kernel.cachyos.variant = lib.mkOption {
+    type = lib.types.enum [
+      "bore"
+      "bore-lto"
+      "bore-x86_64-v3"
+      "bore-lto-x86_64-v3"
+      "bore-x86_64-v4"
+      "bore-lto-x86_64-v4"
+      "bore-zen4"
+      "bore-lto-zen4"
+      "latest"
+      "latest-lto"
+      "lts"
+      "lts-lto"
+    ];
+    default = "bore";
+    description = ''
+      Which CachyOS kernel to boot. Names the suffix of a
+      `linuxPackages-cachyos-*` attribute in the flake input; only read when
+      `local.kernel.cachyos.enable` is on.
+
+      "bore" is the default and the one this repo is set up around. BORE —
+      Burst-Oriented Response Enhancer — sits on top of the fair scheduler
+      and tracks how bursty each task has been, so short bursty work (a
+      render thread waking sixty times a second, the compositor, an audio
+      thread) is preferred over a long-running batch job holding the same
+      nice value. That is the whole of what it changes, and it is why the
+      variant is worth having on a machine that plays games while something
+      else compiles.
+
+      The "-lto" half of each pair is built with Clang and ThinLTO, which is
+      what upstream CachyOS ships by default and is worth trying once the
+      plain build has proven itself. Out-of-tree modules follow the kernel's
+      compiler automatically — the flake arranges that — so the NVIDIA driver
+      and the DDC/CI module still build, they just build with LLVM.
+
+      The "-x86_64-v3", "-x86_64-v4" and "-zen4" variants are compiled for a
+      newer instruction set than the x86-64 baseline. They are a real if
+      small win and an unbootable machine on a CPU that doesn't have the
+      instructions, so check before reaching for one:
+
+          lscpu | grep -o 'avx2\|avx512f'   # v3 wants avx2; v4/zen4 want avx512f
+
+      "latest" and "lts" are the same patch set without the BORE scheduler,
+      on mainline's newest and on the long-term branch respectively — "lts"
+      being the one to fall back to when a brand-new kernel and the NVIDIA
+      driver disagree.
+
+      Every name here is one the flake's Hydra builds and caches. It has more
+      — bmq, deckify, eevdf, hardened, rc, rt-bore, server, and an x86_64-v2
+      line — which are left out of this list on purpose: some of them are not
+      cached at all, and picking an uncached kernel is not a slow rebuild,
+      it is an hour of compiling. Adding one is a line in this enum if it
+      ever turns out to be wanted.
+    '';
+  };
+
+  options.local.kernel.cachyos.binaryCache.enable = lib.mkOption {
+    type = lib.types.bool;
+    default = true;
+    description = ''
+      Add the kernel flake's binary cache to this host's substituters.
+
+      Without it there is no CachyOS kernel to fetch and the machine compiles
+      its own, which is the better part of an hour every time the input
+      moves. So this is on by default wherever modules/nixos/kernel.nix is
+      imported — including when the kernel itself is switched off, so that
+      turning it on later isn't a surprise build.
+
+      It is a genuine trust decision and worth reading as one: the public key
+      this installs authorises that cache to supply *any* store path the
+      machine asks for, not only kernels. The alternative is `false` and a
+      long build on every kernel update; there is no third option that keeps
+      both.
+
+      Note that the setting only takes effect once a rebuild has installed
+      it, and the daemon building that rebuild is still running on the old
+      configuration. Switching the cache and the kernel on in one go is
+      therefore the case that compiles anyway — pass them on the command
+      line for that one rebuild instead:
+
+          sudo nixos-rebuild switch --flake .#gamestation \
+            --option extra-substituters https://attic.xuyh0120.win/lantian \
+            --option extra-trusted-public-keys lantian:EeAUQ+W+6r7EtwnmYjeVwx5kOGEBpjlBfPlzGlTNvHc=
+    '';
+  };
+
   options.local.power.noAutoSleepOnAC = lib.mkOption {
     type = lib.types.bool;
     default = true;

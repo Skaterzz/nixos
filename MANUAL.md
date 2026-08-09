@@ -66,6 +66,7 @@ the machine.
   - [Launch options](#launch-options)
   - [The XWayland regression](#the-xwayland-regression)
   - [The driver](#the-driver)
+  - [The kernel](#the-kernel)
 - [Single GPU passthrough](#single-gpu-passthrough)
   - [What it costs](#what-it-costs)
   - [Turning it on](#turning-it-on)
@@ -106,12 +107,14 @@ the machine.
 
 ```
 flake.nix                        # inputs: nixpkgs, home-manager, plasma-manager,
-                                 #   spicetify-nix, nvidia-patch, dotfiles,
+                                 #   spicetify-nix, nvidia-patch,
+                                 #   nix-cachyos-kernel, dotfiles,
                                  #   wallhaven-toplist
 hosts/gamestation/                # the desk: NVIDIA, multi-monitor
   configuration.nix               # top-level system config, imports the modules below
   hardware-configuration.nix      # PLACEHOLDER — replace with your real hardware scan
-  kernel-params.nix               # boot.kernelParams, shared with gamestation-niri
+  kernel-params.nix               # which kernel + boot.kernelParams, shared with
+                                  #   gamestation-niri
 hosts/laptop/                     # portable: no NVIDIA, single display
   configuration.nix
   hardware-configuration.nix      # PLACEHOLDER — regenerate on the machine
@@ -152,9 +155,12 @@ modules/nixos/
   laptop.nix                       # upower, thermald, fstrim, deep sleep, the lid
   power.nix                        # no idle suspend while on mains power
   boot.nix                         # bootloader: limine theming + other-OS detection
-  options.nix                      # local.boot.*, local.power.*, local.sddm.*,
-                                   #   local.openrgb.*, local.virtualisation.*,
-                                   #   local.ai.*, local.nvidia.*
+  kernel.nix                       # the CachyOS kernel on the desk hosts, and the
+                                   #   binary cache that keeps it a download
+  options.nix                      # local.boot.*, local.kernel.*, local.power.*,
+                                   #   local.sddm.*, local.openrgb.*,
+                                   #   local.virtualisation.*, local.ai.*,
+                                   #   local.nvidia.*
   users.nix                        # the shared machines' accounts
   server-users.nix                 # headless: `joshr` and `root`, no session groups
   usb-users.nix                    # the stick: `joshr` and `root`, and no one else
@@ -4046,6 +4052,116 @@ advice that turns up in stutter threads does not apply to a configuration built
 this way. `gaming-doctor` prints which module is loaded so there is no need to
 guess.
 
+### The kernel
+
+The two desk hosts boot the **CachyOS kernel, BORE variant**, instead of the
+one nixpkgs would pick. Everything else here — the laptop, both servers, the
+stick — stays on the nixpkgs default. `modules/nixos/kernel.nix` is the module,
+`hosts/gamestation/kernel-params.nix` is where it is switched on (that file is
+imported by both desk hosts, so the two sessions cannot drift onto different
+kernels), and `local.kernel.cachyos.*` in `modules/nixos/options.nix` is the
+knob.
+
+BORE — Burst-Oriented Response Enhancer — is a patch on top of the fair
+scheduler rather than a replacement for it. It keeps a per-task record of how
+bursty that task has been and biases the pick accordingly, so short bursty work
+gets chosen over a long-running batch job holding the same nice value. On this
+box that is the render thread, the compositor and the audio thread against a
+Docker build, a `nix build` or an ollama answering a question. The rest of the
+CachyOS patch set and their kconfig come with it.
+
+**It raises a floor; it does not find a bug.** If the desk was faster last
+month and is slower now, something changed, and the things that change here are
+the driver, the shader cache and whatever else is holding video memory —
+the four sections above, and `gaming-doctor` prints all of them in one go. Run
+that first. A scheduler swap will not undo a regression it had nothing to do
+with, and "I changed the kernel and it is still slow" is a much harder position
+to debug from than "the doctor says nine gigabytes of model weights are on the
+card".
+
+#### The first rebuild needs the cache on the command line
+
+The kernel is prebuilt. It arrives from the flake input's own binary cache,
+which `modules/nixos/kernel.nix` adds to `nix.settings.substituters` — but that
+setting is installed *by* a rebuild, and the nix-daemon running that rebuild is
+still on the old configuration. So the one switch that introduces both the
+cache and the kernel is the one that cannot use it, and it will spend the
+better part of an hour compiling a kernel instead of downloading one. Pass them
+by hand for that rebuild:
+
+```bash
+sudo nixos-rebuild switch --flake .#gamestation \
+  --option extra-substituters https://attic.xuyh0120.win/lantian \
+  --option extra-trusted-public-keys lantian:EeAUQ+W+6r7EtwnmYjeVwx5kOGEBpjlBfPlzGlTNvHc=
+```
+
+Every rebuild after that reads it from `/etc/nix/nix.conf`. If a later one
+starts compiling a kernel anyway, the input has moved ahead of what the cache
+holds — `nix flake update nix-cachyos-kernel` again in a day, or let it build.
+
+That cache is a real trust decision and `local.kernel.cachyos.binaryCache.enable`
+is the way to decline it: the key authorises that cache to supply *any* store
+path this machine asks for, not only kernels. Declining means compiling the
+kernel locally on every update; there is no third option.
+
+#### Checking it took, and getting back
+
+```bash
+uname -r                              # the CachyOS version string
+sysctl kernel.sched_bore              # BORE's own knob — 1 when it is on
+ls /proc/sys/kernel | grep sched      # if that name has moved, the rest are here
+```
+
+A kernel change is a reboot. `nixos-rebuild test` is no help — it activates a
+system without a boot entry, and the running kernel is not something activation
+can replace — so the way back is the previous generation in the boot menu,
+which is why `local.boot.maxGenerations` matters more once this is on. From a
+working session, `local.kernel.cachyos.enable = false` and a rebuild returns to
+the nixpkgs kernel. A kernel the NVIDIA driver refuses to build against fails
+at build time, before anything is activated, which is the good failure.
+
+#### Variants
+
+`local.kernel.cachyos.variant` picks which CachyOS build to boot; the default
+is `bore`, the plain GCC one.
+
+| | |
+|---|---|
+| `bore` | BORE, built with GCC. The default here and the conservative half of the pair — every out-of-tree module on these hosts builds against it the ordinary way. |
+| `bore-lto` | the same kernel built with Clang and ThinLTO, which is what upstream CachyOS ships by default. Worth trying once the plain build has proven itself; out-of-tree modules follow the kernel's compiler automatically. |
+| `bore-x86_64-v3`, `-v4`, `bore-zen4` | compiled for a newer instruction set than the x86-64 baseline. A small real win, and an unbootable machine on a CPU without those instructions — `lscpu \| grep -oE 'avx2\|avx512f'` before reaching for one. Each also has an `-lto` twin. |
+| `latest`, `lts` | the CachyOS patch set without BORE, on mainline's newest and on the long-term branch. `lts` is the fallback when a brand-new kernel and the NVIDIA driver disagree. |
+
+The flake has more variants than the option lists — `bmq`, `deckify`, `eevdf`,
+`hardened`, `rc`, `rt-bore`, `server`, and an `x86_64-v2` line. They are left
+out because not all of them are cached, and an uncached kernel is an hour of
+compiling rather than a slow download. Adding one is a line in the enum in
+`modules/nixos/options.nix`.
+
+#### What follows the kernel
+
+The input is pinned to the kernel flake's `release` branch and applied through
+its `overlays.pinned`, which builds the kernel package sets from *that flake's*
+nixpkgs revision — the one its CI built and cached them at. Using our nixpkgs
+instead would change the derivation hash of every kernel in the set, which is
+the same thing as having no cache. It is also why the input deliberately does
+not `follows` our nixpkgs, unlike every other input in `flake.nix`; the second
+nixpkgs in `flake.lock` is what not compiling a kernel costs.
+
+Anything reached through `config.boot.kernelPackages` comes out of that pinned
+set too. In practice that is two things: the NVIDIA driver, since
+`modules/nixos/nvidia.nix` asks for `kernelPackages.nvidiaPackages.latest` —
+that exact combination, with `open = true`, is one the kernel flake builds in
+its own CI, so it is a download rather than a build — and the DDC/CI module on
+`gamestation-niri`, which is out-of-tree, small, and compiles locally in well
+under a minute. Nothing else here reaches into `boot.kernelPackages`, and no
+host here uses ZFS, which is the other thing that would need pointing at the
+CachyOS build.
+
+`nix flake update nix-cachyos-kernel` is what moves the kernel; like every
+other input, commit the resulting `flake.lock` alongside whatever prompted it,
+so a kernel that works is a kernel you can get back to.
+
 ## Single GPU passthrough
 
 Give the desk's graphics card to a virtual machine for as long as that machine
@@ -5011,9 +5127,10 @@ enabled here; picking one up later means turning this off in the same edit.
 
 **Kernel command line.** `hosts/gamestation/kernel-params.nix` is imported by
 both desk hosts — it's the same physical box, so the flags belong to the
-hardware rather than to either session. It's a separate file because
-`hardware-configuration.nix` is regenerated by `nixos-generate-config` and
-says so at the top.
+hardware rather than to either session, as does the choice of kernel itself,
+which is switched on in the same file ([The kernel](#the-kernel)). It's a
+separate file because `hardware-configuration.nix` is regenerated by
+`nixos-generate-config` and says so at the top.
 
 | | |
 |---|---|

@@ -22,7 +22,7 @@
       "waybar"
       "noctalia"
     ];
-    default = "waybar";
+    default = "noctalia";
     description = ''
       Which desktop shell the niri session runs.
 

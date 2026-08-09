@@ -1,5 +1,22 @@
 { config, lib, pkgs, inputs, ... }:
 
+let
+  archiveTools = with pkgs; [
+    gnutar
+    gzip
+    bzip2
+    xz
+    zstd
+    lz4
+    lzip
+    p7zip
+    unrar
+    unzip
+    zip
+    cpio
+    ouch
+  ];
+in
 {
   # Everything here is desktop-agnostic. The desktop itself — ./plasma.nix or
   # ./niri — is imported by the per-host entrypoint next to this file, so the
@@ -35,7 +52,7 @@
   home.packages = with pkgs; [
     sshfs
     yt-dlp
-  ];
+  ] ++ archiveTools;
 
   
 

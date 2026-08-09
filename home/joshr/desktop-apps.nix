@@ -49,12 +49,33 @@ let
     "audio/x-opus+ogg"
   ];
 
+  archiveMimes = [
+    "application/zip"
+    "application/x-tar"
+    "application/gzip"
+    "application/x-gzip"
+    "application/x-bzip2"
+    "application/x-xz"
+    "application/x-7z-compressed"
+    "application/vnd.rar"
+    "application/x-rar-compressed"
+    "application/zstd"
+    "application/x-lzip"
+    "application/x-lz4"
+    "application/x-cpio"
+    "application/x-archive"
+    "application/vnd.debian.binary-package"
+    "application/x-rpm"
+    "application/x-iso9660-image"
+  ];
+
   # These name the entries declared in xdg.desktopEntries below, which are the
   # upstream KDE ids — see the comment there for why they are not private ones.
   mediaDefaults =
     lib.genAttrs imageMimes (_: "org.kde.gwenview.desktop")
     // lib.genAttrs videoMimes (_: "org.kde.haruna.desktop")
-    // lib.genAttrs audioMimes (_: "org.kde.elisa.desktop");
+    // lib.genAttrs audioMimes (_: "org.kde.elisa.desktop")
+    // lib.genAttrs archiveMimes (_: "org.kde.ark.desktop");
 
   # KService requires a valid XDG menu before it will index desktop entries.
   # Plasma normally provides plasma-applications.menu and sets
@@ -95,6 +116,7 @@ in
     thunderbird
     kdePackages.kate
     vesktop
+    kdePackages.ark
 
     # Provides kbuildsycoca6, KDE's desktop-entry and MIME service cache.
     kdePackages.kservice
@@ -202,6 +224,22 @@ in
         "Player"
       ];
       mimeType = audioMimes;
+      settings.DBusActivatable = "false";
+    };
+
+    "org.kde.ark" = {
+      name = "Ark";
+      genericName = "Archive Manager";
+      comment = "Open archives with Ark";
+      exec = "${pkgs.kdePackages.ark}/bin/ark %U";
+      icon = "ark";
+      terminal = false;
+      categories = [
+        "Utility"
+        "Archiving"
+        "Compression"
+      ];
+      mimeType = archiveMimes;
       settings.DBusActivatable = "false";
     };
   };

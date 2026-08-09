@@ -60,6 +60,8 @@
     # build for a machine with no speakers of its own.
   ];
 
+  local.niri.shell = "noctalia";
+
   local.niri.randomLockGreetings = false;
 
 	local.niri.noctaliaSourcePatches = false;

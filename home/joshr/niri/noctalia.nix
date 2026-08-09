@@ -1461,6 +1461,11 @@ let
       };
     };
 
+    # Desktop disable widgets
+    desktop_widgets = {
+      enabled = false;
+    };
+
     # --- lock screen ------------------------------------------------------
     #
     # `blurred_desktop = false` is the performance-conscious half of this. The

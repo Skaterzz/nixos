@@ -37,9 +37,12 @@
   # derivation is intentional.
   local.niri.noctaliaSourcePatches = true;
 
-  # The same existing option owns both visualizers under Noctalia. It defaults
-  # on everywhere else; the laptop keeps both the bar and lock screen quiet.
+  # The two visualizers under Noctalia, one option each — the bar's compact
+  # widget and the lock screen's full-output spectrum. Both default on, and
+  # both are written down here anyway: they used to be a single option, so an
+  # unqualified "cava is on for the laptop" no longer says which screen.
   local.waybar.cavaInBar = true;
+  local.niri.cavaInLockscreen = true;
 
   # The lock screen's clock is placed by pixel coordinate per output, and this
   # host deliberately declares no `local.niri.outputs` (./displays/laptop.nix

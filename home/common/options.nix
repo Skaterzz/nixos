@@ -69,14 +69,40 @@
     type = lib.types.bool;
     default = true;
     description = ''
-      Whether the bar and Noctalia lock screen carry audio visualisers.
+      Whether the bar carries an audio visualiser.
 
       Named for waybar because that is where it started, and still read by
       both shells — it answers the same question either way. Under waybar it
       adds the `custom/cava` module, a script feeding the bar one frame of
       glyphs per line (cavaBar in home/joshr/niri/scripts.nix); under noctalia
-      it adds the compact bar widget and the full-output lock-screen visualizer,
-      both of which read PipeWire directly and need no helper.
+      it adds the compact bar widget, which reads PipeWire directly and needs
+      no helper.
+
+      The lock screen's visualizer used to ride on this same option and is now
+      `local.niri.cavaInLockscreen`. They were split because they are not one
+      decision: eight bars beside the clock is a detail of the bar, and a
+      spectrum across the whole display behind the login prompt is what the
+      machine looks like while it is locked. Wanting one is no reason to want
+      the other, in either direction.
+    '';
+  };
+
+  options.local.niri.cavaInLockscreen = lib.mkOption {
+    type = lib.types.bool;
+    default = true;
+    description = ''
+      Whether Noctalia's lock screen carries a full-output audio visualiser.
+
+      It is the backmost lock widget, its box the entire logical output with
+      no panel or padding behind it, drawn from the PipeWire stream rather
+      than by cava. `show_when_idle = false` fades it away when playback
+      stops, so a locked machine with nothing playing shows the plain
+      wallpaper — which is why this can default on without the screen looking
+      busy.
+
+      Only read under `local.niri.shell = "noctalia"`, and the mirror image of
+      the `local.niri.lock*` options in that respect: hyprlock, the screen the
+      waybar stack builds, has no visualiser widget for this to turn on.
     '';
   };
 

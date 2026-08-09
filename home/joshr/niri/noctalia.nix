@@ -87,11 +87,16 @@ let
   wallpaperDir = "${config.home.homeDirectory}/.local/share/wallpapers";
   screenshotDir = "${config.home.homeDirectory}/Pictures/Screenshots";
 
-  # The visualiser is a per-host opt-in, exactly as it was on waybar. cava
-  # itself is gone from the picture: waybar had no visualiser, so `custom/cava`
-  # was a script feeding it one frame of glyphs per line, where noctalia draws
-  # its own from the PipeWire stream. The script and the package stay for the
-  # full-size terminal version.
+  # The bar's visualiser is a per-host opt-in, exactly as it was on waybar. The
+  # lock screen's is a separate opt-in of its own (local.niri.cavaInLockscreen,
+  # read by lockWidgets further down) — under waybar there was only ever the
+  # bar to ask about, and noctalia having both is no reason to make them one
+  # answer.
+  #
+  # cava itself is gone from the picture: waybar had no visualiser, so
+  # `custom/cava` was a script feeding it one frame of glyphs per line, where
+  # noctalia draws its own from the PipeWire stream. The script and the package
+  # stay for the full-size terminal version.
   visualiser = lib.optional config.local.waybar.cavaInBar "audio_visualizer";
 
   # --- the GameMode indicator -------------------------------------------
@@ -372,9 +377,9 @@ let
         scale = o.scale;
       }) config.local.niri.outputs;
 
-  # With local.waybar.cavaInBar on, one full-output audio visualizer; then a
-  # compact login box, an auto-hiding media player, two lock-safe buttons, and
-  # two clock widgets per output.
+  # With local.niri.cavaInLockscreen on, one full-output audio visualizer; then
+  # a compact login box, an auto-hiding media player, two lock-safe buttons,
+  # and two clock widgets per output.
   #
   # A clock widget has one font size, so "time bigger than the date" cannot be
   # done inside a single `format` string — it needs two widgets sized
@@ -541,7 +546,7 @@ let
           };
         };
       in
-      (lib.optionals config.local.waybar.cavaInBar [
+      (lib.optionals config.local.niri.cavaInLockscreen [
         # First in widget_order below, so it paints behind every other custom
         # lock-screen widget. The login panel is a later root layer too. With
         # no background or padding the spectrum fills the entire logical
@@ -650,7 +655,7 @@ let
   # and list every widget, because an explicit order is authoritative.
   lockWidgetOrder = lib.concatMap (
     o:
-    lib.optional config.local.waybar.cavaInBar "audio_visualizer_${o.name}"
+    lib.optional config.local.niri.cavaInLockscreen "audio_visualizer_${o.name}"
     ++ [
       "clock_time_${o.name}"
       "clock_date_${o.name}"

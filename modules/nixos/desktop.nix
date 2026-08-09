@@ -21,8 +21,10 @@
         FastConnectable = true; 
         Enable = "Source,Sink,Media,Socket";
 
-        # make airpods work
-        ControllerMode = "bredr";
+        # make airpods work and support passkeys
+        ControllerMode = "dual";
+	# Disable device cache for passkey support
+	Cache = "no";
       };
       Policy = {
         # Enable all controllers when they are found. This includes

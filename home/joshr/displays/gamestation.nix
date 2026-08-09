@@ -26,7 +26,7 @@
   local.niri.outputs = [
     {
       name = "DP-3";
-      mode = "2560x1440@180.000";
+      mode = "2560x1440@179.952";
       position = {
         x = 0;
         y = 0;

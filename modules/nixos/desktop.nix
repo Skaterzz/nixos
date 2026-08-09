@@ -32,6 +32,8 @@
       }; };
     services.blueman.enable = true;
 
+    services.pcscd.enable = true; # Enable passkey qr codes on chromium
+
     hardware.enableAllFirmware = true;
 
     # Power profiles — power-saver, balanced, performance — and the daemon

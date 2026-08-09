@@ -68,6 +68,33 @@
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
+    # The CachyOS kernel, prebuilt: mainline Linux plus CachyOS's patch set and
+    # their kconfig, packaged as `linuxPackages-cachyos-*` attribute sets.
+    #
+    # nixpkgs has nothing equivalent and is not about to: it carries `linux_zen`
+    # and the XanMod family, and `linux_lqx` was removed outright for lack of
+    # maintenance. The variant this repo actually wants — BORE — has no home
+    # there at all. modules/nixos/kernel.nix is where the choice is made and
+    # what it buys is written down.
+    #
+    # Pinned to the `release` branch rather than the default `master`. Both
+    # describe the same kernels; `release` only moves once the flake's own
+    # Hydra has built them and pushed them to the binary cache, while `master`
+    # can name a kernel that has never been compiled anywhere. That difference
+    # is not a slow download — a kernel that misses the cache is the better
+    # part of an hour of the desk compiling one.
+    #
+    # **No `inputs.nixpkgs.follows` here, deliberately** — the opposite of what
+    # nvidia-patch and mac-style-plymouth above do, and for a reason that only
+    # applies to this input. Those two are functions of whatever pkgs they are
+    # applied to, so following costs nothing and saves a lock entry. This one
+    # ships *built* kernels, and every one of them is keyed on the exact
+    # nixpkgs revision it was built against; pointing it at ours would change
+    # the derivation hash of the lot and turn every cache hit into a local
+    # build. The second nixpkgs in flake.lock is what not compiling a kernel
+    # costs.
+    nix-cachyos-kernel.url = "github:xddxdd/nix-cachyos-kernel/release";
+
     # joshrandall8478's existing chezmoi dotfiles repo. Used purely as a source
     # of static assets (fonts, custom Plasma themes/look-and-feel packages,
     # cursor theme, custom icons, wallpapers) that are pulled straight into the

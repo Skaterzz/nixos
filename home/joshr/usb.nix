@@ -64,5 +64,5 @@
 
   local.niri.randomLockGreetings = false;
 
-	local.niri.noctaliaSourcePatches = false;
+  local.niri.noctaliaSourcePatches = false;
 }

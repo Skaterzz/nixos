@@ -756,13 +756,24 @@ wider than it on either side. The height is therefore solved for instead —
 edge, fills the padded box on both axes, and gives the cover every pixel the
 panel can hold. Change the width and the height follows.
 
-With `local.waybar.cavaInBar` enabled, an `audio_visualizer` is the first entry
-in the explicit `widget_order`, which also makes it the backmost custom widget.
-Its box is the full logical width and height of the output, with no panel or
-padding, while the login panel is a later root layer. `show_when_idle = false`
-fades the spectrum away when playback stops, so the wallpaper remains clean
-when there is no media. The option defaults on and controls the compact bar
-visualizer too; `laptop-niri` disables both.
+With `local.niri.cavaInLockscreen` enabled, an `audio_visualizer` is the first
+entry in the explicit `widget_order`, which also makes it the backmost custom
+widget. Its box is the full logical width and height of the output, with no
+panel or padding, while the login panel is a later root layer.
+`show_when_idle = false` fades the spectrum away when playback stops, so the
+wallpaper remains clean when there is no media — which is what lets the option
+default on without the locked screen looking busy.
+
+**This is not the same option as the bar's visualiser.** Both spectra were
+`local.waybar.cavaInBar` at first, because under waybar the bar was the only
+place one could go. They are separate knobs now — `cavaInBar` for the compact
+widget beside the clock, `local.niri.cavaInLockscreen` for the one covering the
+whole output — since eight bars in a status bar and a full-screen spectrum
+behind the login prompt are not one decision, and either can be wanted without
+the other. Both still default on, and `laptop-niri` sets both explicitly.
+`cavaInLockscreen` is read only under `local.niri.shell = "noctalia"`: hyprlock
+has no visualiser widget to turn on, making it the mirror image of the
+`local.niri.lock*` options, which only hyprlock reads.
 
 Time is **two** widgets, not one. A clock widget has a single
 font size, so "time bigger than the date" can't be done inside one `format`

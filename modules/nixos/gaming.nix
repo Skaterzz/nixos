@@ -7,6 +7,11 @@ let
   ollamaHere = config.services.ollama.enable;
   ollamaUrl = "http://127.0.0.1:${toString config.services.ollama.port}";
 
+  # Whether the start hook has a model server to take the card back from. Both
+  # halves have to be true — a host with no ollama has nothing to release, and
+  # the option is the "my game may interrupt my agent" preference.
+  releaseOnGameMode = ollamaHere && config.local.gaming.releaseGpuOnGameMode;
+
   # Take the card back from the model server when a game starts.
   #
   # ollama keeps a model in video memory for five minutes after the last
@@ -23,6 +28,12 @@ let
   # this now" — no CLI, no privileges, one loopback request per resident
   # model. There is no end hook to match: ollama loads on demand, so the next
   # question reloads whatever it needs by itself.
+  #
+  # **Stdout is a notification body.** Nothing is printed unless a model was
+  # actually holding the card, and what is printed is meant to be read by
+  # somebody who was about to play a game rather than by whoever is reading
+  # the journal later — the model's name, and how much of the card it had.
+  # gamemodeStart below is what puts it on screen.
   releaseGpu = pkgs.writeShellApplication {
     name = "gamemode-release-gpu";
 
@@ -36,16 +47,94 @@ let
       # the ordinary case, not a failure — gamemoded logs a non-zero script,
       # and `-s` without `-S` keeps "connection refused" out of its journal
       # too. The unload below keeps `-S`, where a failure is worth reading.
-      resident=$(curl -fs --max-time 2 "${ollamaUrl}/api/ps" \
-        | jq -r '(.models // [])[].name') || exit 0
+      snapshot=$(curl -fs --max-time 2 "${ollamaUrl}/api/ps") || exit 0
 
-      while IFS= read -r model; do
+      # name<TAB>GiB, one resident model per line, read once and reused: the
+      # sizes have to be taken *before* the unloads, because after them
+      # /api/ps has nothing left to report. A tenth of a gigabyte is as
+      # precise as this needs to be — the number is here to say how much of
+      # the card was gone, not to be audited.
+      #
+      # `|| exit 0` on the whole thing for the same reason the request above
+      # has it: a server that answered with something this doesn't
+      # understand is a hook that has nothing to do, not a hook that failed.
+      # jq's complaint still reaches the journal.
+      resident=$(printf '%s' "$snapshot" | jq -r '
+        (.models // [])[] | "\(.name)\t\(.size_vram / 1073741824 * 10 | round / 10)"') || exit 0
+      [ -n "$resident" ] || exit 0
+
+      while IFS=$'\t' read -r model gib; do
         [ -n "$model" ] || continue
-        curl -fsS --max-time 10 "${ollamaUrl}/api/generate" \
+        # `if` rather than `|| true`: a model that would not unload is the
+        # one case worth saying out loud, because it means the game is
+        # starting on a card that is still part full and the frame rate is
+        # about to be explained by something this hook already knows.
+        if curl -fsS --max-time 10 "${ollamaUrl}/api/generate" \
           --json "{\"model\": \"$model\", \"prompt\": \"\", \"keep_alive\": 0}" \
-          >/dev/null || true
-        echo "released $model"
+          >/dev/null; then
+          echo "released $model ($gib GiB)"
+        else
+          echo "$model ($gib GiB) would not unload"
+        fi
       done <<< "$resident"
+    '';
+  };
+
+  # What gamemode's start hook runs on a host that has a model server to take
+  # the card back from. Everywhere else the hook stays the line of shell it
+  # has always been — see `custom.start` below.
+  #
+  # It became a program when the notification had to start saying what the
+  # release did, because that answer only exists once the release has run and
+  # the notification cannot wait for it. Hence the order here, which is the
+  # whole reason the file exists:
+  #
+  #   * The notification and the bar poke go first. They are the confirmation
+  #     that the mode engaged, and they must not sit behind a model server
+  #     that is mid-generation. gamemoded gives a custom script ten seconds
+  #     and then kills it (`script_timeout`), so a release that hangs would
+  #     otherwise take "GameMode started" down with it.
+  #
+  #   * The release then *rewrites* that notification rather than raising a
+  #     second one behind it. `notify-send -p` prints the id the notification
+  #     daemon assigned and `-r` replaces that id, so what the player sees is
+  #     one notification that gains a line naming what was on the card once
+  #     the card is back.
+  gamemodeStart = pkgs.writeShellApplication {
+    name = "gamemode-start-hook";
+
+    runtimeInputs = with pkgs; [
+      libnotify
+      procps # pkill
+      releaseGpu
+    ];
+
+    text = ''
+      # A daemon that doesn't hand back an id, or no daemon at all, leaves
+      # this empty and the rewrite below falls back to a plain notification.
+      id=$(notify-send -p -i input-gamepad 'GameMode started') || id=""
+
+      # waybar's custom/gamemode module is otherwise on a 30-second poll, and
+      # a mode you turn on for a game should show up in the bar as the game
+      # starts rather than up to half a minute later. SIGRTMIN+9 is the
+      # `signal` that module is given in home/joshr/niri/waybar.nix — the two
+      # numbers have to agree, and nothing checks that they do.
+      #
+      # `|| true` because pkill exits 1 when nothing matches, which is the
+      # ordinary case in a Plasma session with no waybar running.
+      pkill -RTMIN+9 waybar || true
+
+      # Silent when the card was already the game's: gamemode-release-gpu
+      # prints nothing unless something was holding video memory, so an
+      # ordinary launch notifies exactly as it did before this existed.
+      freed=$(gamemode-release-gpu) || freed=""
+      if [ -n "$freed" ]; then
+        if [ -n "$id" ]; then
+          notify-send -r "$id" -i input-gamepad 'GameMode started' "$freed" || true
+        else
+          notify-send -i input-gamepad 'GameMode started' "$freed" || true
+        fi
+      fi
     '';
   };
 
@@ -84,6 +173,7 @@ let
         gamemode # gamemoded --status
         gnugrep
         jq
+        libnotify # the one finding worth leaving the terminal for
         procps # free, pgrep
         util-linux # swapon
       ]
@@ -137,10 +227,35 @@ let
       if [ -z "$resident" ]; then
         echo "nothing answering on ${ollamaUrl} — expected when local.ai is off"
       else
-        echo "models resident: $(echo "$resident" | jq -r '(.models // []) | length')"
+        count=$(echo "$resident" | jq -r '(.models // []) | length') || count=0
+        echo "models resident: $count"
         echo "$resident" \
           | jq -r '(.models // [])[] | "  \(.name)  \(.size_vram / 1073741824 * 100 | round / 100) GiB VRAM, expires \(.expires_at)"' \
           || true
+
+        # The one section that gets a notification of its own.
+        #
+        # Everything else here is a number to read in the terminal this was
+        # typed into. A model resident on the card is different in kind: it
+        # is the finding that explains a bad session, it is the one with
+        # something to do about it (start a game and gamemode's hook takes
+        # the card back, or `ollama stop <model>` by hand), and this is a
+        # command as likely to be bound to a key and hit mid-game — with the
+        # terminal behind a fullscreen window — as it is to be typed at a
+        # prompt. Only when something is actually resident: a doctor that
+        # notifies on a clean bill is noise.
+        #
+        # dialog-warning rather than the gamepad the gamemode hooks use,
+        # because this is a finding rather than a change of state.
+        #
+        # `|| true` for the run with no session bus behind it: over ssh, or
+        # from a unit, notify-send fails and that is not a failed report.
+        if [ "$count" -gt 0 ]; then
+          notify-send -i dialog-warning 'gaming-doctor: AI is holding the card' \
+            "$(echo "$resident" \
+              | jq -r '(.models // [])[] | "\(.name) — \(.size_vram / 1073741824 * 10 | round / 10) GiB VRAM"')" \
+            || true
+        fi
       fi
 
       section "shader cache"
@@ -226,28 +341,31 @@ in
     enable = true;
 
     settings = {
-      # Both hooks poke waybar as well as notifying. Its custom/gamemode
-      # module is otherwise on a 30-second poll, and a mode you turn on for a
-      # game should show up in the bar as the game starts rather than up to
-      # half a minute later. SIGRTMIN+9 is the `signal` that module is given
-      # in home/joshr/niri/waybar.nix — the two numbers have to agree, and
-      # nothing checks that they do.
+      # Both hooks poke waybar as well as notifying — see the comment on
+      # gamemodeStart above for why, and for why the start half is a program
+      # while this end half is still a line of shell.
+      #
+      # The `;` in `end` is real shell: gamemode runs these through
+      # `/bin/sh -c` (game_mode_execute_scripts in daemon/gamemode-context.c),
+      # not execvp on a split string, which is also why the quoted
+      # notification title works. It is also why either side can be a bare
+      # store path with no PATH to find it on — gamemoded's own PATH is
+      # nearly empty.
       #
       # `|| true` because pkill exits 1 when nothing matches, which is the
       # ordinary case in a Plasma session with no waybar running, and
       # gamemoded logs a non-zero script as a failure.
-      #
-      # The `;` is real shell: gamemode runs these through `/bin/sh -c`
-      # (game_mode_execute_scripts in daemon/gamemode-context.c), not execvp
-      # on a split string, which is also why the quoted notification title
-      # works. It is also why the third command below can be a store path
-      # with no PATH to find it on — gamemoded's own PATH is nearly empty.
       custom = {
+        # Only the host with a model server on the same card needs a program
+        # here; everywhere else there is nothing for the notification to say
+        # that it didn't say before, and this stays the line it has always
+        # been — which also keeps `gamestation` off a rebuild it gains
+        # nothing from.
         start =
-          "${pkgs.libnotify}/bin/notify-send -i input-gamepad 'GameMode started'; ${pkgs.procps}/bin/pkill -RTMIN+9 waybar || true"
-          + lib.optionalString (
-            ollamaHere && config.local.gaming.releaseGpuOnGameMode
-          ) "; ${lib.getExe releaseGpu} || true";
+          if releaseOnGameMode then
+            lib.getExe gamemodeStart
+          else
+            "${pkgs.libnotify}/bin/notify-send -i input-gamepad 'GameMode started'; ${pkgs.procps}/bin/pkill -RTMIN+9 waybar || true";
         end = "${pkgs.libnotify}/bin/notify-send -i input-gamepad 'GameMode ended'; ${pkgs.procps}/bin/pkill -RTMIN+9 waybar || true";
       };
     };

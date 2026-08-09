@@ -888,6 +888,14 @@
       There is no matching end hook and there shouldn't be: ollama loads a
       model on demand, so the next request after the game brings the weights
       straight back. This only takes the card back, it doesn't keep it.
+
+      What it took is attached to the "GameMode started" notification —
+      `released deepseek-r1:14b (8.9 GiB)`, one line per model, and a
+      differently worded line for a model that refused to unload. Since none
+      of this is driven from the chair, the notification is the only thing
+      that connects a session that ran badly to the reason it did. An
+      ordinary launch, with nothing resident, notifies exactly as it did
+      before.
     '';
   };
 

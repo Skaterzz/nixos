@@ -3765,6 +3765,14 @@ Reading it:
   section.
 - **An empty EGL external platform listing** is the one after that.
 
+One finding also leaves the terminal. If the model server has anything resident
+when the report is taken, `gaming-doctor` raises a notification saying which
+models and how much video memory each has. That is deliberately the only one:
+it is the finding with an action attached, and this is a command as likely to
+be bound to a key and hit mid-game — where the terminal is behind a fullscreen
+window — as it is to be typed at a prompt. Nothing is raised on a clean report,
+and a run over ssh with no session bus behind it just prints, as before.
+
 ### The shader cache, and the sawtooth
 
 The driver caches compiled shaders under `~/.cache/nv`, and left alone it caps
@@ -3832,6 +3840,30 @@ It reads `/api/ps` for whatever is resident and sends each model a
 privileges, one loopback request per model. There is deliberately no matching
 end hook: ollama loads on demand, so the next question brings the weights
 straight back — this takes the card, it does not keep it.
+
+**And it says so.** The "GameMode started" notification gains a line naming
+each model that was holding the card and how much of it it had:
+
+```
+GameMode started
+released deepseek-r1:14b (8.9 GiB)
+```
+
+That is the point of the notification rather than a decoration on it. The
+whole reason this problem is hard to see is that nothing about it is driven
+from the chair — the notification is what turns "the machine was mysteriously
+slower that evening" into "an agent had nine gigabytes of the card and gamemode
+took them back at 21:14". A model that refuses to unload is reported the same
+way (`… would not unload`), which is worth more still: it means the game is
+starting on a card that is genuinely still part full.
+
+Nothing is added when there was nothing resident, so an ordinary launch looks
+exactly as it did before. The notification is not held up waiting for the
+answer either: it is sent immediately and *rewritten in place* once the release
+finishes, using the id the notification daemon hands back. Two reasons for
+that — a model server mid-generation can take a few seconds to answer, and
+gamemoded kills a custom script that runs longer than ten seconds, so a release
+that hangs must not be able to take the confirmation down with it.
 
 It is inert on a host that has no model server, so `gamestation` is unaffected,
 and it is a `local.gaming.*` option rather than a fact of the module because

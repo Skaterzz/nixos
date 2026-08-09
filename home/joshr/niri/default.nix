@@ -63,7 +63,12 @@
     kdePackages.qtsvg # icon rendering
     kdePackages.breeze-icons # fallback icons Dolphin expects to exist
 
-    # Screenshot stack: grim captures, slurp selects, satty annotates.
+    # Screenshot stack: wayfreeze holds a still frame over the screen, slurp
+    # selects on top of it, grim captures, satty annotates. The `screenshot`
+    # helper takes its own copies through runtimeInputs; these are here so the
+    # same tools are on PATH by hand, which is how you tell which of them is at
+    # fault when a capture comes out wrong.
+    wayfreeze
     grim
     slurp
     satty

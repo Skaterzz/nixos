@@ -573,9 +573,9 @@ ${workspaceBlocks}
         Mod+Ctrl+W  hotkey-overlay-title="Choose wallpaper" { spawn-sh "${wallpaperMenu}"; }
 
         // --- screenshots -----------------------------------------------
-        // Region capture goes through satty for annotation; the plain
-        // screen/window captures use niri's own actions, which already know
-        // the exact geometry.
+        // Region capture freezes the screen for the selection and then goes
+        // through satty for annotation; the plain screen/window captures use
+        // niri's own actions, which already know the exact geometry.
         //
         // `last` re-shoots the region selected the time before, with no
         // slurp step — for taking the same frame repeatedly, where redrawing

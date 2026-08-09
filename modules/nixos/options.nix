@@ -284,6 +284,15 @@
       cached at all, and picking an uncached kernel is not a slow rebuild,
       it is an hour of compiling. Adding one is a line in this enum if it
       ever turns out to be wanted.
+
+      Six of them come with a second helping of cache. The flake assembles a
+      whole test system — NVIDIA driver, `open = true`, `nvidiaPackages
+      .latest`, which is this repo's configuration — for "bore", "latest",
+      "lts" and their "-lto" twins, so on those the *driver's kernel module*
+      is prebuilt too. Pick one of the CPU-optimised builds instead and the
+      kernel is still a download while its NVIDIA module is compiled here:
+      ten minutes, not an hour, but it is the difference between the two
+      halves of that trade.
     '';
   };
 
@@ -305,15 +314,17 @@
       long build on every kernel update; there is no third option that keeps
       both.
 
-      Note that the setting only takes effect once a rebuild has installed
-      it, and the daemon building that rebuild is still running on the old
-      configuration. Switching the cache and the kernel on in one go is
-      therefore the case that compiles anyway — pass them on the command
-      line for that one rebuild instead:
+      This is the permanent half. It only takes effect once a rebuild has
+      installed it, and the daemon running *that* rebuild is still on the old
+      configuration — so the switch that first brings in the kernel would
+      compile one regardless. The `nixConfig` block at the top of flake.nix
+      is what covers that gap: nix reads it off the flake it is building,
+      before any of this exists, and asks once per user before honouring it
+      (`--accept-flake-config` on the rebuild skips the question).
 
-          sudo nixos-rebuild switch --flake .#gamestation \
-            --option extra-substituters https://attic.xuyh0120.win/lantian \
-            --option extra-trusted-public-keys lantian:EeAUQ+W+6r7EtwnmYjeVwx5kOGEBpjlBfPlzGlTNvHc=
+      The two have to agree, and nothing checks that they do — a flake's
+      `nixConfig` is read before the module system exists, so it cannot be
+      derived from this option. Changing the cache means editing both.
     '';
   };
 

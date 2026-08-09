@@ -153,6 +153,46 @@
     };
   };
 
+  # The kernel flake's binary cache, offered to whatever nix command is
+  # building *this* flake — which is the one thing that stops the desk
+  # compiling a kernel.
+  #
+  # modules/nixos/kernel.nix writes the same substituter and key into the
+  # system's /etc/nix/nix.conf, and that is what every rebuild reads *after*
+  # the one that installs it. This block is for the one that installs it: a
+  # cache that arrives with the configuration it was meant to fetch is a cache
+  # the daemon didn't have when it planned the build, and the machine spends
+  # the better part of an hour compiling a kernel that already exists.
+  #
+  # nix asks before honouring this — "do you want to allow configuration
+  # setting 'extra-substituters' to be set to ..." — once per user, remembered
+  # in ~/.local/share/nix/trusted-settings.json. Say yes, or skip the question
+  # entirely:
+  #
+  #     sudo nixos-rebuild switch --flake .#gamestation --accept-flake-config
+  #
+  # Two things have to be true for any of this to apply, and both already are.
+  # The flake being *built* has to be this one — a `nixConfig` in an input is
+  # ignored, which is why the kernel flake's own copy of these two lines does
+  # nothing for us and this duplicate has to exist. And whoever runs the build
+  # has to be in `nix.settings.trusted-users`, since the daemon discards
+  # substituters offered by anyone else: root, and @wheel through
+  # modules/nixos/development.nix.
+  #
+  # `accept-flake-config = true` in nix.settings would retire the prompt for
+  # good and is deliberately not set — it would apply to every flake this
+  # machine ever builds, and the point of the prompt is that adding a
+  # substituter is a trust decision. Answering it once per machine is the
+  # right amount of friction.
+  #
+  # These two lines and the ones in modules/nixos/kernel.nix have to stay in
+  # step. Nothing checks that they do: a flake's `nixConfig` is read before
+  # any of the module system exists, so it cannot be derived from an option.
+  nixConfig = {
+    extra-substituters = [ "https://attic.xuyh0120.win/lantian" ];
+    extra-trusted-public-keys = [ "lantian:EeAUQ+W+6r7EtwnmYjeVwx5kOGEBpjlBfPlzGlTNvHc=" ];
+  };
+
   outputs =
     {
       self,

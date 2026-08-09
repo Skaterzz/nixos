@@ -4079,25 +4079,76 @@ with, and "I changed the kernel and it is still slow" is a much harder position
 to debug from than "the doctor says nine gigabytes of model weights are on the
 card".
 
-#### The first rebuild needs the cache on the command line
+#### Never compiling it
 
-The kernel is prebuilt. It arrives from the flake input's own binary cache,
-which `modules/nixos/kernel.nix` adds to `nix.settings.substituters` — but that
-setting is installed *by* a rebuild, and the nix-daemon running that rebuild is
-still on the old configuration. So the one switch that introduces both the
-cache and the kernel is the one that cannot use it, and it will spend the
-better part of an hour compiling a kernel instead of downloading one. Pass them
-by hand for that rebuild:
+Building a CachyOS kernel on the desk is the better part of an hour, and the
+whole arrangement is shaped around never doing it. The kernel arrives prebuilt
+from the flake input's own binary cache. Four things have to hold for that, and
+all four are already set up — this is the list to check against when a rebuild
+unexpectedly starts compiling one.
 
-```bash
-sudo nixos-rebuild switch --flake .#gamestation \
-  --option extra-substituters https://attic.xuyh0120.win/lantian \
-  --option extra-trusted-public-keys lantian:EeAUQ+W+6r7EtwnmYjeVwx5kOGEBpjlBfPlzGlTNvHc=
+**The cache has to be configured before the build is planned, not by it.**
+`modules/nixos/kernel.nix` adds the substituter to `nix.settings`, but that
+lands in `/etc/nix/nix.conf` only *after* a switch has completed, and the
+nix-daemon planning that switch is still on the old configuration. What covers
+the gap is the `nixConfig` block at the top of `flake.nix`: nix reads it off the
+flake it has been asked to build, before any of the module system exists. It
+asks once, per user:
+
+```
+do you want to allow configuration setting 'extra-substituters' to be set to
+'https://attic.xuyh0120.win/lantian' (y/N)?
 ```
 
-Every rebuild after that reads it from `/etc/nix/nix.conf`. If a later one
-starts compiling a kernel anyway, the input has moved ahead of what the cache
-holds — `nix flake update nix-cachyos-kernel` again in a day, or let it build.
+Say yes — the answer is remembered in `~/.local/share/nix/trusted-settings.json`
+— or skip the question outright:
+
+```bash
+sudo nixos-rebuild switch --flake .#gamestation --accept-flake-config
+```
+
+Two conditions apply and both are already met here: a `nixConfig` is only
+honoured for the flake being *built*, never for one of its inputs (which is why
+the kernel flake's own copy of those lines does nothing for us and `flake.nix`
+carries a duplicate), and the user running the build has to be in
+`nix.settings.trusted-users`, since the daemon discards substituters offered by
+anyone else. That is root, and `@wheel` via `modules/nixos/development.nix`.
+Setting `accept-flake-config = true` system-wide would retire the prompt for
+good; it is deliberately not set, because it would apply to every flake this
+machine ever builds and the prompt is the trust decision.
+
+**The kernel has to be the exact derivation the cache holds.** Hence
+`overlays.pinned` and no `follows` on the input — see [What follows the
+kernel](#what-follows-the-kernel). Our `nixpkgs.config` cannot reach it either;
+the kernel is not built from our `pkgs` at all.
+
+**The input has to name a kernel that has actually been built** — the `release`
+branch, which only moves once the flake's Hydra has pushed what it names.
+
+**The variant has to be one they build** — what the enum on
+`local.kernel.cachyos.variant` is for.
+
+Check rather than hope, before committing an hour to a switch:
+
+```bash
+# succeeds only if the kernel can be fetched: --max-jobs 0 forbids building
+# anything locally, so a cache miss is an immediate error, not a long wait
+nix build --max-jobs 0 --no-link \
+  .#nixosConfigurations.gamestation.config.boot.kernelPackages.kernel
+
+# the whole system: what would be fetched, and what would be built
+nixos-rebuild dry-build --flake .#gamestation
+```
+
+Two things still compile locally and both are expected. The DDC/CI module on
+`gamestation-niri` is out-of-tree — well under a minute. And the NVIDIA kernel
+module is only prebuilt for the six variants the kernel flake assembles a whole
+test system for (`bore`, `latest`, `lts` and their `-lto` twins), so a
+`-x86_64-v3` or `-zen4` kernel arrives cached while its driver module is built
+here: ten minutes, not an hour.
+
+If a rebuild starts building a kernel anyway, the input has moved ahead of what
+the cache holds — `git checkout flake.lock`, and try the update again in a day.
 
 That cache is a real trust decision and `local.kernel.cachyos.binaryCache.enable`
 is the way to decline it: the key authorises that cache to supply *any* store

@@ -435,6 +435,56 @@ custom mic module printed an empty line when nothing held the microphone and
 waybar hides a custom module with no text, so the slot cost nothing until it
 meant something.
 
+#### The GameMode indicator is a plugin, and a plugin has to be enabled
+
+Every other slot on that bar is a noctalia widget. GameMode is not — the shell
+has no widget for it and no `exec`-style escape hatch, so the pad is a local
+Luau plugin, `joshr/gamemode-indicator`, in
+`home/joshr/niri/noctalia-plugins/gamemode-indicator/`. `noctalia.nix` builds
+its two files into the store and links the result to
+`~/.local/share/noctalia/plugins/gamemode-indicator/`, which the plugin
+registry scans as an implicit local source, and the bar names its one entry
+`joshr/gamemode-indicator:status`.
+
+**Installed is not enabled**, and that is the thing worth writing down, because
+nothing tells you. The registry parses every manifest it finds under that
+directory and then drops the ones whose id is not in `[plugins].enabled` —
+"discovered but not enabled", one line in the shell's log, no widget. A bar
+lane naming an entry of a plugin that never loaded is not an error either:
+`noctalia config validate` checks the shape of a lane list and has no registry
+to check the names against, so the build passes, the shell starts, and the slot
+is simply absent. `plugins.enabled` in `noctalia.nix` is what turns it on;
+`noctalia msg plugins list` is what says whether it did.
+
+The manifest's `plugin_api` is a floor, not a version stamp. It is the oldest
+plugin API level the entry needs, and the registry refuses anything outside
+`kOldestSupportedPluginApiVersion`..`kCurrentPluginApiVersion` — so declaring
+the level that happens to ship with the packaged noctalia (19, on
+`v5.0.0-beta.7`) buys an indicator that vanishes the moment nixpkgs is a beta
+behind the tip. This one asks for 3: `setGlyph`, `setVisible`, `runAsync` and
+`setUpdateInterval` are all older than the first numbered level.
+
+Two smaller things the plugin API makes easy to get wrong, both of which this
+one did. `noctalia.runAsync(cmd, cb)` hands the callback a **`CommandResult`
+table** — `exitCode`, `stdout`, `stderr` and two truncation flags — not the
+output as a string, so trimming the argument itself compares a table to
+`"active"` and the pad stays hidden however many games are running. And the
+command has to be an absolute path: the shell runs as a systemd user service,
+whose `PATH` is the user manager's rather than the one a login shell builds
+from the profile, so `gamemode-status` is substituted into `widget.luau` at
+build time as a store path, the same way every `command` in that file is
+written.
+
+What the widget does is what waybar's module did, minus the signal. It polls
+`gamemode-status` every two seconds and calls `barWidget.setVisible` with the
+answer — `setVisible` is a render patch rather than a lifecycle switch, so a
+hidden widget keeps ticking and can come back. The 30-second `interval` plus
+`SIGRTMIN+9` arrangement described under [The bar](#the-bar) has no equivalent
+here: there is nothing to signal, so the poll is the whole mechanism and it
+runs often enough that the pad appears about as promptly as the hook made it.
+The hooks in `modules/nixos/gaming.nix` still fire and still find no waybar to
+poke, exiting into their `|| true`.
+
 Three things are new, with no waybar equivalent: a notification history, a
 clipboard panel, and a control centre. That last is where wifi, bluetooth,
 audio devices and the power profile get real panels — most of what the old
@@ -620,15 +670,9 @@ so a `wallpaper_changed` hook writes it from `$NOCTALIA_WALLPAPER_PATH`
 instead — through a temp file and a rename, because the path unit fires on
 close and would otherwise read a half-written filename.
 
-**What is lost crossing over.** Two things, both indicators that were rarely
-on screen:
+**What is lost crossing over.** One thing, now that the gamemode pad is back as
+[a plugin](#the-gamemode-indicator-is-a-plugin-and-a-plugin-has-to-be-enabled):
 
-- **The gamemode pad.** waybar's was a script polled on an interval and poked
-  by the start/end hooks in `modules/nixos/gaming.nix`. noctalia's
-  `custom_button` draws a fixed label and has no `exec`, so there is nothing
-  to poll with; the equivalent would be a Luau plugin. The hooks in
-  `gaming.nix` are left alone — their `pkill` finds no waybar and exits into a
-  `|| true`.
 - **The lock screen's album art, and its battery.** `lock-session` builds a
   hyprlock config per invocation carrying a blurred album-art background, the
   album cover, media transport buttons, a battery readout and a time-aware

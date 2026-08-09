@@ -114,9 +114,11 @@ This is one person's machine, not a distribution. On any other hardware:
 4. **Git identity** in `home/joshr/home.nix` is joshr's.
 5. **The desk hosts boot a third-party kernel** — CachyOS/BORE, from the
    `nix-cachyos-kernel` flake input and its binary cache. Both are opt-in
-   (`local.kernel.cachyos.*`), and the first rebuild after enabling them needs
-   the cache passed on the command line or it compiles a kernel —
-   [The kernel](MANUAL.md#the-kernel).
+   (`local.kernel.cachyos.*`). The kernel is prebuilt, and stays that way as
+   long as you let the flake's `nixConfig` add its cache — nix asks once, or
+   pass `--accept-flake-config`. Decline it and the machine compiles a kernel
+   for the better part of an hour: [Never compiling
+   it](MANUAL.md#never-compiling-it).
 
 [Fresh install from the NixOS ISO](MANUAL.md#fresh-install-from-the-nixos-iso)
 walks the whole thing from a live ISO.

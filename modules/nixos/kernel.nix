@@ -69,22 +69,59 @@
 # ever did.
 #
 #
-# The first rebuild
-# -----------------
+# Never compiling it
+# ------------------
 #
-# The substituter below is installed *by* a rebuild, and the nix-daemon doing
-# that rebuild is still running on the old configuration — so the switch that
-# introduces both the cache and the kernel is exactly the one that cannot use
-# the cache, and it will happily spend an hour compiling instead. Pass them on
-# the command line for that one rebuild:
+# Compiling a CachyOS kernel on the desk is the better part of an hour, and
+# every part of this arrangement exists to make sure it never happens. Four
+# things have to hold, and all four are load-bearing:
 #
-#     sudo nixos-rebuild switch --flake .#gamestation \
-#       --option extra-substituters https://attic.xuyh0120.win/lantian \
-#       --option extra-trusted-public-keys lantian:EeAUQ+W+6r7EtwnmYjeVwx5kOGEBpjlBfPlzGlTNvHc=
+#   * **The cache has to be configured before the build is planned, not by
+#     it.** The `nix.settings` below are installed *by* a rebuild, and the
+#     daemon running that rebuild is still on the old configuration — so on
+#     the switch that first introduces the kernel they are useless. What
+#     covers that gap is `nixConfig` at the top of flake.nix, which nix reads
+#     off the flake it is being asked to build, before any of this. It asks
+#     once per user before honouring it; `--accept-flake-config` skips the
+#     question. The two copies have to say the same thing and nothing checks
+#     that they do — see the comment there.
 #
-# Every rebuild after that reads it from /etc/nix/nix.conf. If one starts
-# building a kernel anyway, the input has moved ahead of what the cache holds:
-# `nix flake update nix-cachyos-kernel` again in a day, or ride it out.
+#   * **The kernel has to be the derivation the cache holds.** That is what
+#     `overlays.pinned` buys: the package set is built from the kernel flake's
+#     own nixpkgs, the revision its CI built at. `overlays.default` would
+#     rebuild it against ours, which is a different hash and therefore a
+#     local compile, and so would `inputs.nixpkgs.follows` on the input.
+#     Neither is used. Our `nixpkgs.config` doesn't reach it either, for the
+#     same reason — the kernel isn't built from our pkgs at all.
+#
+#   * **The input has to name a kernel that has actually been built.** The
+#     `release` branch only moves once the flake's Hydra has built and pushed
+#     what it names; `master` can name one that exists nowhere yet.
+#
+#   * **The variant has to be one of the ones they build.** That is what the
+#     enum on `local.kernel.cachyos.variant` is for.
+#
+# Checking rather than hoping, before committing an hour to a switch:
+#
+#     # succeeds only if the kernel can be fetched; --max-jobs 0 forbids
+#     # building anything locally, so a cache miss is an error rather than
+#     # a long wait
+#     nix build --max-jobs 0 --no-link \
+#       .#nixosConfigurations.gamestation.config.boot.kernelPackages.kernel
+#
+#     # the whole system: what would be fetched, and what would be built
+#     nixos-rebuild dry-build --flake .#gamestation
+#
+# Two things do still compile here and both are expected. The DDC/CI module
+# on gamestation-niri is out-of-tree and takes well under a minute. And the
+# NVIDIA kernel module is only prebuilt for the variants the kernel flake
+# assembles a whole test system for — latest, lts, bore, and their `-lto`
+# twins — so a `-x86_64-v3` or `-zen4` kernel arrives cached but its driver
+# module does not, and that is ten minutes rather than an hour.
+#
+# If a rebuild starts building a kernel anyway, the input has moved ahead of
+# what the cache holds: `git checkout flake.lock` and try the update again in
+# a day, or ride it out.
 #
 #
 # Getting back
@@ -119,8 +156,12 @@ in
     # imports this module wants this kernel eventually, and the cache being
     # already in place is what makes turning it on — or back on — an ordinary
     # rebuild rather than an hour of compiling. See the option's description
-    # for the trust this extends, and the note above for why the very first
-    # rebuild still needs the flags on the command line.
+    # for the trust this extends.
+    #
+    # This is the permanent copy, in /etc/nix/nix.conf, read by every rebuild
+    # and by anything else on the machine that talks to the daemon. The
+    # temporary one is `nixConfig` in flake.nix, which covers the rebuild that
+    # installs this — keep the two in step, because nothing else will.
     (lib.mkIf cfg.binaryCache.enable {
       nix.settings = {
         # Both lists merge with nixpkgs' own definitions rather than replacing

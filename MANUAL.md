@@ -310,6 +310,10 @@ backwards from what you'd guess:
 | `pkgs.noctalia` | 5.0.0-beta.7 | the v5 line — what this config uses |
 | `pkgs.noctalia-shell` | 4.7.7 | v4; kept the repo's old name |
 
+The version in that first row is nixpkgs' and will move with the lock. The
+patched build does not follow it — see [The version pin](#the-version-pin)
+below, which is where this repository names a release.
+
 Upstream renamed the repository from `noctalia-shell` to `noctalia` at v5, so
 the more official-looking `noctalia-shell` is the stale one. Putting it in
 `environment.systemPackages` gets you v4 and a session that ignores most of
@@ -330,6 +334,53 @@ derivation, so that side compiles locally. `laptop-niri` sets the option false:
 it uses cached `pkgs.noctalia`, while keeping exactly the same generated TOML,
 palettes, templates, plugins and theme-sync hooks. The desktop keeps the default
 and therefore keeps the C++ extras.
+
+#### The version pin
+
+The patched side does not follow nixpkgs. `noctalia.nix` overrides `src` to a
+fixed upstream tag, and the two lines at the top of its `let` are the only
+place a version is named:
+
+```nix
+noctaliaVersion = "5.0.0-beta.7";
+noctaliaHash = "sha256-9RlJNIy2DFVm9SB2vwGEBsbHc1r3dIB+K+b+nd6Bdho=";
+```
+
+The patches are unified diffs against those exact files, so without the pin a
+`nix flake update` that happens to carry a noctalia bump lands as a failed
+`patchPhase` in the middle of an unrelated update. That failure is loud and it
+happens at build time, before anything is activated — but it blocks the whole
+rebuild, and the fix is a patch rebase rather than anything to do with what was
+being updated. Pinning makes moving forward a separate, deliberate errand.
+
+Upstream is worth pinning against. v5 is in beta and shipping roughly weekly,
+and one commit — `style: uppercase float literal suffixes`, which turned every
+`1.5f` into `1.5F` across the tree — is already enough to break two of the
+three patches, because a deletion line has to match character for character
+where context lines get some fuzz. Being a beta release or two behind costs
+less than that.
+
+**Moving the pin.** Change `noctaliaVersion`, set `noctaliaHash` to
+`lib.fakeHash`, build once, and copy the hash out of the error. Then rebase the
+patches, which is the actual work — `noctalia-lock-transition.patch` is 21
+hunks across six files in `src/shell/lockscreen` and `src/shell/osd`, both of
+which upstream changes weekly, so budget for it. Both values can also be read
+straight out of nixpkgs' own `pkgs/by-name/no/noctalia/package.nix` if the
+target is whatever nixpkgs has.
+
+**Only the patched side is pinned.** `noctaliaSourcePatches = false` exists to
+stay on the binary cache, and overriding `src` there would force the laptop to
+compile a Qt/C++ project to get a version it has no patches to protect. The
+cost is that the two hosts can drift onto different releases. `noctalia config
+validate` is what catches it: it runs against whichever package the host
+selected, so a generated key that the laptop's newer stock package has renamed
+fails the laptop's build. Read that as the prompt to move the pin, not as a
+reason to remove it.
+
+Note also that this pins the *source* and not the recipe — `buildInputs`,
+meson flags and the wrapper still come from whatever nixpkgs currently says,
+which keeps nixpkgs' packaging fixes but is another reason the gap shouldn't
+grow for long.
 
 What the module generated is small enough to own outright, and `noctalia.nix`
 now writes all three itself:

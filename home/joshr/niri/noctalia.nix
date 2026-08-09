@@ -34,7 +34,9 @@
 # ------------------------------------------
 # The shell starts from `pkgs.noctalia` and everything below is written out by
 # hand. `local.niri.noctaliaSourcePatches` chooses between the ordinary cached
-# package and a locally compiled derivation carrying the source-only extras.
+# package and a locally compiled derivation carrying the source-only extras,
+# whose source is pinned to the release those patches were cut against —
+# `noctaliaVersion` in the `let` below is the one place a version is named.
 # The generated configuration, palettes, templates, plugins and hooks are the
 # same on both sides of that choice.
 # Upstream ships a home-manager module in its flake, and this used to use it,
@@ -56,9 +58,55 @@
 let
   useNoctalia = config.local.niri.shell == "noctalia";
 
+  # The upstream release the three patches below are cut against.
+  #
+  # **This is the version to edit**, and the hash with it — nothing else here
+  # names a version. `nix flake update` must not be able to move it, because
+  # the patches are unified diffs against these exact files and a bump lands
+  # as a failed `patchPhase` in the middle of an otherwise unrelated update.
+  # Pinning turns "the flake update broke the desktop shell" into a separate
+  # errand that can be done deliberately, which is worth more than being a
+  # release or two ahead of a beta.
+  #
+  # Both values come from nixpkgs' own expression for this version
+  # (pkgs/by-name/no/noctalia/package.nix). To move the pin: change the
+  # version, set the hash to `lib.fakeHash`, build once, and put the hash the
+  # error prints here — then expect to rebase the patches, which is the real
+  # work. `tag` rather than `rev` matches upstream's packaging; the hash is
+  # what actually pins the content, so a moved tag fails loudly rather than
+  # quietly building something else.
+  noctaliaVersion = "5.0.0-beta.7";
+  noctaliaHash = "sha256-9RlJNIy2DFVm9SB2vwGEBsbHc1r3dIB+K+b+nd6Bdho=";
+
+  # Only the patched side is pinned.
+  #
+  # `noctaliaSourcePatches = false` exists to get the package off the binary
+  # cache's shelf and skip compiling a Qt/C++ project; overriding `src` there
+  # would defeat exactly that and cost the laptop a local build for nothing —
+  # it carries no patches for a version bump to break. The cost of the
+  # asymmetry is that the two hosts can end up on different noctalia
+  # releases, and `noctalia config validate` is what says so: it runs against
+  # whichever package the host selected, so a key this config generates that
+  # the laptop's newer stock package has renamed fails the laptop's build.
+  # That failure is the signal to move the pin, not a reason to unpin.
+  #
+  # Note this pins the *source*, not the build recipe: buildInputs, meson
+  # flags and the wrapper all still come from whatever nixpkgs currently
+  # says. That is the right way round while the gap is small — it keeps
+  # nixpkgs' packaging fixes — but it is also why the pin is not meant to sit
+  # here for a year.
   noctaliaPackage =
     if config.local.niri.noctaliaSourcePatches then
       pkgs.noctalia.overrideAttrs (old: {
+        version = noctaliaVersion;
+
+        src = pkgs.fetchFromGitHub {
+          owner = "noctalia-dev";
+          repo = "noctalia";
+          tag = "v${noctaliaVersion}";
+          hash = noctaliaHash;
+        };
+
         patches = (old.patches or [ ]) ++ [
           ./noctalia-lock-transition.patch
           ./noctalia-user-media.patch

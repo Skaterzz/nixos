@@ -328,6 +328,29 @@
     '';
   };
 
+  options.local.niri.screenshotFreeze = lib.mkOption {
+    type = lib.types.bool;
+    default = true;
+    description = ''
+      Whether region capture freezes the screen while the selection is drawn,
+      the way Spectacle and Flameshot do.
+
+      With it on, the `screenshot` helper puts wayfreeze up first — a still
+      copy of every output, painted back over the session as an overlay layer
+      surface — and slurp selects on top of that. What you framed is then what
+      grim captures, because nothing underneath it can move in between: a
+      video keeps the frame you picked, an animation stops mid-flight, and a
+      menu that would close the moment it lost focus is still open.
+
+      Off, slurp selects over the live screen, which is what this did before.
+      That is the setting to fall back to if a niri or wayfreeze update breaks
+      the stacking the freeze depends on — slurp has to map after the freeze
+      to be above it, and a slurp underneath it would send the first click to
+      the wrong surface. `screenshot last` re-shoots without a selection and
+      so never freezes either way.
+    '';
+  };
+
   # OpenRGB's options are not here. `local.openrgb.autostart`, `.profile` and
   # `.applyOnResume` are declared on the NixOS side (modules/nixos/options.nix)
   # and read from this side through `osConfig`, because the session isn't the

@@ -1527,7 +1527,7 @@ restart Spotify so the new launcher supplies the mount.
 | `Mod+1..5` | named workspaces |
 | `Mod+R` / `Mod+F` / `Mod+V` | preset widths, maximize, float |
 | `Mod+W` | tab the focused column — its windows stack, one shown at a time |
-| `Print` / `Mod+Shift+S` | region screenshot, annotated in satty |
+| `Print` / `Mod+Shift+S` | region screenshot on a frozen screen, annotated in satty |
 | `Shift+Print` / `Mod+Ctrl+S` | same region as last time, no selection step |
 | `Ctrl+Print` / `Alt+Print` | screen / window (niri's built-ins) |
 | `Mod+L` / `Mod+Shift+Escape` | lock, session menu |
@@ -2212,11 +2212,40 @@ does booting the previous generation.
 
 ### Screenshots
 
-Region capture goes `slurp` → `grim` → `satty`, so you land in an annotation
-editor (arrows, boxes, blur, text) and it copies to the clipboard on save.
-Plain screen and window capture use niri's built-in `screenshot-screen` and
-`screenshot-window` actions instead — the compositor already knows the exact
-geometry, so there's nothing for a script to compute wrong.
+Region capture goes `wayfreeze` → `slurp` → `grim` → `satty`: the screen
+freezes, you drag the region over the still frame, and you land in an
+annotation editor (arrows, boxes, blur, text) that copies to the clipboard on
+save. Plain screen and window capture use niri's built-in `screenshot-screen`
+and `screenshot-window` actions instead — the compositor already knows the
+exact geometry, so there's nothing for a script to compute wrong.
+
+**The freeze is what Spectacle and Flameshot do**, and it is there because
+selecting and capturing are two different moments. Everything a region is
+usually drawn around has moved on by the time `grim` runs a second or two
+later: the video is three frames further in, the animation has finished, the
+menu closed when it lost focus. `wayfreeze` screencopies every output and
+paints the copies back as overlay layer surfaces, `slurp` selects on top of
+that, and `grim` captures the still — so the frame you framed is the frame you
+get. Set `local.niri.screenshotFreeze = false` to go back to selecting over the
+live screen.
+
+Two flags on it are worth knowing about. `--hide-cursor` keeps the pointer out
+of the still frame, which otherwise gets the frozen cursor painted in and the
+live one drawn over the top, and a capture across that spot shows two.
+`--enable-keyboard` reads backwards and isn't: it means *let the keyboard
+through to other surfaces*, and without it `wayfreeze` claims exclusive
+keyboard focus for itself. niri hands exclusive focus to the lowest layer
+surface that asks for it — the freeze, which mapped first, not `slurp` — so
+`Escape` would dismiss the freeze and leave you selecting over a live screen
+instead of cancelling the screenshot.
+
+The order the two map in is the load-bearing part: niri stacks layer surfaces
+in the order they map and gives the click to the top one, so `slurp` has to
+come second or the drag lands on the freeze. `wayfreeze --after-freeze-cmd`
+runs only once every output's surface is configured, so the script waits on
+that signal (bounded to a second and a half, and abandoned early if `wayfreeze`
+dies) rather than guessing with a `sleep`. A freeze that never arrives costs a
+selection over the live screen and nothing else.
 
 **`Shift+Print` (or `Mod+Ctrl+S`) re-shoots the last region** with no selection
 step. Every region capture writes its geometry to
@@ -2229,6 +2258,10 @@ It falls back to a normal selection if there's no remembered region yet, or if
 the region no longer captures — a monitor unplugged or the layout rearranged
 under it. The geometry is only remembered once `grim` has accepted it, so a
 region that can't be captured never becomes the one it comes back to.
+
+Nothing freezes in that mode: there is no selection to draw over, and `grim`
+fires the instant the key does. The fallback selection gets the freeze like any
+other.
 
 Note that this is a separate keybind rather than "reopen slurp with last time's
 box ready to adjust", because slurp can't pre-fill a selection. Its `-r` reads

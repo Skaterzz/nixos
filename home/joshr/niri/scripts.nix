@@ -647,8 +647,8 @@ wallpaperMenu = pkgs.writeShellApplication {
   # state it holds, and a screenshot region isn't part of a theme.
   screenshotStateDir = "${config.home.homeDirectory}/.local/state/niri-screenshot";
 
-  # Annotated region capture: slurp selects, grim captures, satty annotates
-  # and writes the result.
+  # Annotated region capture: the screen freezes, slurp selects, grim captures,
+  # satty annotates and writes the result.
   #
   # Plain screen and window captures are bound straight to niri's built-in
   # `screenshot-screen` / `screenshot-window` actions instead — the compositor
@@ -673,16 +673,26 @@ wallpaperMenu = pkgs.writeShellApplication {
   # The saved geometry is grim's own `X,Y WxH`, straight from slurp and passed
   # back to grim unparsed. Nothing here needs to understand it, so nothing here
   # can misparse it.
+  #
+  # The freeze in front of the selection is wayfreeze, and it is there because
+  # selecting and capturing are two different moments: everything the region is
+  # usually drawn around — a video, an animation, a menu that closes when it
+  # loses focus, a tooltip — has had time to move on by the time grim runs.
+  # Freezing first makes the frame you selected the frame you get.
+  # `local.niri.screenshotFreeze` turns it off; `last` never needs it, having no
+  # selection to draw.
   screenshot = pkgs.writeShellApplication {
     name = "screenshot";
-    runtimeInputs = with pkgs; [
-      grim
-      slurp
-      satty
-      wl-clipboard
-      libnotify
-      coreutils
-    ];
+    runtimeInputs =
+      (with pkgs; [
+        grim
+        slurp
+        satty
+        wl-clipboard
+        libnotify
+        coreutils
+      ])
+      ++ lib.optional config.local.niri.screenshotFreeze pkgs.wayfreeze;
     text = ''
       mkdir -p "${screenshotDir}" "${screenshotStateDir}"
       region="${screenshotStateDir}/region"
@@ -716,9 +726,60 @@ wallpaperMenu = pkgs.writeShellApplication {
       fi
 
       if [ -z "$geom" ]; then
+        ${lib.optionalString config.local.niri.screenshotFreeze ''
+          # Hold the screen still for the length of the selection. wayfreeze
+          # screencopies every output and paints the copies straight back as
+          # overlay layer surfaces, so slurp draws its box over a still frame
+          # and the grim below captures that same frame rather than whatever
+          # the screen has moved on to.
+          #
+          # --hide-cursor keeps the pointer out of the copy. Left in, it would
+          # be painted into the still frame with the live pointer drawn over
+          # the top of it, and a capture across that spot would show two.
+          #
+          # --enable-keyboard reads backwards and isn't: it means "let the
+          # keyboard through to other surfaces", and without it wayfreeze asks
+          # for exclusive keyboard focus itself. niri gives exclusive focus to
+          # the *lowest* layer surface asking for it, which is the freeze and
+          # not slurp, so Escape would dismiss the freeze and leave slurp
+          # selecting over a live screen. With it, slurp keeps the keyboard and
+          # Escape cancels the screenshot, which is what Escape should do.
+          frozen="$shot.frozen"
+          wayfreeze --hide-cursor --enable-keyboard \
+            --after-freeze-cmd "touch '$frozen'" &
+          freezer=$!
+
+          # Replaces the trap set above, and has to: from here a still frame is
+          # covering the session, and every way out of this script — cancelled
+          # selection included — has to take it back down.
+          trap 'rm -f "$shot" "$frozen"; kill "$freezer" 2>/dev/null || true' EXIT
+
+          # slurp has to map *after* the freeze. niri stacks layer surfaces in
+          # the order they map and sends the click to the top one, so a slurp
+          # that got there first would sit under the still frame and the drag
+          # would go to wayfreeze instead. --after-freeze-cmd runs once every
+          # output's surface is configured, so that touch is the signal that
+          # it's safe to go; a fixed sleep would be a guess at how long
+          # screencopying however many displays takes.
+          #
+          # Bounded, and abandoned early if wayfreeze is gone, because a freeze
+          # that never arrives should cost a selection over the live screen and
+          # nothing more.
+          waited=0
+          while [ ! -e "$frozen" ] && [ "$waited" -lt 60 ] && kill -0 "$freezer" 2>/dev/null; do
+            sleep 0.025
+            waited=$((waited + 1))
+          done
+        ''}
         # Cancelled selection exits non-zero; that's not an error.
         geom="$(slurp -d -b '#0a0e0acc' -c '#39ff14' -s '#39ff1420' -w 2)" || exit 0
         grim -g "$geom" "$shot"
+        ${lib.optionalString config.local.niri.screenshotFreeze ''
+          # The pixels are in hand, so put the live screen back before satty
+          # opens — the editor belongs over the session, not over a photograph
+          # of it, and satty is where the time goes.
+          kill "$freezer" 2>/dev/null || true
+        ''}
 
         # Only after grim accepts it, so a region that can't be captured is
         # never the one `last` comes back to.

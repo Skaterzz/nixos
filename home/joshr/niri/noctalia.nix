@@ -730,6 +730,24 @@ let
       # same authority is the failure this avoids.
       polkit_agent = false;
 
+      # How a typed password is masked, in every noctalia password field —
+      # which on this session means the lock screen's login box and nothing
+      # else, since the polkit agent above is off.
+      #
+      # `"default"` draws one filled circle per character. `"random"` cycles a
+      # seven-glyph set — circle, pentagon, star, rounded square, guitar pick,
+      # blob, triangle — indexed by the character's position, so the row of
+      # shapes is fixed for a given length rather than reshuffled per
+      # keystroke. That is the point of it over uniform dots: a varied row
+      # gives the eye something to count against, so a typo is visible as a
+      # wrong-length pattern from further away than a run of identical dots
+      # is, without any of the characters becoming recoverable.
+      #
+      # Upstream key, present on both sides of `noctaliaSourcePatches` — the
+      # gating that ./noctalia-clock-shadow-offset.patch's `shadow_offset`
+      # needs does not apply here.
+      password_style = "random";
+
       # Clipboard history, replacing cliphist. 300 entries is the cap the
       # cliphist unit carried, chosen there because images are stored too and
       # an entry can cost a screenshot's worth of disk rather than a line's.

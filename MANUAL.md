@@ -1849,16 +1849,51 @@ home-manager built, and it cannot find one by name either — gamemoded's own
 written as an absolute store path.
 
 A *unit name* crosses that gap where a path cannot. gamemoded runs under the
-user's own systemd manager (it is D-Bus activated on the session bus, which is
-also why the existing hooks can call `notify-send`), so `systemctl --user` is
-always reachable from a hook. `home/joshr/niri/gamemode.nix` declares
-`niri-gamemode-start.service` and `niri-gamemode-stop.service`; the hooks start
-them with `--no-block` and `|| true`. On a Plasma login, on root, on any
-account without the niri profile, the unit simply does not exist and the `||
-true` swallows it — nothing has to ask which session is running.
+user's own systemd manager — `systemd.user.services.gamemoded` in nixpkgs'
+`programs.gamemode` module, D-Bus activated on the session bus, which is also
+why the hooks can call `notify-send` — so `systemctl --user` is always
+reachable from a hook. `home/joshr/niri/gamemode.nix` declares
+`niri-gamemode-start.service` and `niri-gamemode-stop.service`; the hooks ask
+whether the unit exists and, if it does, start it with `--no-block`. On a
+Plasma login, on root, on any account without the niri profile, it simply does
+not exist and nothing happens — no session has to be identified. A unit that
+*does* exist and fails gets a line in `journalctl --user -u gamemoded`.
 
 **The two unit names are written in two files and nothing checks that they
 agree**, the same standing arrangement as `SIGRTMIN+9` next door.
+
+#### Why both hooks are single store paths
+
+This bit is a trap, and it caught this repo once. **gamemoded will not accept a
+`custom.start` or `custom.end` longer than 255 bytes, and it drops the whole
+value rather than truncating it.** `append_value_to_list` in
+`daemon/gamemode-config.c` copies into a `CONFIG_VALUE_MAX` buffer, notices the
+result came out unterminated, logs
+
+```
+Config: Could not add [...] to [start], exceeds length limit of 256
+```
+
+and blanks the entry. The hook does not run in a reduced form — it does not run
+at all, and the only evidence is that line in gamemoded's journal.
+
+255 bytes is not much for a config written in Nix, where every command is an
+absolute store path costing seventy-odd bytes before its arguments. The hooks
+here were a pair of shell one-liners at about 200 bytes; adding the
+`systemctl --user` hand-off took them to about 335, and both silently stopped
+running — no session GameMode, no bar poke, and no "GameMode started"
+notification either.
+
+So each hook is now exactly one store path — `gamemode-start-hook` and
+`gamemode-end-hook`, both `writeShellApplication`s — which is about 87 bytes
+whatever the script grows into. `hookScript` in `gaming.nix` asserts the length
+anyway, so the next thing appended there fails the build with the reason
+instead of disappearing.
+
+`gamemoderun` still runs each value through `/bin/sh -c`, so a shell line would
+work; and a bare store path works with no `PATH` to find it on because nixpkgs'
+module `mkForce`s gamemoded's `PATH` to a link farm holding `pkexec` and
+nothing else.
 
 #### What it deliberately does not touch
 

@@ -1,4 +1,4 @@
-{ config, lib, pkgs, osConfig ? { }, niriTheming, niriScripts, niriClipboard, niriEmoji, ... }:
+{ config, lib, pkgs, osConfig ? { }, niriTheming, niriScripts, niriClipboard, niriEmoji, niriGamemode, ... }:
 
 # niri's own config. There is no home-manager module for niri, so this is
 # written out as a KDL file.
@@ -192,6 +192,31 @@ let
   # ring and border colours from the same palette, and one writer is the rule
   # everywhere else in this migration.
   themeInclude = lib.optionalString (!useNoctalia) ''include "${activeDir}/niri.kdl"'';
+
+  # The session's GameMode, as an override file that only exists while it is on.
+  #
+  # **Deliberately the last line of config.kdl**, where every other include is
+  # at the top. niri merges duplicate sections property by property in document
+  # order with the later definition winning, so this is the one include whose
+  # whole job is to *replace* something the file already said — `animations`
+  # here, and `blur`, which nothing above sets at all. Moving it up would leave
+  # `animations { slowdown 0.7 }` below it winning again, and GameMode would
+  # animate exactly as before with no error anywhere to say why.
+  #
+  # `optional=true` for the reason the noctalia includes above carry it: niri
+  # treats a missing include as a hard parse error unless the node says
+  # otherwise, and this file is absent nearly always — which is the ordinary
+  # state, not an edge case.
+  #
+  # Unconditional, unlike those two, because GameMode is not a property of
+  # which shell is running: the `animations` and `blur` it turns off are the
+  # compositor's own, and the key works under either.
+  #
+  # niri notices it arrive and notices it go without being asked. The watcher
+  # stats every include path as well as config.kdl twice a second, and records
+  # a missing one as absent rather than skipping it, so both transitions are
+  # changes it reloads on. See ./gamemode.nix.
+  gamemodeInclude = ''include "gamemode.kdl" optional=true'';
 
   # Window borders, and why they only need saying under noctalia.
   #
@@ -640,6 +665,20 @@ ${workspaceBlocks}
         Mod+P      hotkey-overlay-title="Next power profile" { spawn "${bin niriScripts.powerProfile}" "next"; }
         Mod+Ctrl+P hotkey-overlay-title="Previous power profile" { spawn "${bin niriScripts.powerProfile}" "prev"; }
 
+        // The session's GameMode: animations, blur, transparency and the
+        // shell's system sampling off, for as long as it's on. Next to the
+        // power profile because it is the same kind of key — a mode you put
+        // the machine into, not a thing you do to a window.
+        //
+        // Toggling here and gamemoderun turning it on are the same mode and
+        // the same state file, but not the same owner: a game quitting only
+        // turns off what the game turned on, so a mode set with this key
+        // survives a session of playing. See ./gamemode.nix.
+        //
+        // The bar says which is which — the GameMode pad is lit whenever the
+        // mode is on, and its tooltip names what put it there.
+        Mod+G hotkey-overlay-title="GameMode (toggle)" { spawn "${bin niriGamemode.niriGamemode}" "toggle"; }
+
         // --- window management -----------------------------------------
         Mod+Q repeat=false { close-window; }
         Alt+F4 repeat=false { close-window; }
@@ -758,6 +797,10 @@ ${workspaceBlocks}
 
         Mod+Shift+P { power-off-monitors; }
     }
+
+    // GameMode, last of all. See the comment on `gamemodeInclude` above for
+    // why this is at the bottom of the file rather than with the other three.
+    ${gamemodeInclude}
   '';
 
   # OpenRGB's own "Start At Login", switched back off.

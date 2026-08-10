@@ -3,6 +3,7 @@
   lib,
   pkgs,
   niriScripts,
+  niriGamemode,
   ...
 }:
 
@@ -152,10 +153,17 @@ let
   # The one bar slot that has no noctalia widget behind it, as a local Luau
   # plugin in ./noctalia-plugins/gamemode-indicator. Its two files are built
   # rather than copied verbatim for the reason every `command` in this file is
-  # an absolute store path: the widget shells out to `gamemode-status`, and the
+  # an absolute store path: the widget shells out to `niri-gamemode`, and the
   # shell runs as a systemd user service, whose PATH is the user manager's
   # rather than the one a login shell assembles from the profile. Substituting
   # the script in makes "is it on PATH" not a question this depends on.
+  #
+  # **It is the indicator for the whole mode**, not only for the daemon.
+  # `niri-gamemode status` answers in one word — `game`, `manual`, `daemon` or
+  # `off` — so the pad is lit by a Mod+G with nothing running exactly as it is
+  # by a game, and the tooltip is what says which. Before ./gamemode.nix
+  # existed this polled `gamemode-status` and could only ever mean "a game
+  # holds gamemode".
   #
   # Installing it is only half of it — see `plugins.enabled` in the settings
   # below, without which the registry finds this and skips it.
@@ -167,7 +175,7 @@ let
     mkdir -p "$out"
     cp ${./noctalia-plugins/gamemode-indicator/plugin.toml} "$out/plugin.toml"
     substitute ${./noctalia-plugins/gamemode-indicator/widget.luau} "$out/widget.luau" \
-      --replace-fail '@gamemodeStatus@' ${lib.getExe niriScripts.gamemodeStatus}
+      --replace-fail '@niriGamemode@' ${lib.getExe niriGamemode.niriGamemode}
   '';
 
   # --- hooks ------------------------------------------------------------
@@ -1518,7 +1526,13 @@ let
     };
 
     # Sampling for the control centre's system tab. Nothing here is on the
-    # bar, so the cost is only paid while the panel is open.
+    # bar, so the cost is only paid while the panel is open — except that it
+    # isn't: `enabled` starts a sampling thread that reads /proc every two
+    # seconds and dlopen's libnvidia-ml to ask the card for its temperature and
+    # VRAM every five, whether or not anything is displaying the answer. That
+    # is a second NVML client on the card while a game is on it, which is why
+    # ./gamemode.nix turns this off for the duration rather than leaving it to
+    # the panel being closed.
     system.monitor.enabled = true;
   };
 
@@ -1928,7 +1942,15 @@ in
 
     # GameMode is represented by the local plugin above, installed *and*
     # enabled. The old waybar signal hooks remain harmless; the plugin polls
-    # `gamemode-status`, which refuses to ask a daemon that is not already
-    # running and so never starts gamemoded itself.
+    # `niri-gamemode status`, which reads a state file and only asks gamemoded
+    # anything once it has established the daemon is already running — so the
+    # poll never starts the D-Bus-activated daemon itself.
+    #
+    # What the mode *does* to this config while it is on is a second TOML file
+    # dropped beside the generated one — ~/.config/noctalia/gamemode.toml, which
+    # sorts after config.toml and therefore wins the merge. See ./gamemode.nix
+    # for the whole arrangement; the keys it overrides are `shell.animation`,
+    # the bar/panel/notification/OSD opacities, `panel.transparency_mode`, both
+    # shadows, and the `system.monitor` block in `settings` above.
   };
 }

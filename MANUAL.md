@@ -21,6 +21,7 @@ the machine.
   - [Clipboard history](#clipboard-history)
   - [Emoji picker](#emoji-picker)
   - [Staying awake](#staying-awake)
+  - [GameMode](#gamemode)
   - [No automatic sleep on mains power](#no-automatic-sleep-on-mains-power)
   - [The lid](#the-lid)
   - [Coming back from suspend](#coming-back-from-suspend)
@@ -61,6 +62,7 @@ the machine.
   - [VS Code](#vs-code)
 - [Gaming performance](#gaming-performance)
   - [`gaming-doctor`](#gaming-doctor)
+  - [The desktop is also drawing](#the-desktop-is-also-drawing)
   - [The shader cache, and the sawtooth](#the-shader-cache-and-the-sawtooth)
   - [The card is also the model server](#the-card-is-also-the-model-server)
   - [Launch options](#launch-options)
@@ -146,7 +148,7 @@ modules/nixos/
                                   #   and the suspend/resume video-memory handling
   nvidia-server.nix               # the same card with no monitor on it: persistence,
                                   #   the container toolkit, the nvidia-patch overlay
-  gaming.nix                      # Steam, MangoHud
+  gaming.nix                      # Steam, gamemode + its hooks, gaming-doctor
   disk-managements.nix            # gparted, KDE Partition Manager, GNOME Disks
   filesystems-management.nix      # btrfs-progs, exfatprogs, dosfstools, e2fsprogs
   openrgb.nix                     # OpenRGB daemon + re-applying the profile on resume
@@ -187,6 +189,7 @@ home/joshr/
     themes.nix theming.nix         #   the palettes, and every generated config
     niri.nix waybar.nix            #   compositor config and the bar
     scripts.nix notifications.nix  #   theme/wallpaper/lock/screenshot helpers
+    gamemode.nix                   #   the Mod+G / gamemoderun performance mode
     clipboard.nix                  #   clipboard history
     emoji.nix                      #   the Mod+. emoji picker
     vscode.nix lock.nix            #   editor theming, idle handling
@@ -244,6 +247,8 @@ home/joshr/niri/
   osd.nix                     # swayosd: the volume/brightness pop-up
   lock.nix                    # swayidle timers
   scripts.nix                 # theme/wallpaper/screenshot/session helpers
+  gamemode.nix                # GameMode: the two config overlays, the state,
+                              #   the bar's status command, the gamemoderun units
 ```
 
 ### The shell: waybar or noctalia
@@ -528,19 +533,36 @@ output as a string, so trimming the argument itself compares a table to
 `"active"` and the pad stays hidden however many games are running. And the
 command has to be an absolute path: the shell runs as a systemd user service,
 whose `PATH` is the user manager's rather than the one a login shell builds
-from the profile, so `gamemode-status` is substituted into `widget.luau` at
+from the profile, so `niri-gamemode` is substituted into `widget.luau` at
 build time as a store path, the same way every `command` in that file is
-written.
+written. (`runAsync` runs what it is given through `/bin/sh -c`, which is why
+that path can carry a `status` argument after it.)
 
 What the widget does is what waybar's module did, minus the signal. It polls
-`gamemode-status` every two seconds and calls `barWidget.setVisible` with the
-answer — `setVisible` is a render patch rather than a lifecycle switch, so a
-hidden widget keeps ticking and can come back. The 30-second `interval` plus
+`niri-gamemode status` every two seconds and calls `barWidget.setVisible` with
+the answer — `setVisible` is a render patch rather than a lifecycle switch, so
+a hidden widget keeps ticking and can come back. The 30-second `interval` plus
 `SIGRTMIN+9` arrangement described under [The bar](#the-bar) has no equivalent
 here: there is nothing to signal, so the poll is the whole mechanism and it
 runs often enough that the pad appears about as promptly as the hook made it.
 The hooks in `modules/nixos/gaming.nix` still fire and still find no waybar to
 poke, exiting into their `|| true`.
+
+That command answers in one word, and the word is what the tooltip says:
+
+| answer | the pad | the tooltip |
+|---|---|---|
+| `game` | lit | GameMode is on, and a game put it there |
+| `manual` | lit | GameMode is on because `Mod+G` said so |
+| `daemon` | lit | a game holds gamemode, but the session is **not** stripped back |
+| `off` | hidden | — |
+
+`daemon` is the state that would otherwise be a lie. It happens when `Mod+G`
+is pressed mid-game — the session effects come back, the game keeps gamemode —
+and it is also what a failed hand-off from the system hook looks like. Folding
+it into `game` would have the tooltip claim the session was stripped back when
+it was not, and dropping it would hide a running game from the bar altogether.
+See [GameMode](#gamemode).
 
 Three things are new, with no waybar equivalent: a notification history, a
 clipboard panel, and a control centre. That last is where wifi, bluetooth,
@@ -1045,23 +1067,29 @@ device to draw a pop-up, where this is the session's own bar reading the
 keyboard the session is already using.
 
 **GameMode** sits immediately to its right and disappears the same way — a
-controller glyph in the accent colour while a game holds gamemode, and no slot
-at all the rest of the time. The accent rather than caps lock's warn colour
-because the two are neighbours that can be lit at once, and because gamemode
-being on is something you asked for rather than something to warn you about.
+controller glyph in the accent colour while GameMode is on, and no slot at all
+the rest of the time. The accent rather than caps lock's warn colour because
+the two are neighbours that can be lit at once, and because gamemode being on
+is something you asked for rather than something to warn you about.
+
+It lights for the [session's GameMode](#gamemode) as well as for a game
+holding gamemode, so `Mod+G` with nothing running shows the pad exactly as a
+game does. That is deliberate: the pad is the only thing on screen that says
+the mode is on, and a mode that survives a relogin needs one.
 
 It's polled, not watched: gamemode has somewhere to *ask* — a D-Bus daemon
 with a status call — but nothing a shell can subscribe to. So the module works
 the way the idle inhibitor does, a 30-second `interval` as the backstop and a
 `signal` for the answer that matters. The gamemode start and end hooks in
-`modules/nixos/gaming.nix` already fire a notification; they now also send
-waybar `SIGRTMIN+9`, so the glyph appears as the game takes gamemode instead
-of up to half a minute later. **The signal number is written in two places**
-— that hook and the module in `waybar.nix` — and nothing checks that they
-still agree.
+`modules/nixos/gaming.nix` already fire a notification; they also send waybar
+`SIGRTMIN+9`, as does `niri-gamemode` itself, so the glyph appears as the mode
+is entered instead of up to half a minute later. **The signal number is
+written in three places** — that hook, `gamemode.nix` and the module in
+`waybar.nix` — and nothing checks that they still agree.
 
-The script (`gamemodeStatus` in `scripts.nix`) checks that `gamemoded` is
-running before asking it anything. gamemoded is D-Bus activated, so a bare
+The script (`gamemodeStatus` in `gamemode.nix`) checks the session mode's
+state file first and only then asks the daemon — and before asking, checks
+that `gamemoded` is running at all. gamemoded is D-Bus activated, so a bare
 `gamemoded --status` on a timer would keep starting the very daemon it's
 reporting on. It matches `is active` and not `active`, for the reason you'd
 expect from "inactive".
@@ -1557,6 +1585,7 @@ restart Spotify so the new launcher supplies the mount.
 | `Mod+Shift+L` | lock **and** blank the monitors, in one key |
 | `Mod+Escape` | blank the monitors — works on the lock screen too |
 | `Mod+Shift+I` | stay awake — toggle the idle inhibitor |
+| `Mod+G` | GameMode — animations, blur, transparency and monitoring off |
 | `Mod+Ctrl+T` | pick a theme |
 | `Mod+Ctrl+W` | pick a wallpaper |
 | volume / brightness keys | change it and show an OSD — see "The on-screen display" |
@@ -1724,6 +1753,121 @@ and applies to everyone — but another logged-in user's timers keep running in
 their own session, where they can lock that session and nothing more. See
 [Idle actions stop at the session
 boundary](#idle-actions-stop-at-the-session-boundary).
+
+### GameMode
+
+`Mod+G` strips the desktop back: no animations, no blur, no transparency, no
+shadows, and the shell stops sampling the machine. It stays on until it is
+turned off, and the bar's controller pad is lit the whole time it is.
+
+`gamemoderun` puts the session into it at the start of a game and takes it
+back out at the end, so most of the time the key is not the way in. It is
+there for everything else you might want the frames for — a recording, a
+stream, a compile, a game that doesn't go through gamemode at all.
+
+`programs.gamemode` already does the *system* half of this — governor,
+scheduler, the card's power profile, and taking video memory back off the
+model server (see ["The card is also the model
+server"](#the-card-is-also-the-model-server)). None of that touches the
+desktop, and the desktop on this session is not free:
+
+- **niri blurs the bar.** It implements `ext-background-effect-v1`, noctalia
+  asks for a blur region covering the whole bar, and the answer is a
+  three-pass dual-Kawase blur run whenever that region is redrawn. It is asked
+  for unconditionally, so making the bar opaque does not stop it — only
+  turning blur off does.
+- **noctalia animates everything it draws**, through one motion service:
+  widgets, panels, OSDs, toasts.
+- **Both composite translucent surfaces.** A translucent surface has to be
+  blended against what is behind it rather than written over it.
+- **noctalia samples the machine on a timer** whether or not anything is
+  displaying the numbers. `[system.monitor]` reads `/proc` every two seconds
+  and `dlopen`s `libnvidia-ml` to ask the card for its temperature and VRAM
+  every five — a second NVML client on the card the game is using.
+
+So GameMode turns off exactly those: `animations` and `blur` in niri;
+`shell.animation`, the bar/panel/notification/OSD opacities,
+`shell.panel.transparency_mode`, both shadows and `system.monitor` in noctalia.
+
+#### How it changes two read-only config files
+
+Both config files are symlinks into the store, so nothing can edit them.
+Both readers merge more than one file, and both notice a new one arriving —
+that is the whole mechanism. Turning GameMode on writes two files; turning it
+off deletes them.
+
+| | file | why it wins |
+|---|---|---|
+| niri | `~/.config/niri/gamemode.kdl` | `include`d as the **last line** of `config.kdl`; niri merges duplicate sections in document order and the later definition wins |
+| noctalia | `~/.config/noctalia/gamemode.toml` | every `*.toml` directly in the config directory is deep-merged in sorted filename order, and `gamemode` sorts after `config` |
+
+The include line being last is load-bearing, and silent if it is wrong. Move
+it up alongside the theme includes at the top of `config.kdl` and the
+`animations { slowdown 0.7 }` further down wins again — GameMode would animate
+exactly as before, with nothing anywhere to say why.
+
+Both readers pick the change up themselves, but not symmetrically. niri's
+watcher polls the *include* paths as well as `config.kdl` every 500 ms and
+records a missing one as absent, so the file appearing and the file being
+deleted are both changes it reloads on. noctalia's inotify mask is
+`IN_MODIFY | IN_CLOSE_WRITE | IN_CREATE | IN_MOVED_TO` — **no `IN_DELETE`** —
+so it hears the overlay arrive and never hears it leave. `noctalia msg
+config-reload` closes that gap, and is sent in both directions so there is one
+code path rather than two.
+
+#### Who turned it on, and what turns it off
+
+The state is `~/.local/state/niri-gamemode/owner`, and the word in it is why
+the file exists rather than just the two overlays:
+
+- **`Mod+G` always toggles**, and takes ownership. It has to visibly work
+  even mid-game.
+- **A game starting** engages the mode if nothing already has, and leaves an
+  existing owner alone — so it does not quietly downgrade a manual hold.
+- **A game ending** disengages only if the owner is the game.
+
+Which means: turn it on by hand, play something, quit — and it is still on,
+because you turned it on. Play something with GameMode off and quit, and it
+goes away with the game.
+
+It is deliberately not runtime state, so the mode survives a relogin. The cost
+is that a machine which hard-locked mid-game comes back still in GameMode;
+what makes that survivable is that the bar says so, and `Mod+G` clears it.
+
+`niri-gamemode` is on `PATH` for the times the key isn't to hand:
+
+```
+niri-gamemode status     # game | manual | daemon | off
+niri-gamemode off
+```
+
+#### How gamemoderun reaches a home-manager script
+
+`modules/nixos/gaming.nix` is a NixOS module, so it cannot name a store path
+home-manager built, and it cannot find one by name either — gamemoded's own
+`PATH` is nearly empty, which is why every other command in those hooks is
+written as an absolute store path.
+
+A *unit name* crosses that gap where a path cannot. gamemoded runs under the
+user's own systemd manager (it is D-Bus activated on the session bus, which is
+also why the existing hooks can call `notify-send`), so `systemctl --user` is
+always reachable from a hook. `home/joshr/niri/gamemode.nix` declares
+`niri-gamemode-start.service` and `niri-gamemode-stop.service`; the hooks start
+them with `--no-block` and `|| true`. On a Plasma login, on root, on any
+account without the niri profile, the unit simply does not exist and the `||
+true` swallows it — nothing has to ask which session is running.
+
+**The two unit names are written in two files and nothing checks that they
+agree**, the same standing arrangement as `SIGRTMIN+9` next door.
+
+#### What it deliberately does not touch
+
+The bar's audio visualiser, which is the most animated thing in the session.
+Widget lanes are TOML arrays and a deep merge replaces an array wholesale, so
+dropping one entry means restating the whole `bar.main.end` list — and that
+second copy would drift from the one in `noctalia.nix`, which should be the
+only file describing the bar. `local.waybar.cavaInBar` is the switch for it,
+and it is off on the hosts that play games.
 
 ### No automatic sleep on mains power
 
@@ -3890,6 +4034,25 @@ it is the finding with an action attached, and this is a command as likely to
 be bound to a key and hit mid-game — where the terminal is behind a fullscreen
 window — as it is to be typed at a prompt. Nothing is raised on a clean report,
 and a run over ssh with no session bus behind it just prints, as before.
+
+### The desktop is also drawing
+
+Everything else in this section is about the machine. This one is about the
+session sitting on top of it, which on the niri hosts is not free: niri runs a
+three-pass blur behind the bar every time that region is redrawn, noctalia
+animates every widget and panel it owns, both of them composite translucent
+surfaces, and noctalia's system monitor holds an NVML handle open and asks the
+card for its temperature and VRAM every five seconds — while the game is on it.
+
+`Mod+G` turns all of that off, and `gamemoderun` does it for you at the start
+of a game and undoes it at the end. See [GameMode](#gamemode) for what
+changes, what turns it back off, and why the mode outlives a game you started
+it before.
+
+It is not a substitute for anything below. A blurred bar does not cause the
+sawtooth, and turning off animations will not un-evict video memory — this is
+a few percent of frame time and some GPU contention, where the next three
+sections are the difference between a game running and a game falling over.
 
 ### The shader cache, and the sawtooth
 

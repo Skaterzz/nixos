@@ -21,9 +21,22 @@
 # the game.
 #
 # So this is a second mode with the same name, sitting on the session side of
-# the line: animations off, blur off, transparency off, shadows off, sampling
-# stopped. It is reached three ways, and they are the same mode each time —
-# Mod+G, `niri-gamemode` from a terminal, and gamemoderun starting a game.
+# the line: animations off, blur off, transparency off, shadows off, both audio
+# visualizers off, sampling stopped. It is reached three ways, and they are the
+# same mode each time — Mod+G, `niri-gamemode` from a terminal, and gamemoderun
+# starting a game.
+#
+# Which file owns which half
+# --------------------------
+# This one owns the *mode*: the state, the transitions, the bar's status
+# command, the units gamemoderun starts, and the niri overlay — which is two
+# nodes and depends on nothing.
+#
+# ./noctalia.nix owns the noctalia overlay, because that overlay has to name
+# the bar lane and the lock screen's widgets and those lists are declared
+# there. It writes it to ~/.local/share/niri-gamemode/noctalia.toml and this
+# file only carries it the last step. See `noctaliaOverlaySource` below for why
+# a path rather than a module argument.
 #
 # How the two configs are changed without being rewritten
 # -------------------------------------------------------
@@ -47,7 +60,9 @@
 #
 # That is why this is two generated files that get placed and removed rather
 # than a script editing configuration in place: entering and leaving the mode
-# is `mv` and `rm`, and nothing is ever half-written.
+# is `mv` and `rm`, and nothing is ever half-written. It is also why neither
+# overlay may be installed where its reader will find it — a `*.toml` left in
+# ~/.config/noctalia is a GameMode that is always on.
 #
 # The one asymmetry is the removal. noctalia's inotify mask is
 # IN_MODIFY | IN_CLOSE_WRITE | IN_CREATE | IN_MOVED_TO — no IN_DELETE — so it
@@ -132,76 +147,21 @@ let
 
   # --- the noctalia overlay -----------------------------------------------
   #
-  # Only the keys that change, because a deep merge means the rest of
-  # config.toml is still there underneath. Grouped by what each one costs:
+  # Declared in ./noctalia.nix and picked up from a fixed path, not generated
+  # here. Two of the things it switches off — the bar's audio visualizer and
+  # the lock screen's — are entries in lists that file declares, and a second
+  # copy of those lists in this one would drift from them the first time the
+  # bar is reordered. So the overlay is derived from the real lists over there,
+  # written to ~/.local/share/niri-gamemode/noctalia.toml by home-manager, and
+  # this only carries it the last step into ~/.config/noctalia/gamemode.toml.
   #
-  #   shell.animation      every widget, panel, OSD and toast noctalia draws
-  #                        runs through one motion service; `enabled = false`
-  #                        makes it deliver the end state immediately instead
-  #                        of interpolating to it.
-  #   *.background_opacity a translucent surface is a surface the compositor
-  #                        has to blend against what is behind it rather than
-  #                        overwrite. Fully opaque is the cheap case, and on
-  #                        the bar it is also what makes the missing blur look
-  #                        deliberate rather than broken.
-  #   panel.transparency_mode
-  #                        the same thing one level in: "solid" stops the
-  #                        in-panel cards being drawn translucent over the
-  #                        panel they sit on.
-  #   *.shadow             a shadow here is a second copy of the surface's
-  #                        shape rendered with a large SDF softness — the bar's
-  #                        is redrawn with the bar.
-  #   system.monitor       the one that is not about drawing at all. Its
-  #                        sampling thread reads /proc every two seconds and
-  #                        dlopen's libnvidia-ml to ask the card for its
-  #                        temperature and VRAM every five, which is a
-  #                        second NVML client on the card the game is using.
-  #                        `enabled = false` joins that thread and releases the
-  #                        GPU readers rather than merely hiding the numbers.
-  #
-  # What is deliberately *not* here is the bar's audio visualiser, which is the
-  # single most animated thing in the session. Widget lanes are TOML arrays and
-  # a deep merge replaces an array wholesale, so dropping one entry means
-  # restating the whole `bar.main.end` list — and the copy that lives here
-  # would then drift from the one in ./noctalia.nix, which is the only file
-  # that should be describing the bar. `local.waybar.cavaInBar` is the switch
-  # for it, and it is off on the hosts that play games.
-  #
-  # The opacities are written `1` rather than `1.0` because that is what
-  # actually lands: `pkgs.formats.toml` goes through `builtins.toJSON`, which
-  # renders a whole-numbered Nix float as an integer, and json2toml has nothing
-  # left to tell it otherwise. noctalia reads every float field through
-  # `finiteDouble`, which takes a TOML int or float alike, so an integer is the
-  # honest spelling of what the file will contain rather than a mistake.
-  noctaliaOverlay = (pkgs.formats.toml { }).generate "noctalia-gamemode.toml" {
-    shell = {
-      animation.enabled = false;
-      panel = {
-        transparency_mode = "solid";
-        shadow = false;
-      };
-    };
-
-    bar.main = {
-      background_opacity = 1;
-      shadow = false;
-    };
-
-    notification.background_opacity = 1;
-    osd.background_opacity = 1;
-
-    system.monitor.enabled = false;
-  };
-
-  # Same build-time check ./noctalia.nix runs over config.toml, for the same
-  # reason: a key noctalia has renamed upstream should fail the build naming
-  # the line, not become an overlay that quietly stops applying. `validate`
-  # takes a single file and checks it against the schema, so a partial one is
-  # fine — that is exactly what this is.
-  validatedNoctaliaOverlay = pkgs.runCommand "noctalia-gamemode.toml" { } ''
-    ${noctalia} config validate ${noctaliaOverlay}
-    cp ${noctaliaOverlay} $out
-  '';
+  # A module argument would be the obvious way to hand it over and is the one
+  # thing that cannot work: ./noctalia.nix already consumes what this file
+  # publishes (`niriGamemode`, for the bar plugin's command), so an argument
+  # back the other way is a cycle. A path is not — and `dataHome` spelled the
+  # same way in two files is the sort of agreement this repository already
+  # makes for the theme state directories.
+  noctaliaOverlaySource = "${config.xdg.dataHome}/niri-gamemode/noctalia.toml";
 
   # --- the mode itself ----------------------------------------------------
   #
@@ -257,9 +217,17 @@ let
       engage() {
         mkdir -p ${lib.escapeShellArg stateDir}
         place ${niriOverlay} ${lib.escapeShellArg niriOverlayPath}
-        ${lib.optionalString useNoctalia
-          "place ${validatedNoctaliaOverlay} ${lib.escapeShellArg noctaliaOverlayPath}"
-        }
+        ${lib.optionalString useNoctalia ''
+          # Guarded because the source is a home-manager symlink rather than a
+          # store path baked in here: an activation that has not run yet, or a
+          # profile that has dropped ./noctalia.nix, should cost the compositor
+          # half of the mode rather than the whole of it.
+          if [ -r ${lib.escapeShellArg noctaliaOverlaySource} ]; then
+            place ${lib.escapeShellArg noctaliaOverlaySource} ${lib.escapeShellArg noctaliaOverlayPath}
+          else
+            echo "niri-gamemode: ${noctaliaOverlaySource} is missing; the shell keeps its effects" >&2
+          fi
+        ''}
 
         # The state file last: it is what everything else reads as "the mode is
         # on", so it should not be true before the overlays it describes are in

@@ -1780,6 +1780,9 @@ desktop, and the desktop on this session is not free:
   widgets, panels, OSDs, toasts.
 - **Both composite translucent surfaces.** A translucent surface has to be
   blended against what is behind it rather than written over it.
+- **The audio visualisers repaint from a live stream.** The bar's and the lock
+  screen's both read a PipeWire spectrum and redraw every frame while anything
+  is playing — and the lock screen's covers a whole output.
 - **noctalia samples the machine on a timer** whether or not anything is
   displaying the numbers. `[system.monitor]` reads `/proc` every two seconds
   and `dlopen`s `libnvidia-ml` to ask the card for its temperature and VRAM
@@ -1787,7 +1790,8 @@ desktop, and the desktop on this session is not free:
 
 So GameMode turns off exactly those: `animations` and `blur` in niri;
 `shell.animation`, the bar/panel/notification/OSD opacities,
-`shell.panel.transparency_mode`, both shadows and `system.monitor` in noctalia.
+`shell.panel.transparency_mode`, both shadows, both audio visualisers and
+`system.monitor` in noctalia.
 
 #### How it changes two read-only config files
 
@@ -1895,14 +1899,43 @@ work; and a bare store path works with no `PATH` to find it on because nixpkgs'
 module `mkForce`s gamemoded's `PATH` to a link farm holding `pkexec` and
 nothing else.
 
-#### What it deliberately does not touch
+#### The two audio visualisers, and where the overlay is written
 
-The bar's audio visualiser, which is the most animated thing in the session.
-Widget lanes are TOML arrays and a deep merge replaces an array wholesale, so
-dropping one entry means restating the whole `bar.main.end` list — and that
-second copy would drift from the one in `noctalia.nix`, which should be the
-only file describing the bar. `local.waybar.cavaInBar` is the switch for it,
-and it is off on the hosts that play games.
+The visualisers are the only things in the session drawn from a live audio
+stream — a PipeWire spectrum read and a repaint every frame for as long as
+something is playing — so GameMode switches both off. They need two different
+mechanisms, because noctalia models them differently:
+
+- **The bar's** (`local.waybar.cavaInBar`) is a lane entry. A bar widget has no
+  `enabled` of its own — `WidgetConfig` is a type and a settings map, nothing
+  else — and a deep merge replaces an array wholesale, so the only way to drop
+  one entry is to restate `bar.main.end` without it.
+- **The lock screen's** (`local.niri.cavaInLockscreen`) is a placed object, and
+  `DesktopWidgetState` *does* carry an `enabled` the host checks before it
+  builds anything. So that one is switched off by name, and `widget_order` is
+  left completely alone — which matters, because `widget_order` is the
+  definitive membership list and an overlay that restated it would be one stale
+  entry away from dropping the login box.
+
+Restating the bar lane is the reason **the noctalia half of the overlay is
+generated in `noctalia.nix`, not in `gamemode.nix`**. A second copy of the lane
+kept in another file would drift from the real one the first time the bar is
+reordered; generated next to the lane, it is `lib.filter` over the same list
+and cannot. The lock visualisers are found the same way — by widget *type*
+rather than by rebuilding `audio_visualizer_<connector>`, so nothing has to
+know a second time how those ids are made.
+
+`noctalia.nix` writes the result to
+`~/.local/share/niri-gamemode/noctalia.toml` and `niri-gamemode` copies it into
+place. A path rather than a module argument, because `noctalia.nix` already
+consumes what `gamemode.nix` publishes (the bar plugin's command) and an
+argument back the other way would be a cycle. It is deliberately not installed
+in `~/.config/noctalia`: everything named `*.toml` there is loaded, so a file
+kept in that directory would be a GameMode that is always on.
+
+The split leaves each file owning what it already describes — `gamemode.nix`
+the mode, the state and the niri overlay; `noctalia.nix` everything about the
+shell, including what the shell looks like in GameMode.
 
 ### No automatic sleep on mains power
 

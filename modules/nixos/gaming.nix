@@ -87,60 +87,137 @@ let
   # and the shell's configuration: animations, blur, transparency, and the
   # shell's own CPU/GPU sampling. This module cannot name the script that does
   # it. A NixOS module has no handle on a store path home-manager built, and it
-  # could not find one by name either: gamemoded's PATH is nearly empty, which
-  # is why every other command in these hooks is written as an absolute store
-  # path.
+  # could not find one by name either: gamemoded's PATH is not merely sparse,
+  # it is `lib.mkForce`d in nixpkgs' own module to a link farm containing
+  # `pkexec` and nothing else.
   #
   # A unit name crosses that gap where a path cannot. gamemoded runs under the
-  # user's own systemd manager — it is D-Bus activated on the session bus,
-  # which is also why `notify-send` above works at all — so `systemctl --user`
-  # is always reachable from a hook and $XDG_RUNTIME_DIR is set for it by
-  # definition. home-manager declares `niri-gamemode-start.service` and
-  # `niri-gamemode-stop.service`; this only has to know those two names, and
-  # nothing checks that the two files spell them the same way, exactly as
-  # nothing checks SIGRTMIN+9 above.
+  # user's own systemd manager — `systemd.user.services.gamemoded` in
+  # nixos/modules/programs/gamemode.nix, D-Bus activated on the session bus,
+  # which is also why `notify-send` in these hooks works at all — so
+  # `systemctl --user` is always reachable from a hook and $XDG_RUNTIME_DIR is
+  # set for it by definition. home-manager declares `niri-gamemode-start` and
+  # `niri-gamemode-stop`; this only has to know those two names, and nothing
+  # checks that the two files spell them the same way, exactly as nothing
+  # checks SIGRTMIN+9 above.
   #
   # `--no-block` because gamemoded kills a custom script after ten seconds
-  # (`script_timeout`) and there is nothing here worth waiting for. `|| true`
-  # for every session that has no such unit: a Plasma login, root, an account
-  # without the niri profile — the same shape as the `pkill` beside it.
-  sessionGamemode =
-    which:
-    "${pkgs.systemd}/bin/systemctl --user start --no-block niri-gamemode-${which}.service || true";
+  # (`script_timeout`) and there is nothing here worth waiting for.
+  #
+  # The existence check is what makes the failure legible. "No such unit" and
+  # "the unit exists and would not start" both exit non-zero, and only the
+  # second is worth a word: the first is every session that has no niri
+  # profile — a Plasma login, root — and is as ordinary as `pkill` finding no
+  # waybar. gamemoded reads a hook's stdout and discards it, so the complaint
+  # goes to stderr, which lands in `journalctl --user -u gamemoded`.
+  sessionGamemode = which: ''
+    if systemctl --user cat niri-gamemode-${which}.service >/dev/null 2>&1; then
+      systemctl --user start --no-block niri-gamemode-${which}.service \
+        || echo "gamemode hook: niri-gamemode-${which}.service would not start" >&2
+    fi
+  '';
 
-  # What gamemode's start hook runs on a host that has a model server to take
-  # the card back from. Everywhere else the hook stays the line of shell it
-  # has always been — see `custom.start` below.
+  # --- why both hooks are programs, and not lines of shell -----------------
   #
-  # It became a program when the notification had to start saying what the
-  # release did, because that answer only exists once the release has run and
-  # the notification cannot wait for it. Hence the order here, which is the
-  # whole reason the file exists:
+  # **gamemoded will not read a `custom.*` value longer than 255 bytes, and it
+  # drops the whole thing rather than truncating it.** `append_value_to_list`
+  # (daemon/gamemode-config.c) does a `strncpy` into a CONFIG_VALUE_MAX buffer,
+  # notices the result is unterminated, logs
   #
-  #   * The notification and the bar poke go first. They are the confirmation
-  #     that the mode engaged, and they must not sit behind a model server
-  #     that is mid-generation. gamemoded gives a custom script ten seconds
-  #     and then kills it (`script_timeout`), so a release that hangs would
-  #     otherwise take "GameMode started" down with it.
+  #     Config: Could not add [...] to [start], exceeds length limit of 256
+  #
+  # and `memset`s the entry back to empty. The script does not run in a reduced
+  # form; it does not run at all.
+  #
+  # That is a low ceiling for a config written in Nix, because every command in
+  # a hook is an absolute store path and a store path is seventy-odd bytes
+  # before the arguments. Three of them plus their arguments is around 335
+  # bytes — which is exactly what these hooks became when the session GameMode
+  # hand-off was added to a pair of shell one-liners that were already at 200.
+  # Both sides silently stopped running: no session GameMode, no bar poke, and
+  # no "GameMode started" notification either.
+  #
+  # One store path per hook is the shape that cannot come back. It costs about
+  # 87 bytes whatever the script grows into, so the limit stops being something
+  # to keep an eye on — and `hookScript` below still checks, because the point
+  # of a limit you have already been bitten by is that the build should say so
+  # rather than the journal.
+  gamemodeScriptLimit = 255;
+
+  hookScript =
+    which: program:
+    let
+      path = lib.getExe program;
+      bytes = builtins.stringLength path;
+    in
+    assert lib.assertMsg (bytes <= gamemodeScriptLimit) ''
+      modules/nixos/gaming.nix: programs.gamemode.settings.custom.${which} is ${toString bytes}
+      bytes, over gamemoded's ${toString gamemodeScriptLimit}-byte limit for a config value. It
+      would be dropped whole at load (append_value_to_list in
+      daemon/gamemode-config.c), so the hook would silently never run. Keep the
+      value to one store path and put the work inside the program.
+    '';
+    path;
+
+  # What gamemode runs when a game takes gamemode.
+  #
+  # It is a program rather than a line of shell for two reasons, and the second
+  # one is now the load-bearing one:
+  #
+  #   * The notification has to say what the GPU release did, and that answer
+  #     only exists once the release has run — so the two cannot be sequenced
+  #     in a config value.
+  #   * A config value cannot be long. See gamemodeScriptLimit above.
+  #
+  # The order here is the whole reason the file exists:
+  #
+  #   * The notification, the bar poke and the session's own GameMode go first.
+  #     They are the confirmation that the mode engaged, and they must not sit
+  #     behind a model server that is mid-generation. gamemoded gives a custom
+  #     script ten seconds and then kills it (`script_timeout`), so a release
+  #     that hangs would otherwise take all three down with it.
   #
   #   * The release then *rewrites* that notification rather than raising a
   #     second one behind it. `notify-send -p` prints the id the notification
   #     daemon assigned and `-r` replaces that id, so what the player sees is
   #     one notification that gains a line naming what was on the card once
   #     the card is back.
+  #
+  # The release half is conditional where it used to decide whether this
+  # program existed at all. That gained nothing once both hooks had to be
+  # programs regardless, and it cost the hosts without a model server a second
+  # code path that was never the one being read when something went wrong.
+  #
+  # Which leaves the notification itself as the one line that still differs per
+  # host, and it has to. `-p` prints the id the notification daemon assigned so
+  # that the release below can replace *that* notification instead of raising a
+  # second one; a host with no model server has nothing to replace it with and
+  # must not ask for the id, because writeShellApplication runs shellcheck and
+  # an assigned-but-never-read variable is a failed build rather than a warning.
+  startNotify =
+    if releaseOnGameMode then
+      ''id=$(notify-send -p -i input-gamepad 'GameMode started') || id=""''
+    else
+      ''notify-send -i input-gamepad 'GameMode started' || true'';
+
   gamemodeStart = pkgs.writeShellApplication {
     name = "gamemode-start-hook";
 
-    runtimeInputs = with pkgs; [
-      libnotify
-      procps # pkill
-      releaseGpu
-    ];
+    runtimeInputs =
+      with pkgs;
+      [
+        libnotify
+        procps # pkill
+        systemd # systemctl --user
+      ]
+      ++ lib.optional releaseOnGameMode releaseGpu;
 
     text = ''
-      # A daemon that doesn't hand back an id, or no daemon at all, leaves
-      # this empty and the rewrite below falls back to a plain notification.
-      id=$(notify-send -p -i input-gamepad 'GameMode started') || id=""
+      # One of two lines, chosen per host — see startNotify above. On the host
+      # that captures an id, a daemon that doesn't hand one back (or no daemon
+      # at all) leaves it empty and the rewrite below falls back to a plain
+      # notification.
+      ${startNotify}
 
       # waybar's custom/gamemode module is otherwise on a 30-second poll, and
       # a mode you turn on for a game should show up in the bar as the game
@@ -152,12 +229,11 @@ let
       # ordinary case in a Plasma session with no waybar running.
       pkill -RTMIN+9 waybar || true
 
-      # And the session's own GameMode, on the same reasoning: it is the
-      # confirmation that the mode engaged, so it goes before the release
-      # rather than behind it. `systemctl` is spelled absolutely by
-      # `sessionGamemode` above — see there for why this is a unit name and
-      # not a command — so it needs no runtimeInput of its own.
+      # The niri session's own GameMode: animations, blur, transparency and
+      # the shell's sampling off, exactly as Mod+G leaves them.
       ${sessionGamemode "start"}
+    ''
+    + lib.optionalString releaseOnGameMode ''
 
       # Silent when the card was already the game's: gamemode-release-gpu
       # prints nothing unless something was holding video memory, so an
@@ -170,6 +246,25 @@ let
           notify-send -i input-gamepad 'GameMode started' "$freed" || true
         fi
       fi
+    '';
+  };
+
+  # And the other half. There is no release to undo — ollama loads on demand,
+  # so the next question reloads whatever it needs — which is why this stayed a
+  # one-liner for as long as a one-liner was allowed to be one.
+  gamemodeEnd = pkgs.writeShellApplication {
+    name = "gamemode-end-hook";
+
+    runtimeInputs = with pkgs; [
+      libnotify
+      procps # pkill
+      systemd # systemctl --user
+    ];
+
+    text = ''
+      notify-send -i input-gamepad 'GameMode ended' || true
+      pkill -RTMIN+9 waybar || true
+      ${sessionGamemode "stop"}
     '';
   };
 
@@ -377,39 +472,29 @@ in
     enable = true;
 
     settings = {
-      # Both hooks do three things rather than one: notify, poke waybar, and
-      # hand the niri session its own GameMode — see the comments on
-      # gamemodeStart and sessionGamemode above for why, and for why the start
-      # half is a program while this end half is still a line of shell.
+      # One store path per side, and nothing else.
       #
-      # The third of those is the only one that reaches a *different* config
-      # tree. It is also the only one that has no effect at all on a Plasma
-      # login, where the unit it starts does not exist; that is what the
-      # trailing `|| true` on it is for, and it is why nothing here has to ask
-      # which session is running.
+      # Each hook notifies, pokes waybar, and hands the niri session its own
+      # GameMode; the start half may also take the card back from a model
+      # server. All of that is *inside* the two programs above, because a
+      # `custom.*` value that runs past 255 bytes is dropped whole by gamemoded
+      # rather than truncated — see the comment on gamemodeScriptLimit. Writing
+      # the work here as shell is what broke both hooks once already.
       #
-      # The `;` in `end` is real shell: gamemode runs these through
-      # `/bin/sh -c` (game_mode_execute_scripts in daemon/gamemode-context.c),
-      # not execvp on a split string, which is also why the quoted
-      # notification title works. It is also why either side can be a bare
-      # store path with no PATH to find it on — gamemoded's own PATH is
-      # nearly empty.
+      # gamemode still runs each value through `/bin/sh -c`
+      # (game_mode_execute_scripts in daemon/gamemode-context.c) rather than
+      # execvp on a split string. Nothing here needs that any more, but it is
+      # also why a bare store path works with no PATH to find it on: nixpkgs'
+      # own gamemode module mkForces gamemoded's PATH to a link farm holding
+      # `pkexec` and nothing else.
       #
-      # `|| true` because pkill exits 1 when nothing matches, which is the
-      # ordinary case in a Plasma session with no waybar running, and
-      # gamemoded logs a non-zero script as a failure.
+      # `hookScript` is the length check. It cannot fail as things stand — 87
+      # bytes against a limit of 255 — and it exists so that the next thing
+      # appended here fails the build with the reason instead of disappearing
+      # into gamemoded's journal.
       custom = {
-        # Only the host with a model server on the same card needs a program
-        # here; everywhere else there is nothing for the notification to say
-        # that it didn't say before, and this stays the line it has always
-        # been — which also keeps `gamestation` off a rebuild it gains
-        # nothing from.
-        start =
-          if releaseOnGameMode then
-            lib.getExe gamemodeStart
-          else
-            "${pkgs.libnotify}/bin/notify-send -i input-gamepad 'GameMode started'; ${pkgs.procps}/bin/pkill -RTMIN+9 waybar || true; ${sessionGamemode "start"}";
-        end = "${pkgs.libnotify}/bin/notify-send -i input-gamepad 'GameMode ended'; ${pkgs.procps}/bin/pkill -RTMIN+9 waybar || true; ${sessionGamemode "stop"}";
+        start = hookScript "start" gamemodeStart;
+        end = hookScript "end" gamemodeEnd;
       };
     };
   };

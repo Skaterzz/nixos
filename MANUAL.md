@@ -747,6 +747,23 @@ is disabled; Suspend and Switch user are explicit lock-safe buttons beneath
 it, so the desktop session menu can keep its complete action list without
 putting reboot and shutdown on the locked screen.
 
+**The password is masked with random shapes rather than dots.**
+`shell.password_style = "random"` swaps the one filled circle per character
+that `"default"` draws for a seven-glyph cycle — circle, pentagon, star,
+rounded square, guitar pick, blob, triangle — indexed by each character's
+position in the field. The row is therefore stable for a given length rather
+than reshuffled as you type, which is what makes it useful: a varied row of
+shapes gives the eye something to count against, so a typo reads as a
+wrong-length pattern from further away than a run of identical dots does, and
+nothing about a character is recoverable from the glyph standing in for it.
+The setting lives under Security → Authentication in noctalia's own settings
+and covers every password field the shell draws — here that is the lock
+screen's login box alone, since `polkit_agent = false` leaves the polkit
+prompt to polkit-kde-agent (see `modules/nixos/niri.nix`). It is an upstream
+key rather than one of this repository's patches, so unlike the clock's
+`shadow_offset` below it is emitted on both sides of
+`local.niri.noctaliaSourcePatches`.
+
 **The media player's box is the login box's width, and its height comes out of
 that.** A boxed widget paints its panel at the full box but scales its
 *content* to fit inside it aspect-preserved, at

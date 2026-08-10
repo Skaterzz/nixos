@@ -140,4 +140,8 @@
     __GL_SHADER_DISK_CACHE = "1";
     __GL_SHADER_DISK_CACHE_SKIP_CLEANUP = "1";
   };
+
+  environment.systemPackages = with pkgs; [
+     nvtopPackages.nvidia
+  ];
 }

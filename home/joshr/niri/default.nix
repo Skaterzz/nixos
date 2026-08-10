@@ -9,8 +9,9 @@
 # niri desktop for joshr: compositor config, bar, notifications, launcher,
 # lock screen, and the theme/wallpaper switcher.
 #
-# Import order matters a little: theming.nix and scripts.nix publish
-# `_module.args` (niriTheming, niriScripts) that the others consume.
+# Import order matters a little: theming.nix, scripts.nix and gamemode.nix
+# publish `_module.args` (niriTheming, niriScripts, niriGamemode) that the
+# others consume.
 #
 # Two shells live here, picked per host with `local.niri.shell`. Everything
 # from ./waybar.nix down to ./emoji.nix is the assembled stack; ./noctalia.nix
@@ -28,6 +29,7 @@
   imports = [
     ./theming.nix
     ./scripts.nix
+    ./gamemode.nix
     ./niri.nix
     ./waybar.nix
     ./noctalia.nix

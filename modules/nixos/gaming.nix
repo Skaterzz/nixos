@@ -80,6 +80,34 @@ let
     '';
   };
 
+  # Ask the niri session to enter or leave its own GameMode.
+  #
+  # That mode lives entirely on the home-manager side —
+  # home/joshr/niri/gamemode.nix — because what it changes is the compositor's
+  # and the shell's configuration: animations, blur, transparency, and the
+  # shell's own CPU/GPU sampling. This module cannot name the script that does
+  # it. A NixOS module has no handle on a store path home-manager built, and it
+  # could not find one by name either: gamemoded's PATH is nearly empty, which
+  # is why every other command in these hooks is written as an absolute store
+  # path.
+  #
+  # A unit name crosses that gap where a path cannot. gamemoded runs under the
+  # user's own systemd manager — it is D-Bus activated on the session bus,
+  # which is also why `notify-send` above works at all — so `systemctl --user`
+  # is always reachable from a hook and $XDG_RUNTIME_DIR is set for it by
+  # definition. home-manager declares `niri-gamemode-start.service` and
+  # `niri-gamemode-stop.service`; this only has to know those two names, and
+  # nothing checks that the two files spell them the same way, exactly as
+  # nothing checks SIGRTMIN+9 above.
+  #
+  # `--no-block` because gamemoded kills a custom script after ten seconds
+  # (`script_timeout`) and there is nothing here worth waiting for. `|| true`
+  # for every session that has no such unit: a Plasma login, root, an account
+  # without the niri profile — the same shape as the `pkill` beside it.
+  sessionGamemode =
+    which:
+    "${pkgs.systemd}/bin/systemctl --user start --no-block niri-gamemode-${which}.service || true";
+
   # What gamemode's start hook runs on a host that has a model server to take
   # the card back from. Everywhere else the hook stays the line of shell it
   # has always been — see `custom.start` below.
@@ -123,6 +151,13 @@ let
       # `|| true` because pkill exits 1 when nothing matches, which is the
       # ordinary case in a Plasma session with no waybar running.
       pkill -RTMIN+9 waybar || true
+
+      # And the session's own GameMode, on the same reasoning: it is the
+      # confirmation that the mode engaged, so it goes before the release
+      # rather than behind it. `systemctl` is spelled absolutely by
+      # `sessionGamemode` above — see there for why this is a unit name and
+      # not a command — so it needs no runtimeInput of its own.
+      ${sessionGamemode "start"}
 
       # Silent when the card was already the game's: gamemode-release-gpu
       # prints nothing unless something was holding video memory, so an
@@ -283,7 +318,8 @@ let
       if have powerprofilesctl; then powerprofilesctl get || true; fi
       # gamemoded is D-Bus activated, so asking it for its status is enough to
       # start it — check it is already up first, the same way the bar's
-      # gamemode indicator does (gamemodeStatus in home/joshr/niri/scripts.nix).
+      # gamemode indicator does (gamemodeStatus in
+      # home/joshr/niri/gamemode.nix).
       if pgrep -x gamemoded >/dev/null 2>&1; then
         gamemoded --status || true
       else
@@ -341,9 +377,16 @@ in
     enable = true;
 
     settings = {
-      # Both hooks poke waybar as well as notifying — see the comment on
-      # gamemodeStart above for why, and for why the start half is a program
-      # while this end half is still a line of shell.
+      # Both hooks do three things rather than one: notify, poke waybar, and
+      # hand the niri session its own GameMode — see the comments on
+      # gamemodeStart and sessionGamemode above for why, and for why the start
+      # half is a program while this end half is still a line of shell.
+      #
+      # The third of those is the only one that reaches a *different* config
+      # tree. It is also the only one that has no effect at all on a Plasma
+      # login, where the unit it starts does not exist; that is what the
+      # trailing `|| true` on it is for, and it is why nothing here has to ask
+      # which session is running.
       #
       # The `;` in `end` is real shell: gamemode runs these through
       # `/bin/sh -c` (game_mode_execute_scripts in daemon/gamemode-context.c),
@@ -365,8 +408,8 @@ in
           if releaseOnGameMode then
             lib.getExe gamemodeStart
           else
-            "${pkgs.libnotify}/bin/notify-send -i input-gamepad 'GameMode started'; ${pkgs.procps}/bin/pkill -RTMIN+9 waybar || true";
-        end = "${pkgs.libnotify}/bin/notify-send -i input-gamepad 'GameMode ended'; ${pkgs.procps}/bin/pkill -RTMIN+9 waybar || true";
+            "${pkgs.libnotify}/bin/notify-send -i input-gamepad 'GameMode started'; ${pkgs.procps}/bin/pkill -RTMIN+9 waybar || true; ${sessionGamemode "start"}";
+        end = "${pkgs.libnotify}/bin/notify-send -i input-gamepad 'GameMode ended'; ${pkgs.procps}/bin/pkill -RTMIN+9 waybar || true; ${sessionGamemode "stop"}";
       };
     };
   };

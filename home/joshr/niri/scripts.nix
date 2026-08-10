@@ -4035,52 +4035,12 @@ lockNowPlaying = pkgs.writeShellApplication {
     '';
   };
 
-  # GameMode for the bar: the pad while a game is holding gamemode, nothing at
-  # all the rest of the time. See the custom/gamemode module in waybar.nix.
-  #
-  # Empty output rather than a dimmed glyph, the same as caps-lock above and
-  # for the same reason — gamemode is off nearly always, and an indicator for
-  # something that is almost never happening should cost nothing while it
-  # isn't.
-  #
-  # This one is asked rather than watched: the module polls it every 30s, and
-  # the gamemode start/end hooks in modules/nixos/gaming.nix send waybar
-  # SIGRTMIN+9 so the real answer lands the moment a game takes gamemode.
-  # Same arrangement as idle-inhibit above, and the poll is the backstop for
-  # the same reason — it catches a state that changed without the hook, which
-  # here means gamemoded having been killed outright.
-  gamemodeStatus = pkgs.writeShellApplication {
-    name = "gamemode-status";
-    runtimeInputs = with pkgs; [
-      gamemode
-      procps
-    ];
-    text = ''
-      # There is nothing to ask when the daemon is down, and asking would
-      # *start* it: gamemoded is D-Bus activated, so `gamemoded --status`
-      # would launch the very thing it is supposed to be reporting on, every
-      # time the module ticks.
-      #
-      # pgrep rather than `systemctl --user is-active gamemoded.service`
-      # because that hard-codes a unit name this config never sets. If the
-      # name were ever wrong the check would fail exactly like "gamemode is
-      # off" — silence that looks correct — where a wrong process name at
-      # least fails the same way for everyone and shows up the first time a
-      # game runs.
-      if ! pgrep -x -u "$UID" gamemoded >/dev/null; then
-        echo
-        exit 0
-      fi
-
-      # "gamemode is inactive", "gamemode is active", or "gamemode is active
-      # and [pid] registered". Matching `is active` rather than `active` is
-      # the whole trick — "inactive" contains "active".
-      case "$(gamemoded --status 2>/dev/null || true)" in
-        *"is active"*) printf '%s\n' '󰊗' ;;
-        *)             echo ;;
-      esac
-    '';
-  };
+  # `gamemode-status` used to live here, next to caps-lock, and is now in
+  # ./gamemode.nix — exported as `niriGamemode.gamemodeStatus` rather than
+  # `niriScripts.gamemodeStatus`. It moved when the session grew a GameMode of
+  # its own: the pad answers for that mode as well as for the daemon, so the
+  # script became a thin reading of `niri-gamemode status` and belongs beside
+  # the thing it now asks.
 in
 {
   home.packages = [
@@ -4103,7 +4063,6 @@ in
     powerProfileOsd
     cavaBar
     capsLock
-    gamemodeStatus
   ]
   ++ lib.optionals (!useNoctalia) [
     # Noctalia owns locking, blanking, idling, and the session panel itself.
@@ -4141,7 +4100,6 @@ in
       powerProfileOsd
       cavaBar
       capsLock
-      gamemodeStatus
       ;
 
     # Not a script: the patched swaylock that lock-session wraps. Exported so

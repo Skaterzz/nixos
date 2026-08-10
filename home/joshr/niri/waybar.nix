@@ -1,4 +1,4 @@
-{ config, lib, pkgs, niriTheming, niriScripts, ... }:
+{ config, lib, pkgs, niriTheming, niriScripts, niriGamemode, ... }:
 
 # Top bar.
 #
@@ -503,9 +503,13 @@ in
       };
 
       # GameMode, immediately right of caps lock and hidden the same way: the
-      # script prints an empty line while nothing holds gamemode, waybar hides
-      # the module, and the slot costs nothing. Two indicators that are both
+      # script prints an empty line while GameMode is off, waybar hides the
+      # module, and the slot costs nothing. Two indicators that are both
       # absent nearly all the time, side by side.
+      #
+      # It answers for the session's GameMode as well as the daemon's — a
+      # `Mod+G` with no game running lights this exactly as a game does. See
+      # ./gamemode.nix, which owns both the script and the mode.
       #
       # Polled rather than continuous, unlike its neighbour, because gamemode
       # has somewhere to ask — a D-Bus daemon with a status call — but nothing
@@ -514,13 +518,13 @@ in
       # backstop.
       #
       # SIGRTMIN+9 is sent by the gamemode start/end hooks in
-      # modules/nixos/gaming.nix, which is what makes the pad appear as the
-      # game takes gamemode rather than up to 30 seconds afterwards. The two
-      # numbers have to agree; nothing checks that they do. 8 next door is the
-      # idle inhibitor's.
+      # modules/nixos/gaming.nix and by `niri-gamemode` itself, which is what
+      # makes the pad appear as the mode is entered rather than up to 30
+      # seconds afterwards. The numbers have to agree; nothing checks that they
+      # do. 8 next door is the idle inhibitor's.
       "custom/gamemode" = {
         format = "{}";
-        exec = lib.getExe niriScripts.gamemodeStatus;
+        exec = lib.getExe niriGamemode.gamemodeStatus;
         interval = 30;
         signal = 9;
         tooltip = false;

@@ -1579,8 +1579,8 @@ restart Spotify so the new launcher supplies the mount.
 | `Mod+R` / `Mod+F` / `Mod+V` | preset widths, maximize, float |
 | `Mod+W` | tab the focused column — its windows stack, one shown at a time |
 | `Print` / `Mod+Shift+S` | region screenshot on a frozen screen, annotated in satty |
-| `Shift+Print` / `Mod+Ctrl+S` | same region as last time, no selection step |
-| `Ctrl+Print` / `Alt+Print` | screen / window (niri's built-ins) |
+| `Shift+Print` / `Mod+Ctrl+S` | same overlay, opened on last time's region — Enter takes it |
+| `Ctrl+Print` / `Alt+Print` | screen / window (window is niri's built-in) |
 | `Mod+L` / `Mod+Shift+Escape` | lock, session menu |
 | `Mod+Shift+L` | lock **and** blank the monitors, in one key |
 | `Mod+Escape` | blank the monitors — works on the lock screen too |
@@ -2447,32 +2447,78 @@ does booting the previous generation.
 
 ### Screenshots
 
-Region capture goes `wayfreeze` → `slurp` → `grim` → `satty`: the screen
-freezes, you drag the region over the still frame, and you land in an
-annotation editor (arrows, boxes, blur, text) that copies to the clipboard on
-save. Plain screen and window capture use niri's built-in `screenshot-screen`
-and `screenshot-window` actions instead — the compositor already knows the
-exact geometry, so there's nothing for a script to compute wrong.
+**Under noctalia the shell captures.** `Print` runs `noctalia msg
+screenshot-region` and `Ctrl+Print` runs `noctalia msg screenshot-fullscreen`;
+noctalia freezes the screen, dims it, takes the selection, and pulls the pixels
+through `wlr-screencopy` itself. `Alt+Print` is still niri's own
+`screenshot-window` action, because noctalia captures outputs and regions and
+has no per-window capture, and the compositor is the only thing that knows
+where a window's edges are.
+
+What a capture *becomes* has not changed: noctalia is told to neither save nor
+copy, and to pipe each PNG into `screenshot-annotate`
+(`home/joshr/niri/scripts.nix`), which is the tail of the old script — satty
+for annotation (arrows, boxes, blur, text), `--early-exit`, `wl-copy` on save,
+and a notification carrying the shot as its icon. Saving in noctalia *as well*
+would write the unannotated frame and then have satty write over it, or beside
+it when the editor is cancelled; copying there would put the unannotated image
+on the clipboard for as long as the editor stayed open. Note that
+`pipe_command` does nothing on its own — noctalia gates it behind
+`pipe_to_command`, so the two are set together.
+
+`local.niri.screenshotEditor` picks the editor: `"satty"` by default, or
+`"spectacle"` on a host that already runs Plasma and knows KDE's. Spectacle is
+a different shape — it can't read stdin and can't be told to exit — so that
+path writes the capture to its destination first, copies it, notifies, and then
+opens spectacle on the file, meaning the unannotated shot is saved either way
+and spectacle's own Save is what overwrites it. It also pulls a good deal of
+the Plasma runtime into the session's closure, which is why it isn't the
+default.
 
 **The freeze is what Spectacle and Flameshot do**, and it is there because
 selecting and capturing are two different moments. Everything a region is
-usually drawn around has moved on by the time `grim` runs a second or two
+usually drawn around has moved on by the time the capture runs a second or two
 later: the video is three frames further in, the animation has finished, the
-menu closed when it lost focus. `wayfreeze` screencopies every output and
-paints the copies back as overlay layer surfaces, `slurp` selects on top of
-that, and `grim` captures the still — so the frame you framed is the frame you
-get. Set `local.niri.screenshotFreeze = false` to go back to selecting over the
-live screen.
+menu closed when it lost focus. Set `local.niri.screenshotFreeze = false` to go
+back to selecting over the live screen. Under noctalia this is one setting
+(`shell.screenshot.freeze_screen`) and the still frame *is* the selection
+overlay, which is the part that got simpler in the move — see the waybar
+section below for what it replaced.
 
-Two flags on it are worth knowing about. `--hide-cursor` keeps the pointer out
-of the still frame, which otherwise gets the frozen cursor painted in and the
-live one drawn over the top, and a capture across that spot shows two.
+**Selections are confirmed with Enter**, not captured on mouse-up
+(`confirm_region`). It costs a keypress per shot and buys the nudge: the box
+stays live after the drag, so an edge that landed a few pixels off is dragged
+back into place rather than being a shot to throw away and redo.
+
+**`Shift+Print` (or `Mod+Ctrl+S`) re-shoots the last region.** It runs the same
+`screenshot-region` command as `Print`, and that is the point rather than an
+oversight: `remember_last_region` makes the overlay open with the previous
+region already selected and waiting on its Enter. So `Shift+Print` is the key
+and Enter, `Print` is the key and a drag, and the remembered box can be nudged
+before it is taken instead of only accepted whole. It's for shooting the same
+frame repeatedly — a panel, a window, a chart being tweaked — where redrawing
+the box by hand is both the tedious part and the reason successive shots don't
+line up. The separate bind stays because the finger knows it.
+
+#### The waybar session's screenshot
+
+Setting `local.niri.shell = "waybar"` leaves screen capture where it was:
+`wayfreeze` → `slurp` → `grim` → `satty`, in the `screenshot` script in
+`scripts.nix`, with `screenshot last` as a second mode. That script is off a
+noctalia system's PATH entirely, which is what keeps wayfreeze, slurp and grim
+out of its closure.
+
+It is worth reading once for what noctalia now absorbs. `wayfreeze` screencopies
+every output and paints the copies back as overlay layer surfaces, `slurp`
+selects on top of that, and `grim` captures the still. `--hide-cursor` keeps the
+pointer out of the still frame, which otherwise gets the frozen cursor painted
+in and the live one drawn over the top, so a capture across that spot shows two.
 `--enable-keyboard` reads backwards and isn't: it means *let the keyboard
-through to other surfaces*, and without it `wayfreeze` claims exclusive
-keyboard focus for itself. niri hands exclusive focus to the lowest layer
-surface that asks for it — the freeze, which mapped first, not `slurp` — so
-`Escape` would dismiss the freeze and leave you selecting over a live screen
-instead of cancelling the screenshot.
+through to other surfaces*, and without it `wayfreeze` claims exclusive keyboard
+focus for itself. niri hands exclusive focus to the lowest layer surface that
+asks for it — the freeze, which mapped first, not `slurp` — so `Escape` would
+dismiss the freeze and leave you selecting over a live screen instead of
+cancelling the screenshot.
 
 The order the two map in is the load-bearing part: niri stacks layer surfaces
 in the order they map and gives the click to the top one, so `slurp` has to
@@ -2482,27 +2528,22 @@ that signal (bounded to a second and a half, and abandoned early if `wayfreeze`
 dies) rather than guessing with a `sleep`. A freeze that never arrives costs a
 selection over the live screen and nothing else.
 
-**`Shift+Print` (or `Mod+Ctrl+S`) re-shoots the last region** with no selection
-step. Every region capture writes its geometry to
-`~/.local/state/niri-screenshot/region`, and that mode reads it straight back.
-It's for shooting the same frame repeatedly — a panel, a window, a chart being
-tweaked — where redrawing the box by hand is both the tedious part and the
-reason successive shots don't line up.
+`screenshot last` re-shoots without a selection at all. Every region capture
+writes its geometry to `~/.local/state/niri-screenshot/region` and that mode
+reads it straight back, falling back to a normal selection if there's no
+remembered region yet or if the region no longer captures — a monitor
+unplugged, or the layout rearranged under it. The geometry is only remembered
+once `grim` has accepted it, so a region that can't be captured never becomes
+the one it comes back to. Nothing freezes in that mode, there being no
+selection to draw over.
 
-It falls back to a normal selection if there's no remembered region yet, or if
-the region no longer captures — a monitor unplugged or the layout rearranged
-under it. The geometry is only remembered once `grim` has accepted it, so a
-region that can't be captured never becomes the one it comes back to.
-
-Nothing freezes in that mode: there is no selection to draw over, and `grim`
-fires the instant the key does. The fallback selection gets the freeze like any
-other.
-
-Note that this is a separate keybind rather than "reopen slurp with last time's
-box ready to adjust", because slurp can't pre-fill a selection. Its `-r` reads
-boxes on stdin and *restricts* selection to them, so handing it the saved region
-would let you click that box to accept it but never drag its edges — a worse
-version of the same thing, with an extra click.
+It has to be a separate keybind there rather than "reopen slurp with last
+time's box ready to adjust", because slurp can't pre-fill a selection: its `-r`
+reads boxes on stdin and *restricts* selection to them, so handing it the saved
+region would let you click that box to accept it but never drag its edges — a
+worse version of the same thing, with an extra click. That limitation is
+exactly the one noctalia's overlay doesn't have, which is why the two keys
+collapse into one command above.
 
 ### Lock screen
 
@@ -3322,7 +3363,7 @@ way to find them all again:
 | swaylock | `home/joshr/niri/scripts.nix` | `%I:%M %p`, `%A, %B %d` |
 | SDDM greeter | `modules/nixos/niri.nix` | `h:mm AP`, `dddd, MMMM d` |
 | Plasma panel clocks | `home/joshr/plasma.nix` | `time.format = "12h"` |
-| screenshot filenames | `niri.nix`, `scripts.nix` | `%m-%d-%Y %I-%M-%S %p` |
+| screenshot filenames | `niri.nix`, `noctalia.nix`, `scripts.nix` | `%m-%d-%Y %I-%M-%S %p` |
 
 Two things worth knowing before editing any of them:
 

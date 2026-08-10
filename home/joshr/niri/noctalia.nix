@@ -791,13 +791,60 @@ let
         fetch_exchange_rates = false;
       };
 
+      # Region and full-screen capture, replacing the wayfreeze/slurp/grim
+      # script this session used to bind Print to (it survives for the waybar
+      # shell; see ./scripts.nix). noctalia captures through wlr-screencopy
+      # itself, which removes the part of the old script that was hardest to
+      # keep working: nothing has to map a freeze surface and then a selection
+      # surface above it in the right order any more, because the overlay that
+      # dims and selects *is* the frozen frame.
       screenshot = {
         directory = screenshotDir;
 
-        # satty for annotation, which is the whole reason region capture was a
-        # script rather than a niri action. `-f -` reads the image on stdin.
-        pipe_command = "${pkgs.satty}/bin/satty -f -";
-        copy_to_clipboard = true;
+        # The same month-day-year, 12-hour stamp as the old script and as
+        # niri's own `screenshot-path` — see the comment there before changing
+        # it, since the three are meant to agree. noctalia appends ".png".
+        filename_pattern = "screenshot_%m-%d-%Y_%I-%M-%S-%p";
+
+        # Everything a capture becomes goes through satty, so noctalia does
+        # neither of the two things it would otherwise do with the PNG. Saving
+        # here would write the unannotated shot and then satty would write the
+        # annotated one over it — or beside it, if the editor was cancelled,
+        # leaving a file the old script never produced. Copying here would put
+        # the unannotated image on the clipboard and then satty's own
+        # `--copy-command` would replace it on save, so the clipboard's
+        # contents between those two moments would be a picture nobody asked
+        # for.
+        save_to_file = false;
+        copy_to_clipboard = false;
+
+        # `pipe_command` alone does nothing: noctalia gates it on this flag,
+        # so the pair has to be set together.
+        pipe_to_command = true;
+        pipe_command = lib.getExe niriScripts.screenshotAnnotate;
+
+        # Same setting, same reasoning, now enforced by the shell rather than
+        # by wayfreeze — see local.niri.screenshotFreeze.
+        freeze_screen = config.local.niri.screenshotFreeze;
+
+        # What `Shift+Print` used to be a separate script mode for. The overlay
+        # opens with the previous region already selected and waiting on Enter,
+        # so re-shooting the same frame is the key and then Enter, and drawing
+        # a new box is the key and then a drag — one command covering both,
+        # where slurp could not pre-fill a selection at all.
+        remember_last_region = true;
+
+        # A drawn selection is confirmed with Enter rather than captured on
+        # mouse-up. It costs a keypress on every shot and buys the nudge: the
+        # box stays live after the drag, so an edge that landed a few pixels
+        # off is dragged back into place instead of being a shot to throw away
+        # and redo. It is also what makes the two paths one gesture — a
+        # remembered region arrives already in this state, so "adjust, then
+        # Enter" is the same ending either way.
+        confirm_region = true;
+
+        # grim did not draw the pointer either.
+        show_cursor = false;
       };
 
       # --- where the panels open ----------------------------------------

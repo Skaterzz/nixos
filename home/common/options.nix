@@ -335,19 +335,53 @@
       Whether region capture freezes the screen while the selection is drawn,
       the way Spectacle and Flameshot do.
 
-      With it on, the `screenshot` helper puts wayfreeze up first — a still
-      copy of every output, painted back over the session as an overlay layer
-      surface — and slurp selects on top of that. What you framed is then what
-      grim captures, because nothing underneath it can move in between: a
-      video keeps the frame you picked, an animation stops mid-flight, and a
-      menu that would close the moment it lost focus is still open.
+      It reaches whichever shell is capturing. Under noctalia it is
+      `shell.screenshot.freeze_screen`, and the still frame is the selection
+      overlay itself. Under waybar it is the `screenshot` helper putting
+      wayfreeze up first — a still copy of every output, painted back over the
+      session as an overlay layer surface — with slurp selecting on top of
+      that.
 
-      Off, slurp selects over the live screen, which is what this did before.
-      That is the setting to fall back to if a niri or wayfreeze update breaks
-      the stacking the freeze depends on — slurp has to map after the freeze
-      to be above it, and a slurp underneath it would send the first click to
-      the wrong surface. `screenshot last` re-shoots without a selection and
-      so never freezes either way.
+      Either way, what you framed is what gets captured, because nothing
+      underneath it can move in between: a video keeps the frame you picked,
+      an animation stops mid-flight, and a menu that would close the moment it
+      lost focus is still open.
+
+      Off, the selection happens over the live screen, which is what this did
+      before. That is the setting to fall back to if a niri or wayfreeze
+      update breaks the stacking the waybar freeze depends on — slurp has to
+      map after the freeze to be above it, and a slurp underneath it would
+      send the first click to the wrong surface. `screenshot last` re-shoots
+      without a selection and so never freezes either way.
+    '';
+  };
+
+  options.local.niri.screenshotEditor = lib.mkOption {
+    type = lib.types.enum [
+      "satty"
+      "spectacle"
+    ];
+    default = "satty";
+    description = ''
+      Which annotation editor a capture lands in — arrows, boxes, blur, text —
+      before it is saved.
+
+      This is the noctalia session's setting. noctalia captures and then hands
+      the PNG to one command, and `screenshot-annotate` (home/joshr/niri) is
+      that command; the waybar `screenshot` helper is always satty.
+
+      `"satty"` is the Wayland-native one and the reason region capture was
+      ever a script: it reads the image on stdin, writes exactly where it is
+      told, copies to the clipboard on save, and exits when it is done, so a
+      capture is one gesture from Print to a file on disk.
+
+      `"spectacle"` is KDE's, and worth having on the hosts that already run
+      Plasma and know its editor. It cannot read stdin or be told to exit, so
+      the shot is written to its destination first and spectacle opens on that
+      file — meaning the unannotated capture is already saved and spectacle's
+      own Save is what overwrites it. On a host with no other KDE application
+      it also pulls a large chunk of the Plasma runtime into the session's
+      closure, which is why this is not the default.
     '';
   };
 

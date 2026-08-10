@@ -146,7 +146,13 @@ let
   # `custom/cava` was a script feeding it one frame of glyphs per line, where
   # noctalia draws its own from the PipeWire stream. The script and the package
   # stay for the full-size terminal version.
-  visualiser = lib.optional config.local.waybar.cavaInBar "audio_visualizer";
+  # The widget type is spelled once because three places need it: the bar lane
+  # below, the lock screen's own visualizer entries, and the GameMode overlay
+  # near the bottom of this file, which finds both by this name and switches
+  # them off.
+  visualiserWidget = "audio_visualizer";
+
+  visualiser = lib.optional config.local.waybar.cavaInBar visualiserWidget;
 
   # --- the GameMode indicator -------------------------------------------
   #
@@ -608,7 +614,7 @@ let
         # no background or padding the spectrum fills the entire logical
         # output, and show_when_idle=false fades it away when playback stops.
         (lib.nameValuePair "audio_visualizer_${o.name}" {
-          type = "audio_visualizer";
+          type = visualiserWidget;
           output = o.name;
           cx = cx;
           cy = h / 2;
@@ -1536,6 +1542,116 @@ let
     system.monitor.enabled = true;
   };
 
+  # The lock screen's audio visualizers — one per output that has one — picked
+  # out of the widget set declared above rather than by rebuilding their
+  # `audio_visualizer_<connector>` ids, so this is not a second place that
+  # knows how those are made. Empty on every host with
+  # `local.niri.cavaInLockscreen` off, which is what leaves the overlay below
+  # without a `lockscreen_widgets` section at all.
+  lockVisualisers = lib.filterAttrs (_: w: (w.type or "") == visualiserWidget) lockWidgets;
+
+  # --- and what this shell looks like in GameMode -------------------------
+  #
+  # The noctalia half of ./gamemode.nix, and it lives here rather than there
+  # for one reason: two of the things GameMode switches off are entries in
+  # lists declared above, and a second copy of those lists kept in another file
+  # would drift from them the first time the bar is reordered. Everything below
+  # is *derived* from `settings` and `lockWidgets` instead of restating them,
+  # so there is nothing to keep in step.
+  #
+  # `niri-gamemode` copies this into ~/.config/noctalia/gamemode.toml on the
+  # way in and deletes it on the way out. noctalia parses every `*.toml` in its
+  # config directory and deep-merges them in sorted filename order, so
+  # `gamemode` lands after `config` and wins; tables merge key by key, which is
+  # why this only has to name what changes. See ./gamemode.nix for the rest of
+  # the arrangement — the niri half, the state, and how gamemoderun gets here.
+  #
+  # Grouped by what each one costs:
+  #
+  #   shell.animation      every widget, panel, OSD and toast noctalia draws
+  #                        runs through one motion service; `enabled = false`
+  #                        makes it deliver the end state immediately instead
+  #                        of interpolating to it.
+  #   *.background_opacity a translucent surface is one the compositor has to
+  #                        blend against what is behind it rather than
+  #                        overwrite. Fully opaque is the cheap case, and on
+  #                        the bar it is also what makes the missing blur look
+  #                        deliberate rather than broken.
+  #   panel.transparency_mode
+  #                        the same thing one level in: "solid" stops in-panel
+  #                        cards being drawn translucent over the panel.
+  #   *.shadow             a shadow is a second copy of the surface's shape
+  #                        rendered with a large SDF softness — the bar's is
+  #                        redrawn with the bar.
+  #   the two visualizers  the only things here that are drawn from a live
+  #                        audio stream, which means a PipeWire spectrum read
+  #                        and a repaint every frame for as long as something
+  #                        is playing. See the note on each below.
+  #   system.monitor       the one that is not about drawing at all. Its
+  #                        sampling thread reads /proc every two seconds and
+  #                        dlopen's libnvidia-ml to ask the card for its
+  #                        temperature and VRAM every five, which is a second
+  #                        NVML client on the card the game is using.
+  #                        `enabled = false` joins that thread and releases the
+  #                        GPU readers rather than merely hiding the numbers.
+  gamemodeSettings = {
+    shell = {
+      animation.enabled = false;
+      panel = {
+        transparency_mode = "solid";
+        shadow = false;
+      };
+    };
+
+    # The opacities are written `1` rather than `1.0` because that is what
+    # actually lands: `pkgs.formats.toml` goes through `builtins.toJSON`, which
+    # renders a whole-numbered Nix float as an integer, and json2toml has
+    # nothing left to tell it otherwise. noctalia reads every float field
+    # through `finiteDouble`, which takes a TOML int or float alike, so an
+    # integer is the honest spelling of what the file will contain.
+    notification.background_opacity = 1;
+    osd.background_opacity = 1;
+
+    system.monitor.enabled = false;
+
+    bar.main = {
+      background_opacity = 1;
+      shadow = false;
+    }
+    # The bar's visualizer, dropped from the lane rather than switched off in
+    # place: a bar widget is an entry in an array with no `enabled` of its own
+    # (WidgetConfig carries a type and a settings map, nothing else), and a
+    # deep merge replaces an array wholesale. So the lane has to be restated —
+    # but restated *from the lane above*, which is what keeps the two from
+    # parting company. Only emitted where there is a visualizer to drop, so the
+    # desk hosts' overlay does not carry a copy of a list it does not change.
+    // lib.optionalAttrs config.local.waybar.cavaInBar {
+      end = lib.filter (w: w != visualiserWidget) settings.bar.main.end;
+    };
+  }
+  # And the lock screen's, which is the opposite case and gets the easier
+  # treatment. A lock-screen widget is a placed object rather than a lane
+  # entry, and it has an `enabled` of its own (DesktopWidgetState) that the
+  # host checks before it builds anything — so this can switch the visualizer
+  # off by name and leave `widget_order` completely alone. That matters:
+  # `widget_order` is the definitive membership list, and an overlay that
+  # restated it would be one stale entry away from dropping the login box.
+  #
+  # Found by type rather than by rebuilding `audio_visualizer_<connector>`,
+  # which is the same reasoning as the lane above: the ids are generated per
+  # output and this should not be a second place that knows how.
+  #
+  # `type` is repeated in the override because the overlay is validated on its
+  # own, and a widget table with no type reads as type "" — an unrecognised
+  # lock-screen widget, and a warning on every build.
+  //
+    lib.optionalAttrs (lockVisualisers != { }) {
+      lockscreen_widgets.widget = lib.mapAttrs (_: w: {
+        inherit (w) type;
+        enabled = false;
+      }) lockVisualisers;
+    };
+
   configFile = tomlFormat.generate "noctalia-config.toml" settings;
 
   # Checked at build time rather than discovered at login.
@@ -1548,6 +1664,17 @@ let
   validatedConfig = pkgs.runCommand "noctalia-config.toml" { } ''
     ${noctalia} config validate ${configFile}
     cp ${configFile} $out
+  '';
+
+  # The overlay gets the same treatment, and it is worth as much: a key renamed
+  # upstream would otherwise turn into a GameMode that quietly stops turning
+  # something off. `validate` takes a single file and checks it against the
+  # schema, so a partial one is fine — that is exactly what this is.
+  gamemodeFile = tomlFormat.generate "noctalia-gamemode.toml" gamemodeSettings;
+
+  validatedGamemodeFile = pkgs.runCommand "noctalia-gamemode.toml" { } ''
+    ${noctalia} config validate ${gamemodeFile}
+    cp ${gamemodeFile} $out
   '';
 
   # Move aside a state file written by a *newer* noctalia than the one now
@@ -1893,6 +2020,25 @@ in
       source = gamemodeIndicator;
       recursive = true;
     };
+
+    # The GameMode overlay, parked where `niri-gamemode` can copy it from.
+    #
+    # It is deliberately *not* in ~/.config/noctalia: everything named `*.toml`
+    # in that directory is loaded and merged, so a file kept there would be a
+    # GameMode that is always on. This is the prepared copy; the script places
+    # it under the name noctalia reads when the mode is entered and removes it
+    # again when the mode ends.
+    #
+    # Handing it over by path rather than by store path is what lets the two
+    # halves of this feature live in the files they belong to. ./gamemode.nix
+    # owns the mode and the niri overlay, which need nothing from here; the
+    # overlay above needs the bar lane and the lock widgets, which are declared
+    # here — and a module argument in that direction would be a cycle, since
+    # this file already consumes the one that file publishes. `dataHome` is the
+    # same string on both sides, and it is a path rather than a data structure,
+    # which is the sort of agreement this repository already makes for the
+    # theme state directories.
+    xdg.dataFile."niri-gamemode/noctalia.toml".source = validatedGamemodeFile;
 
     # As a user service rather than a niri `spawn-at-startup`, matching how
     # waybar was run and for a better reason than waybar had: naming the

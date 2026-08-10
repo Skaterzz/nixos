@@ -1612,7 +1612,7 @@ let
     notification.background_opacity = 1;
     osd.background_opacity = 1;
 
-    system.monitor.enabled = false;
+    system.monitor.enabled = true; # If system monitor causes problems, set it to false.
 
     bar.main = {
       background_opacity = 1;

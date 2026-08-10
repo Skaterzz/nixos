@@ -66,6 +66,10 @@ let
   noctalia = lib.getExe pkgs.noctalia;
   shellBind = stack: ipc: if useNoctalia then "${noctalia} msg ${ipc}" else stack;
 
+  # The same choice already wrapped in the `spawn-sh` a bind body wants, for
+  # the keys that are written inline rather than named in the let block.
+  shellBindSpawn = stack: ipc: ''spawn-sh "${shellBind stack ipc}"'';
+
   terminal = "${pkgs.kitty}/bin/kitty";
 
   launcher = shellBind "${pkgs.wofi}/bin/wofi --show drun" "panel-toggle launcher";
@@ -82,6 +86,70 @@ let
   wallpaperMenu = shellBind (bin niriScripts.wallpaperMenu) "panel-toggle wallpaper";
   lockNow = shellBind (bin niriScripts.lockNow) "session lock";
   idleInhibit = shellBind "${bin niriScripts.idleInhibit} toggle" "caffeine-toggle";
+
+  # Screen capture. Under noctalia the shell does the capturing — it owns a
+  # wlr-screencopy path and a selection overlay of its own — so the keys call
+  # it directly and the wayfreeze/slurp/grim script is left to the waybar
+  # session. What each capture *becomes* is unchanged either way: noctalia
+  # pipes the PNG into the same annotate-and-save helper (see ./noctalia.nix
+  # and `screenshotAnnotate` in ./scripts.nix).
+  #
+  # `screenshot-region` is the same command for both region keys, which is not
+  # a mistake and is the point. noctalia's overlay opens with the previous
+  # region already selected and waiting on Enter, so Shift+Print is that key
+  # and Enter, and Print is that key and a drag — the two modes the script
+  # needed a `last` argument to tell apart are one overlay here, and the
+  # remembered box can be nudged rather than only accepted whole. The separate
+  # bind stays because the finger knows it.
+  screenshotRegion = shellBindSpawn (bin niriScripts.screenshot) "screenshot-region";
+  screenshotLast = shellBindSpawn "${bin niriScripts.screenshot} last" "screenshot-region";
+
+  # Full-screen capture moves too, where it used to be niri's own action. The
+  # compositor writes the raw PNG to `screenshot-path` and stops there;
+  # noctalia's goes through the annotation helper like every other capture, so
+  # Ctrl+Print now ends where Print does instead of in a file you have to go
+  # and open. `screenshot-fullscreen` with no argument takes the focused
+  # monitor — `pick` and `all` are the other two words it accepts.
+  #
+  # Alt+Print stays on niri's `screenshot-window` under both shells: noctalia
+  # captures outputs and regions and has no per-window capture, and the
+  # compositor is the only thing that knows where a window's edges are.
+  screenshotScreen =
+    if useNoctalia then ''spawn-sh "${noctalia} msg screenshot-fullscreen"'' else "screenshot-screen";
+
+  # What the keys below say about themselves in the file, which is a different
+  # thing under each shell and so cannot be written inline.
+  # Interpolated at column zero like the output and workspace blocks, so the
+  # indentation is put back here rather than left to the template.
+  screenshotComment =
+    lib.concatMapStringsSep "\n" (line: "        ${line}") (lib.splitString "\n" screenshotCommentBody);
+
+  screenshotCommentBody =
+    if useNoctalia then
+      ''
+        // Region and full-screen capture are noctalia's: it freezes, selects,
+        // captures, and pipes the result through satty for annotation. The
+        // selection is confirmed with Enter rather than on mouse-up, so a box
+        // that landed slightly wrong is nudged instead of redrawn.
+        //
+        // Both region keys run the same command. The overlay opens on the
+        // region selected last time, waiting on that Enter — so Shift+Print is
+        // "the same frame again" and Print is "drag a new one", which is what
+        // the two script modes were, without the script.
+        //
+        // Window capture stays a niri action: noctalia has no per-window
+        // capture and the compositor already knows the exact geometry.''
+    else
+      ''
+        // Region capture freezes the screen for the selection and then goes
+        // through satty for annotation; the plain screen/window captures use
+        // niri's own actions, which already know the exact geometry.
+        //
+        // `last` re-shoots the region selected the time before, with no
+        // slurp step — for taking the same frame repeatedly, where redrawing
+        // the box by hand is both the tedious part and the reason successive
+        // shots don't line up. It falls back to a selection if there's no
+        // remembered region yet, or if that region has gone off-screen.'';
 
   # Lock and blank in one key. `lock-blank` is a script under the stack
   # because it has to wait for swaylock to actually be up before powering the
@@ -377,7 +445,11 @@ ${workspaceBlocks}
     // other clock in the session. That does cost chronological sort order in
     // a file manager — %m-%d-%Y sorts January of every year together — so if
     // you ever want that back, "%Y-%m-%d %H-%M-%S" is the string to restore
-    // here and in the `screenshot` script in scripts.nix.
+    // here, in `shell.screenshot.filename_pattern` in noctalia.nix, and in the
+    // `screenshot` script in scripts.nix.
+    //
+    // Only window capture uses this under noctalia — the shell writes region
+    // and full-screen captures itself, under its own directory and pattern.
     screenshot-path "~/Pictures/Screenshots/Screenshot from %m-%d-%Y %I-%M-%S %p.png"
 
     hotkey-overlay {
@@ -598,21 +670,13 @@ ${workspaceBlocks}
         Mod+Ctrl+W  hotkey-overlay-title="Choose wallpaper" { spawn-sh "${wallpaperMenu}"; }
 
         // --- screenshots -----------------------------------------------
-        // Region capture freezes the screen for the selection and then goes
-        // through satty for annotation; the plain screen/window captures use
-        // niri's own actions, which already know the exact geometry.
-        //
-        // `last` re-shoots the region selected the time before, with no
-        // slurp step — for taking the same frame repeatedly, where redrawing
-        // the box by hand is both the tedious part and the reason successive
-        // shots don't line up. It falls back to a selection if there's no
-        // remembered region yet, or if that region has gone off-screen.
-        Print              hotkey-overlay-title="Screenshot region" { spawn "${bin niriScripts.screenshot}"; }
-        Shift+Print        hotkey-overlay-title="Screenshot last region" { spawn "${bin niriScripts.screenshot}" "last"; }
-        Ctrl+Print         { screenshot-screen; }
+${screenshotComment}
+        Print              hotkey-overlay-title="Screenshot region" { ${screenshotRegion}; }
+        Shift+Print        hotkey-overlay-title="Screenshot last region" { ${screenshotLast}; }
+        Ctrl+Print         { ${screenshotScreen}; }
         Alt+Print          { screenshot-window; }
-        Mod+Shift+S        hotkey-overlay-title="Screenshot region" { spawn "${bin niriScripts.screenshot}"; }
-        Mod+Ctrl+S         hotkey-overlay-title="Screenshot last region" { spawn "${bin niriScripts.screenshot}" "last"; }
+        Mod+Shift+S        hotkey-overlay-title="Screenshot region" { ${screenshotRegion}; }
+        Mod+Ctrl+S         hotkey-overlay-title="Screenshot last region" { ${screenshotLast}; }
 
         // --- media / hardware keys -------------------------------------
         // `volume` rather than wpctl directly, for the on-screen display: it

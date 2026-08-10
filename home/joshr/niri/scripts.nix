@@ -647,8 +647,19 @@ wallpaperMenu = pkgs.writeShellApplication {
   # state it holds, and a screenshot region isn't part of a theme.
   screenshotStateDir = "${config.home.homeDirectory}/.local/state/niri-screenshot";
 
+  # Which annotation editor `screenshotAnnotate` opens. Only the noctalia path
+  # reads it — the waybar `screenshot` helper below is built around satty's
+  # ability to write the finished file itself, which is the part spectacle has
+  # no command-line equivalent for. See local.niri.screenshotEditor.
+  screenshotEditor = config.local.niri.screenshotEditor;
+
   # Annotated region capture: the screen freezes, slurp selects, grim captures,
   # satty annotates and writes the result.
+  #
+  # This is the waybar session's screenshot. Under noctalia the shell captures
+  # instead — `noctalia msg screenshot-region`, freezing and selecting and
+  # remembering the last region itself — and only the annotate-and-save tail
+  # survives, as `screenshotAnnotate` below. See ./noctalia.nix.
   #
   # Plain screen and window captures are bound straight to niri's built-in
   # `screenshot-screen` / `screenshot-window` actions instead — the compositor
@@ -794,6 +805,96 @@ wallpaperMenu = pkgs.writeShellApplication {
       if [ -f "$out" ]; then
         notify-send -a screenshot -i "$out" "Screenshot" "Saved $(basename "$out")"
       fi
+    '';
+  };
+
+  # What noctalia pipes each capture into. It is the annotate-and-save tail of
+  # the `screenshot` script above, kept because noctalia's own screenshot
+  # service captures and delivers but does not annotate: it hands the PNG to
+  # one shell command on stdin and lets that command decide what the picture
+  # becomes.
+  #
+  # So noctalia is told to neither save nor copy (see ./noctalia.nix) and this
+  # does both, through the editor `local.niri.screenshotEditor` names. With
+  # satty that is exactly what the region script always did — same editor, same
+  # `--early-exit`, same wl-copy on save, same notification with the shot as
+  # its icon. Spectacle is the other choice and is a different shape: it cannot
+  # read stdin, so the PNG is written to its destination first and spectacle is
+  # opened on that file, which means the capture is saved whether or not the
+  # editor is ever used and spectacle's own Save is what overwrites it.
+  #
+  # `$NOCTALIA_SCREENSHOT_PATH` is the path noctalia computed for this capture
+  # and exported into the command's environment: directory and filename pattern
+  # stay noctalia's settings rather than being spelled a second time here, and
+  # what satty writes lands where noctalia would have written it. Empty would
+  # mean noctalia had nothing to save to, which is not a case its own settings
+  # can produce here, but a satty invoked with an empty --output-filename would
+  # fail obscurely, so it is checked.
+  screenshotAnnotate = pkgs.writeShellApplication {
+    name = "screenshot-annotate";
+    runtimeInputs =
+      (with pkgs; [
+        wl-clipboard
+        libnotify
+        coreutils
+      ])
+      ++ (
+        if screenshotEditor == "spectacle" then
+          [
+            pkgs.kdePackages.spectacle
+            pkgs.util-linux # setsid
+          ]
+        else
+          [ pkgs.satty ]
+      );
+    text = ''
+      out="''${NOCTALIA_SCREENSHOT_PATH:-}"
+      if [ -z "$out" ]; then
+        notify-send -a screenshot -u critical \
+          "Screenshot" "Noctalia passed no output path — nothing was saved."
+        exit 1
+      fi
+
+      mkdir -p "$(dirname "$out")"
+
+      ${
+        if screenshotEditor == "spectacle" then
+          ''
+            # spectacle only opens files, so the pipe is spent here rather than
+            # handed on. `cat` and not a redirect alone because the exit status
+            # of the write is what decides whether there is anything to edit.
+            cat > "$out"
+
+            # The clipboard is filled from here too: spectacle's editor has its
+            # own copy action but nothing that can be asked for one from the
+            # command line, so without this a capture would reach the clipboard
+            # only if you remembered to press it.
+            wl-copy --type image/png < "$out"
+
+            notify-send -a screenshot -i "$out" "Screenshot" "Saved $(basename "$out")"
+
+            # Not waited on: spectacle is a session-lifetime KDE application
+            # with no `--early-exit` of its own, and noctalia keeps a thread
+            # blocked on this command until it returns.
+            setsid spectacle --edit-existing "$out" >/dev/null 2>&1 &
+          ''
+        else
+          ''
+            # `--filename -` reads the PNG on stdin, which is how noctalia hands
+            # it over.
+            satty --filename - \
+              --output-filename "$out" \
+              --early-exit \
+              --copy-command wl-copy
+
+            # Absent when the editor was closed without saving, which is a
+            # cancel and not a failure — the same reason the old script tested
+            # for the file.
+            if [ -f "$out" ]; then
+              notify-send -a screenshot -i "$out" "Screenshot" "Saved $(basename "$out")"
+            fi
+          ''
+      }
     '';
   };
 
@@ -4052,7 +4153,6 @@ in
     wallpaperMenu
     wallpaperRandom
     wallpaperRestore
-    screenshot
     switchUser
     whenActive
     idleInhibit
@@ -4065,9 +4165,11 @@ in
     capsLock
   ]
   ++ lib.optionals (!useNoctalia) [
-    # Noctalia owns locking, blanking, idling, and the session panel itself.
-    # Keeping these legacy entry points out of the profile is what keeps their
-    # Hyprlock and Swaylock runtime closures off a Noctalia system.
+    # Noctalia owns locking, blanking, idling, the session panel — and now
+    # screen capture. Keeping these legacy entry points out of the profile is
+    # what keeps their Hyprlock, Swaylock, wayfreeze/slurp/grim runtime
+    # closures off a Noctalia system.
+    screenshot
     lockSession
     lockNow
     lockBlank
@@ -4085,6 +4187,7 @@ in
       wallpaperRandom
       wallpaperRestore
       screenshot
+      screenshotAnnotate
       lockSession
       lockNow
       lockBlank

@@ -797,9 +797,18 @@ wallpaperMenu = pkgs.writeShellApplication {
         printf %s "$geom" > "$region"
       fi
 
+      # `--disable-notifications` because satty posts its own desktop
+      # notification on save — "File saved to '<path>'.", with a thumbnail of
+      # the annotated image — and the notify-send below says the same thing in
+      # this session's own wording. Left on, every save arrives twice. Ours is
+      # the one kept: it is app-named `screenshot` rather than `Satty`, it
+      # names the file rather than the whole path, and it is the same
+      # notification the spectacle path sends, so the two editors don't
+      # announce a save differently.
       satty --filename "$shot" \
         --output-filename "$out" \
         --early-exit \
+        --disable-notifications \
         --copy-command wl-copy
 
       if [ -f "$out" ]; then
@@ -882,9 +891,18 @@ wallpaperMenu = pkgs.writeShellApplication {
           ''
             # `--filename -` reads the PNG on stdin, which is how noctalia hands
             # it over.
+            #
+            # `--disable-notifications` for the reason given on the waybar
+            # script's satty call: satty announces its own saves, and the
+            # notify-send below already announces this one. Noctalia is not the
+            # other half of the pair here — it is told to neither save nor copy
+            # (see ./noctalia.nix) and its screenshot service only notifies for
+            # the outputs it performed itself, so a capture that is piped and
+            # nothing else passes through it silently.
             satty --filename - \
               --output-filename "$out" \
               --early-exit \
+              --disable-notifications \
               --copy-command wl-copy
 
             # Absent when the editor was closed without saving, which is a

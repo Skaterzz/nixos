@@ -14,9 +14,15 @@
 #     {
 #       name = "eDP-1";
 #       mode = "2880x1800@120.000";
-#       scale = 1.5;
+#       scale = 2;
 #     }
 #   ];
+#
+# `scale` only takes integers here: fractional scaling is off by choice, and
+# a declared output is written out with an explicit `scale 1` when the field
+# is omitted so niri's DPI guess can't reintroduce one. On a dense panel that
+# means choosing between 1 (everything small, everything sharp) and 2
+# (everything large), with font sizes doing the rest.
 {
   local.niri.outputs = [ ];
 }

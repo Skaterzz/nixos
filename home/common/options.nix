@@ -222,9 +222,23 @@
           };
 
           scale = lib.mkOption {
-            type = lib.types.nullOr (lib.types.either lib.types.int lib.types.float);
+            type = lib.types.nullOr lib.types.ints.positive;
             default = null;
-            description = "Fractional scale. Omit for 1.";
+            example = 2;
+            description = ''
+              Integer scale factor. Omit for 1.
+
+              Fractional scales are deliberately not accepted. A client that
+              does not implement wp-fractional-scale-v1 — which is most of
+              XWayland, and a fair number of toolkits under it — is rendered
+              at the next integer up and then bilinearly downscaled by the
+              compositor, so text on it is soft in a way no font setting
+              fixes. Integer scales have no such path: every client is either
+              scaled exactly or left alone. A null here is rendered as an
+              explicit `scale 1` rather than left out, so niri's own
+              guess-from-DPI (which can land on a fractional value) never
+              gets to choose.
+            '';
           };
 
           transform = lib.mkOption {

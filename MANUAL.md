@@ -2163,6 +2163,31 @@ Three things worth knowing:
 Also available per output: `scale`, `transform` (rotation),
 `variableRefreshRate`, and `off`.
 
+**Fractional scaling is off, and it is enforced in two places.** `scale`
+takes an integer — the option's type rejects `1.5` at evaluation rather than
+letting it reach the compositor — and every declared output is written out
+with an explicit `scale 1` when the field is omitted. The second half is the
+one that does the work: without it niri guesses a scale from the display's
+physical size and resolution, and that guess is free to be fractional, so
+"don't set a scale" is not the same as "don't get a fractional scale".
+
+The reason is how a fractional scale reaches a client that can't ask for
+one. A client speaking `wp-fractional-scale-v1` is told the real factor and
+renders to it; everything else — most of XWayland, and a fair number of
+toolkits running under it — is handed the next integer up and then
+bilinearly downscaled by the compositor, which is resampling text that was
+already rasterised and hinted. The result is soft in a way no font setting
+corrects. At an integer scale that path doesn't exist: every client is
+either scaled exactly or left alone.
+
+What it costs is the middle of the range. A dense panel is either 1
+(everything small, everything sharp) or 2 (everything large), with font
+sizes covering what's left, and there is no 1.5 in between. That is the
+trade being made deliberately. A host that wants it back changes the
+option's type in `home/common/options.nix` and the unconditional `scale`
+line in `renderOutput` in `home/joshr/niri/niri.nix` — both, or the type
+change alone will do nothing.
+
 **The greeter does not follow the display config, deliberately.** Several
 attempts to make it do so are gone; see "The login screen" below for why. The
 greeter auto-detects, which lights up every connected display at kwin's choice

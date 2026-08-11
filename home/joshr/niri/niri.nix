@@ -19,7 +19,12 @@ let
       lines =
         lib.optional o.off "off"
         ++ lib.optional (o.mode != null) ''mode "${o.mode}"''
-        ++ lib.optional (o.scale != null) "scale ${toString o.scale}"
+        # Always written, even when unset. Omitting it leaves niri guessing a
+        # scale from the display's physical size, and that guess is free to be
+        # fractional; an explicit integer is the only way to be sure the
+        # session never ends up on one. See the `scale` option for why that
+        # matters.
+        ++ [ "scale ${toString (if o.scale == null then 1 else o.scale)}" ]
         ++ lib.optional (o.transform != null) ''transform "${o.transform}"''
         ++ lib.optional (o.position != null)
           "position x=${toString o.position.x} y=${toString o.position.y}"

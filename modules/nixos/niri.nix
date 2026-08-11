@@ -474,7 +474,29 @@ in
   # `extraPackages` puts it on the greeter's QML import path, this is what puts
   # the theme directory itself under /run/current-system/sw/share/sddm/themes,
   # which is where SDDM looks the name up.
-  environment.systemPackages = lib.optionals useAstronaut [ sddmTheme ];
+  #
+  # This is the module's one `environment.systemPackages`; the Flatpak store
+  # further down lands in it too rather than opening a second one, which the
+  # same attribute set cannot have.
+  environment.systemPackages =
+    lib.optionals useAstronaut [ sddmTheme ]
+    # A graphical front end for the Flatpak below, since niri brings no
+    # software centre of its own the way Plasma brings this one.
+    #
+    # Discover rather than GNOME Software because it is the one that comes out
+    # looking like the rest of the session: it reads
+    # ~/.config/kdeglobals, which the noctalia templates already generate
+    # (home/joshr/niri/noctalia-templates/kdeglobals), so it follows a theme
+    # switch for the same reason Dolphin does. libadwaita has no equivalent
+    # hook. The session also already pays for part of the KDE runtime through
+    # polkit-kde-agent, and for the rest of it on a host that sets
+    # `local.niri.screenshotEditor = "spectacle"`.
+    #
+    # Only its Flatpak backend is meaningful here. Discover's PackageKit half
+    # manages distribution packages, and on NixOS that is `configuration.nix`
+    # and not something an application can be allowed to edit — so the updates
+    # page speaks only for the flatpaks, and system updates stay a rebuild.
+    ++ [ pkgs.kdePackages.discover ];
 
   # --- keep the login screen in step with the desktop ---------------------
   #
@@ -549,6 +571,32 @@ in
   xdg.portal.enable = true;
 
   services.flatpak.enable = true;
+
+  # Flathub, added once, because a software centre with no remote configured is
+  # an empty window and reads as broken rather than as unconfigured. Discover
+  # (in environment.systemPackages above) has no way to add one itself, and
+  # `services.flatpak` deliberately configures no remotes.
+  #
+  # `--if-not-exists` is what keeps this from being a boot-time network call:
+  # it returns before fetching anything once the remote is there, so only the
+  # first boot after this lands actually talks to dl.flathub.org. That is also
+  # why failing is survivable — a first boot with no network leaves the remote
+  # unadded and the next one adds it — so nothing else is ordered after this.
+  #
+  # System-wide rather than `--user`: the flatpaks are installed for the
+  # machine, the same way its packages are, and a per-user remote would have to
+  # be added again for every account that opened the store.
+  systemd.services.flathub-remote = {
+    description = "Register the Flathub remote for Flatpak";
+    wantedBy = [ "multi-user.target" ];
+    after = [ "network-online.target" ];
+    wants = [ "network-online.target" ];
+    serviceConfig = {
+      Type = "oneshot";
+      RemainAfterExit = true;
+      ExecStart = "${pkgs.flatpak}/bin/flatpak remote-add --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo";
+    };
+  };
 
   # Mount/unmount removable media from the file manager without a password.
   services.udisks2.enable = true;

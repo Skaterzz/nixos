@@ -31,6 +31,7 @@ the machine.
   - [Screenshots](#screenshots)
   - [Lock screen](#lock-screen)
   - [RGB lighting](#rgb-lighting)
+  - [Installing applications: Flatpak and Discover](#installing-applications-flatpak-and-discover)
 - [Wallpapers](#wallpapers)
   - [The default](#the-default)
   - [Which twenty, and who decides](#which-twenty-and-who-decides)
@@ -228,7 +229,8 @@ can't occur — and neither can the from-source rebuild the workaround costs.
 ### Layout
 
 ```
-modules/nixos/niri.nix        # session, SDDM + theme, polkit, PAM, portals
+modules/nixos/niri.nix        # session, SDDM + theme, polkit, PAM, portals,
+                              #   Flatpak + Discover
 modules/nixos/ddcci.nix       # DDC/CI brightness for external monitors
 home/joshr/displays/
   gamestation.nix             # DP-3 + DP-2 layout — edit here for monitors
@@ -2466,6 +2468,18 @@ on the clipboard for as long as the editor stayed open. Note that
 `pipe_command` does nothing on its own — noctalia gates it behind
 `pipe_to_command`, so the two are set together.
 
+**One notification per saved capture**, and it takes saying so in two places
+because both halves of the pipeline want to announce a save. satty posts its
+own — *"File saved to '<path>'."*, with a thumbnail — so it is run with
+`--disable-notifications` and the `notify-send` in `screenshot-annotate` is the
+one that survives: app-named `screenshot` rather than `Satty`, carrying the
+shot itself as the icon, and identical to what the spectacle path sends, so the
+two editors don't announce the same thing differently. Noctalia is not the
+other half of that pair — its screenshot service notifies only for the
+deliveries it performs itself, and it is told to neither save nor copy, so a
+capture that is only piped passes through it silently. Turning `save_to_file`
+back on would bring a second notification with it, on top of the second file.
+
 `local.niri.screenshotEditor` picks the editor: `"satty"` by default, or
 `"spectacle"` on a host that already runs Plasma and knows KDE's. Spectacle is
 a different shape — it can't read stdin and can't be told to exit — so that
@@ -2544,6 +2558,10 @@ region would let you click that box to accept it but never drag its edges — a
 worse version of the same thing, with an extra click. That limitation is
 exactly the one noctalia's overlay doesn't have, which is why the two keys
 collapse into one command above.
+
+satty is run with `--disable-notifications` here too, for the same reason and
+with the same result: the script's own `notify-send` is the single notification
+a saved capture produces, under either shell.
 
 ### Lock screen
 
@@ -3187,6 +3205,44 @@ pgrep -af openrgb                           # daemon + applet is expected
 
 The lighting does not survive a suspend on its own; see "Coming back from
 suspend" above for the service that puts it back.
+
+### Installing applications: Flatpak and Discover
+
+Flatpak is enabled on both desktops (`modules/nixos/niri.nix`,
+`modules/nixos/plasmalogin.nix`) and is the way to install an application that
+this configuration does not carry — anything you want to try without editing
+`configuration.nix` and rebuilding, and anything that ships as a flatpak and
+nothing else. It is not a replacement for the package lists: a program that
+belongs on these machines belongs in Nix, where a rebuild puts it back.
+
+**KDE Discover is the front end** on the niri hosts. Plasma already brings its
+own copy; niri brings no software centre at all, so `kdePackages.discover` is
+in `environment.systemPackages` there. Discover rather than GNOME Software
+because it is the one that ends up looking like the rest of the session — it
+reads `~/.config/kdeglobals`, which the noctalia templates generate, so it
+follows a theme switch exactly the way Dolphin does, where libadwaita has no
+equivalent hook. It is also not a fresh runtime on the machine: polkit-kde-agent
+is already in the session, and a host on `local.niri.screenshotEditor =
+"spectacle"` has most of the rest of it.
+
+**Only its Flatpak half means anything here.** Discover's other backend is
+PackageKit, for distribution packages, and on NixOS those are this repository —
+not something an application can be handed write access to. So its updates page
+speaks for the flatpaks and nothing else, and system updates stay
+`sudo nixos-rebuild switch --flake .#<host>`.
+
+**Flathub is registered by a one-shot unit**, `flathub-remote`, because
+`services.flatpak` configures no remotes and a store with none is an empty
+window that reads as broken. It runs `flatpak remote-add --if-not-exists`, which
+returns without fetching anything once the remote exists — so only the first
+boot after this landed actually talks to `dl.flathub.org`, and a first boot with
+no network simply leaves it for the next one. Nothing is ordered after it. To
+check, or to do it by hand:
+
+```bash
+flatpak remotes
+systemctl status flathub-remote
+```
 
 ## Wallpapers
 

@@ -4300,7 +4300,14 @@ if the one above it is fine:
 ```
 == controllers ==
   Valve Software Steam Controller        mouse1 event6
-  hid-steam has: 0003:28DE:1102.0001
+  Valve Software Steam Controller Puck   mouse2 event8
+  extest fake device                     mouse3 event11
+
+  node     product driver       open by
+  hidraw2  1102    hid-steam    steam(4711)
+           Valve Software Steam Controller
+  hidraw4  1304    hid-generic  steam(4711)
+           Valve Software Steam Controller Puck
 
 == steam input on wayland ==
 programs.steam.extest.enable = true
@@ -4321,24 +4328,57 @@ rebuild. And `extest fake device: absent` with everything above it healthy
 just means nothing has asked XTEST for pointer motion yet: open the Desktop
 Layout, move the pad, look again.
 
-**The one case this does not fix.** The 2026 Steam Controller has a separate,
-Valve-side bug: Steam misidentifies it as Steam Deck hardware, its registration
-fails (`BYieldingCompleteSteamControllerRegistration - Error ... Invalid
-Parameter` in the Steam log), and Steam takes the pad out of the firmware's own
-mouse mode without putting anything in its place. The symptom is close enough
-to be confusing — no cursor from the moment Steam starts — and the tell is that
-with extest loaded there is *still* no `extest fake device` after using the pad,
-because Steam is not sending XTEST events for extest to catch.
+**Two pads, and the table that tells them apart.** The product column is the
+identity: `1102` is the wired 2015 Steam Controller, `1142` its wireless
+dongle, `1205` a Steam Deck, and `1304` the 2026 controller, which enumerates
+as "Steam Controller Puck". `steam` in the last column is Steam having claimed
+that pad over hidraw, which is both correct and the moment lizard mode ends —
+it is what Steam Input's layouts require, and it is why the section under it
+has to work.
 
-The workaround for that one is Steam's own, and it is worth knowing about
-generally because it is the configuration that cannot break: **lizard mode**.
-Left alone, the kernel's `hid-steam` driver lets the controller present itself
-as a plain USB mouse and keyboard — no Steam, no X server, no compositor
-involved, and the trackpad moves the real cursor because as far as the machine
-is concerned it *is* a mouse. Steam takes the pad out of that mode when it
-claims it in order to offer its own layouts. Turning the Desktop Layout off in
-Steam (Settings → Controller) hands it back. `gaming-doctor`'s `hid-steam has:`
-line is how to see which pads that driver holds.
+The driver column is where the two generations genuinely differ, and it is not
+a configuration choice. `hid-steam`'s device table is those first three
+product ids and nothing else (`steam_controllers[]` in
+`drivers/hid/hid-steam.c`), so a 2015 pad gets a kernel driver that owns its
+lizard mode — the firmware's mouse-and-keyboard emulation, switched off when a
+hidraw client opens the device and switched back on when the last one closes.
+The 2026 pad falls through to `hid-generic`. Its lizard mode is the firmware's
+own decision, nothing in the kernel is managing it, and there is no kernel-side
+path that puts it back.
+
+**The 2026 pad, and the case extest might not cover.** There is a second,
+Valve-side bug filed against that controller
+([steam-for-linux#13185](https://github.com/ValveSoftware/steam-for-linux/issues/13185)):
+Steam misidentifies it as Steam Deck hardware and its registration fails
+(`BYieldingCompleteSteamControllerRegistration - Error ... Invalid Parameter`
+in the Steam log). The reporter's symptom is the same phantom cursor described
+above, which is XTEST and is what extest catches — so extest is the first thing
+to try for that pad too, and the same `extest fake device: present` line is the
+proof. Their diagnosis blames the registration failure, but the uinput device
+Steam fails to create is not the one the desktop cursor comes from on Linux;
+XTEST is.
+
+What to do if it *is* the harder version — extest loaded, permissions fine,
+and still no `extest fake device` after moving the pad, meaning Steam is
+issuing no XTEST at all — is give the pad back to its firmware. Turning Steam
+Input off for that controller (Steam → Settings → Controller) stops Steam
+claiming it, at which point the `open by` column empties and the pad returns to
+lizard mode: a plain USB mouse and keyboard as far as the machine is concerned,
+with the trackpad moving the real cursor and nothing in the path that can
+break.
+
+That is a real trade rather than a free fallback, and the same table says why.
+In lizard mode the 2026 pad emits keyboard and mouse events and *no gamepad* —
+and with no `hid-steam` behind it there is nothing to synthesise one, so it
+stops being usable as a controller in games. Steam creates the virtual gamepad
+(`28DE:11FF`) other software sees, which is exactly the thing being turned off.
+The 2015 pad is not in the same position: it has the kernel driver, so it comes
+back on its own whenever Steam lets go.
+
+There is deliberately no option here for forcing that by taking the hidraw node
+away from Steam in udev. It would work, and it would cost the pad's entire
+purpose to fix its pointer, which is a decision to make in Steam's settings
+where it can be undone in a second rather than in a rebuild.
 
 ### The desktop is also drawing
 

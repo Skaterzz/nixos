@@ -1033,19 +1033,36 @@
       libextest.so ... cannot be preloaded ... ignored` and carry on. It is
       ugly and it is harmless.
 
-      What it does not fix is a controller Steam never drives at all. The
-      2026 Steam Controller has a separate Valve-side bug where Steam
-      misidentifies it as Steam Deck hardware, fails its registration, and
-      takes the pad out of the firmware's own mouse mode ("lizard mode")
-      without putting anything in its place — see
-      https://github.com/ValveSoftware/steam-for-linux/issues/13185. The
-      symptom is close enough to be confusing (no cursor once Steam starts)
-      and the tell is that with extest loaded there is still no `extest fake
-      device` in /proc/bus/input/devices, because Steam is not sending XTEST
-      events for extest to catch. The workaround for that one is Steam's own:
-      turn the Desktop Layout off, which leaves the pad in lizard mode, where
-      it is a plain USB mouse the kernel exposes and no compositor has an
-      opinion about.
+      This covers both generations of the controller, because both reach the
+      pointer the same way. It does not cover a pad Steam never drives at
+      all, and the 2026 controller has a Valve-side bug that can put it in
+      that state — Steam misidentifies it as Steam Deck hardware and its
+      registration fails
+      (https://github.com/ValveSoftware/steam-for-linux/issues/13185). The
+      tell is that with extest loaded there is still no `extest fake device`
+      in /proc/bus/input/devices after moving the pad: no XTEST is being
+      issued, so there is nothing to translate.
+
+      The way out of that one is Steam's own settings rather than anything
+      here — turning Steam Input off for that controller stops Steam claiming
+      the hidraw node, and the pad falls back to its firmware's lizard mode,
+      where it is a plain USB mouse and keyboard and no compositor has an
+      opinion about it. It costs that pad its gamepad, which is not a small
+      thing: `hid-steam`'s device table is the 2015 controller, its dongle and
+      the Steam Deck (`steam_controllers[]` in drivers/hid/hid-steam.c), so
+      the 2026 pad has no kernel driver to synthesise one and Steam's virtual
+      gamepad is the only one it ever had. The 2015 pad is not in that
+      position — the kernel driver restores its lizard mode by itself as soon
+      as Steam lets go.
+
+      There is no option here for taking the hidraw node away from Steam in
+      udev instead. It would work, and it would trade a pad's whole purpose
+      for its pointer — a decision that belongs in a settings panel where it
+      can be undone in a second, not in a rebuild.
+
+      `gaming-doctor` prints the table this is all read from: every Valve HID
+      device, its product id, which driver claimed it, and which process has
+      its hidraw node open.
     '';
   };
 

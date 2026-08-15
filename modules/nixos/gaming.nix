@@ -290,11 +290,13 @@ let
   #
   # The last two sections answer a different question — "why does the pad not
   # move the cursor" — and they are here rather than in a command of their own
-  # because the answer is assembled from four places nobody remembers the
-  # paths to: /proc/bus/input/devices, the hid-steam driver directory,
+  # because the answer is assembled from places nobody remembers the paths to:
+  # /proc/bus/input/devices, every hidraw device's uevent and driver link
+  # under /sys, the open file descriptors of every process this user owns,
   # /dev/uinput's permissions, and the environment of the *running* Steam.
   # See `local.gaming.steamInputOnWayland` in modules/nixos/options.nix for
-  # what each of them means.
+  # what each of them means. With two generations of Steam Controller on one
+  # machine the table is also the only thing that says which pad is which.
   #
   # Every probe here is allowed to find nothing: no card, no model server, no
   # niri session, no controller. writeShellApplication runs this under
@@ -308,7 +310,6 @@ let
       [
         coreutils
         curl
-        findutils # which pads hid-steam has bound
         gamemode # gamemoded --status
         gawk # the controller table
         gnugrep
@@ -442,13 +443,12 @@ let
       #
       # Everything above answers "why is it slow". The two sections below
       # answer "why does the pad not move the cursor", which is the other
-      # thing that gets typed into a search box at eleven at night, and they
-      # are here rather than in a second command because the answer is
-      # assembled from four places nobody remembers the paths to.
+      # thing that gets typed into a search box at eleven at night.
       #
-      # Read them in order. The kernel has to see the pad; /dev/uinput has to
-      # be writable; the preload has to be in the *running* Steam; and only
-      # then does the absence of the fake device mean anything.
+      # Read them in order. The kernel has to see the pad; something has to
+      # have claimed it, or not, and which is which matters; /dev/uinput has
+      # to be writable; the preload has to be in the *running* Steam; and
+      # only then does the absence of the fake device mean anything.
 
       section "controllers"
       # Every input device whose name looks like a pad, with the event and
@@ -472,30 +472,78 @@ let
         echo "nothing controller-shaped is connected, or no driver has bound to it"
       fi
 
-      # Which pads the kernel's own Steam driver has. hid-steam is what
-      # provides "lizard mode" — the firmware emulating a plain mouse and
-      # keyboard, which needs no Steam, no X server and no compositor, and is
-      # therefore the configuration that cannot break on Wayland. Steam takes
-      # a pad *out* of that mode when it claims it over hidraw, which is the
-      # trade: Steam Input's layouts, at the cost of needing the section
-      # below to work.
+      # --- every Valve HID device, its driver, and who has it open --------
       #
-      # A bound device is a symlink in the driver's directory; `bind`,
-      # `unbind` and `uevent` are plain files and `module` is the one symlink
-      # that is not a device, which is what the two filters are for. `ls`
-      # piped into `grep` would say the same thing and fail the build:
-      # writeShellApplication runs shellcheck in its check phase, and one
-      # SC2010 is enough to fail it.
-      if [ -d /sys/bus/hid/drivers/hid-steam ]; then
-        bound=$(find /sys/bus/hid/drivers/hid-steam -maxdepth 1 -type l \
-          ! -name module -printf '%f ' 2>/dev/null) || bound=""
-        if [ -n "$bound" ]; then
-          echo "  hid-steam has: $bound"
-        else
-          echo "  hid-steam is loaded but has no device"
-        fi
+      # This is the table that matters when there is more than one pad on the
+      # machine, because the two generations behave differently in a way
+      # nothing else here would show.
+      #
+      # The product id says which pad a line is. 1102 is the wired 2015 Steam
+      # Controller, 1142 its wireless dongle, 1205 a Steam Deck, and 1304 the
+      # 2026 controller (which enumerates as "Steam Controller Puck").
+      #
+      # The driver column is the difference. hid-steam's device table is those
+      # first three ids and nothing else — `steam_controllers[]` in
+      # drivers/hid/hid-steam.c — so a 2015 pad gets a kernel driver that owns
+      # its lizard mode, enabling the firmware's mouse-and-keyboard emulation
+      # when nothing holds the device and disabling it the moment a hidraw
+      # client opens one (`steam_input_open`). The 2026 pad falls through to
+      # hid-generic: its lizard mode is the firmware's own decision, the
+      # kernel is not managing it, and there is no kernel-side path that puts
+      # it back.
+      #
+      # And the last column is the fact that explains a dead cursor. Lizard
+      # mode ends when something opens the hidraw node; `steam` in that column
+      # is therefore Steam having taken the pad, which is correct and wanted —
+      # it is what Steam Input's layouts require — and also why everything in
+      # the next section has to work.
+      valve=""
+      for dev in /sys/class/hidraw/hidraw*; do
+        [ -e "$dev/device/uevent" ] || continue
+        # HID_ID=0003:000028DE:00001102 — bus, vendor, product, each padded.
+        hid_id=$(gawk -F= '$1 == "HID_ID" { print $2 }' "$dev/device/uevent") || continue
+        case "$hid_id" in *:000028DE:*) ;; *) continue ;; esac
+
+        node=''${dev##*/}
+        product=$(printf '%s' "$hid_id" | gawk -F: '{ print substr($3, 5) }')
+        hid_name=$(gawk -F= '$1 == "HID_NAME" { print $2 }' "$dev/device/uevent") || hid_name="?"
+
+        # The driver is a symlink; no driver at all is a device nothing has
+        # claimed, which is itself worth seeing.
+        drv=$(readlink "$dev/device/driver" 2>/dev/null) || drv=""
+        [ -n "$drv" ] || drv="(none)"
+        drv=''${drv##*/}
+
+        valve="$valve$node|$product|$drv|$hid_name
+"
+      done
+
+      if [ -z "$valve" ]; then
+        echo "  no Valve HID devices — no pad is connected"
       else
-        echo "  hid-steam not loaded"
+        # One pass over /proc rather than one per device. Only this user's
+        # processes are readable, which is the right set: Steam runs as the
+        # person sitting here.
+        holders=""
+        for link in /proc/[0-9]*/fd/*; do
+          target=$(readlink "$link" 2>/dev/null) || continue
+          case "$target" in /dev/hidraw*) ;; *) continue ;; esac
+          pid=''${link#/proc/}
+          pid=''${pid%%/*}
+          comm=$(cat "/proc/$pid/comm" 2>/dev/null) || comm="?"
+          holders="$holders''${target##*/} $comm($pid)
+"
+        done
+
+        printf '  %-8s %-7s %-12s %s\n' node product driver "open by"
+        while IFS='|' read -r node product drv hid_name; do
+          [ -n "$node" ] || continue
+          who=$(printf '%s' "$holders" | gawk -v n="$node" '$1 == n { print $2 }' \
+            | sort -u | tr '\n' ' ')
+          [ -n "$who" ] || who="-"
+          printf '  %-8s %-7s %-12s %s\n' "$node" "$product" "$drv" "$who"
+          printf '           %s\n' "$hid_name"
+        done <<< "$valve"
       fi
 
       section "steam input on wayland"

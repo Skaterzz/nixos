@@ -63,13 +63,17 @@ the machine.
   - [VS Code](#vs-code)
 - [Gaming performance](#gaming-performance)
   - [`gaming-doctor`](#gaming-doctor)
+  - [The controller, and the second cursor](#the-controller-and-the-second-cursor)
   - [The desktop is also drawing](#the-desktop-is-also-drawing)
+  - [VRR, and the judder that isn't the game](#vrr-and-the-judder-that-isnt-the-game)
   - [The shader cache, and the sawtooth](#the-shader-cache-and-the-sawtooth)
   - [The card is also the model server](#the-card-is-also-the-model-server)
+  - [Split locks](#split-locks)
   - [Launch options](#launch-options)
   - [The XWayland regression](#the-xwayland-regression)
   - [The driver](#the-driver)
   - [The kernel](#the-kernel)
+  - [Would Hyprland be better?](#would-hyprland-be-better)
 - [Single GPU passthrough](#single-gpu-passthrough)
   - [What it costs](#what-it-costs)
   - [Turning it on](#turning-it-on)
@@ -2136,7 +2140,8 @@ auto-detects, which is what the laptop does.
 # home/joshr/displays/gamestation.nix
 local.niri.outputs = [
   { name = "DP-3"; mode = "2560x1440@180.000";
-    position = { x = 0;    y = 0; }; focusAtStartup = true; }
+    position = { x = 0;    y = 0; }; focusAtStartup = true;
+    variableRefreshRate = "on-demand"; }
   { name = "DP-2"; mode = "1920x1080@100.000";
     position = { x = 2560; y = 0; }; }
 ];
@@ -2162,6 +2167,12 @@ Three things worth knowing:
 
 Also available per output: `scale`, `transform` (rotation),
 `variableRefreshRate`, and `off`.
+
+`variableRefreshRate` takes three values rather than a bool: `false`, `true`
+(VRR held on), and `"on-demand"` (VRR only while a game is on that display).
+The desk's 1440p panel is set to the third — see
+[VRR, and the judder that isn't the game](#vrr-and-the-judder-that-isnt-the-game)
+for what it is for and why the on-demand form is the one to want.
 
 **Fractional scaling is off, and it is enforced in two places.** `scale`
 takes an integer — the option's type rejects `1.5` at evaluation rather than
@@ -4225,6 +4236,110 @@ be bound to a key and hit mid-game — where the terminal is behind a fullscreen
 window — as it is to be typed at a prompt. Nothing is raised on a clean report,
 and a run over ssh with no session bus behind it just prints, as before.
 
+### The controller, and the second cursor
+
+This one is not about frame rate, and it is here because it is the other thing
+that makes a game unplayable on this machine.
+
+The symptom: a Steam Controller moves *something*. Steam's own interface reacts
+to it, buttons under it highlight, clicks land — and the cursor on screen never
+moves. There are two pointers and only one of them is drawn.
+
+**It is not niri, and it is not this configuration.** Steam is an X11 program,
+and its desktop-level mouse emulation — the Desktop Layout, the Big Picture
+cursor, the guide-button chord that turns the right pad into a mouse — is
+written against the X11 XTEST extension. XTEST is a request to an X server to
+*pretend* a device did something. In a Wayland session there is no X server
+that owns the pointer: Steam is an Xwayland client, so the fake motion moves
+Xwayland's private idea of where the cursor is, and the compositor — which
+draws the cursor and decides which surface gets the click — is never told.
+Other X11 windows follow the phantom, which is why Steam itself reacts.
+Everything else, including the shell's own panels, ignores it.
+
+Valve has had the report since 2023
+([steam-for-linux#9318](https://github.com/ValveSoftware/steam-for-linux/issues/9318),
+closed as not planned), it happens on the Steam Deck's own desktop, it happens
+under Plasma Wayland, and it happens under Hyprland
+([steam-for-linux#13185](https://github.com/ValveSoftware/steam-for-linux/issues/13185)).
+Changing compositor does not change it. See
+[Would Hyprland be better?](#would-hyprland-be-better).
+
+What does change it is giving those XTEST calls somewhere real to land:
+
+```nix
+local.gaming.steamInputOnWayland = true;   # the default
+```
+
+That switches on `programs.steam.extest.enable`, which preloads
+[extest](https://github.com/Supreeeme/extest) into Steam. extest replaces the
+XTEST entry points at load time and, instead of asking an X server for a fake
+event, opens `/dev/uinput` and creates a virtual input device — which the
+kernel, and therefore the compositor, treats as an actual mouse plugged into
+the machine. The pointer it moves is the one on screen, over every window, X11
+or Wayland or the bar. nixpkgs sets the `LD_PRELOAD` in Steam's own
+environment, so it reaches Steam and the games Steam starts and nothing else on
+the system.
+
+Two prerequisites are already met here and are worth knowing because they are
+what breaks first. `/dev/uinput` has to exist and be writable:
+`hardware.steam-hardware.enable` (which `programs.steam.enable` turns on for
+us) loads the uinput module and installs Valve's udev rules, one of which tags
+the node `uaccess` so whoever is logged in at the seat gets an ACL on it. And
+every interactive account here is in the `input` group, which is the second
+route to the same permission.
+
+The cost is a line of noise. extest is a 32-bit library because Steam is a
+32-bit program, so every 64-bit process Steam starts — which is most games —
+gets an `ERROR: ld.so: object 'libextest.so' ... cannot be preloaded ...:
+ignored` on stderr and carries on. It is ugly and it is harmless.
+
+**Checking it, in order.** `gaming-doctor` ends with two sections for this, and
+they are meant to be read top to bottom because each one only means something
+if the one above it is fine:
+
+```
+== controllers ==
+  Valve Software Steam Controller        mouse1 event6
+  hid-steam has: 0003:28DE:1102.0001
+
+== steam input on wayland ==
+programs.steam.extest.enable = true
+crw-------+ 1 root root 10, 223 Aug 15 09:12 /dev/uinput
+  writable by joshr
+steam pid 4711: LD_PRELOAD=/nix/store/…-extest-…/lib/libextest.so
+extest fake device: present — XTEST is reaching the real pointer
+```
+
+An empty first section is a cable, a battery or a dongle and nothing below it
+applies. On the `/dev/uinput` line the mode bits are not the interesting part
+— the node is root-owned and the `+` is the ACL udev's `uaccess` tag added for
+whoever is logged in — so the `writable by` line under it is the answer. Not
+writable is a permissions problem, and extest cannot even create its device.
+A running Steam with no `LD_PRELOAD` is a Steam that did not come through the
+wrapper — a Flatpak, a stale desktop entry, or a shell that predates the
+rebuild. And `extest fake device: absent` with everything above it healthy
+just means nothing has asked XTEST for pointer motion yet: open the Desktop
+Layout, move the pad, look again.
+
+**The one case this does not fix.** The 2026 Steam Controller has a separate,
+Valve-side bug: Steam misidentifies it as Steam Deck hardware, its registration
+fails (`BYieldingCompleteSteamControllerRegistration - Error ... Invalid
+Parameter` in the Steam log), and Steam takes the pad out of the firmware's own
+mouse mode without putting anything in its place. The symptom is close enough
+to be confusing — no cursor from the moment Steam starts — and the tell is that
+with extest loaded there is *still* no `extest fake device` after using the pad,
+because Steam is not sending XTEST events for extest to catch.
+
+The workaround for that one is Steam's own, and it is worth knowing about
+generally because it is the configuration that cannot break: **lizard mode**.
+Left alone, the kernel's `hid-steam` driver lets the controller present itself
+as a plain USB mouse and keyboard — no Steam, no X server, no compositor
+involved, and the trackpad moves the real cursor because as far as the machine
+is concerned it *is* a mouse. Steam takes the pad out of that mode when it
+claims it in order to offer its own layouts. Turning the Desktop Layout off in
+Steam (Settings → Controller) hands it back. `gaming-doctor`'s `hid-steam has:`
+line is how to see which pads that driver holds.
+
 ### The desktop is also drawing
 
 Everything else in this section is about the machine. This one is about the
@@ -4243,6 +4358,68 @@ It is not a substitute for anything below. A blurred bar does not cause the
 sawtooth, and turning off animations will not un-evict video memory — this is
 a few percent of frame time and some GPU contention, where the next three
 sections are the difference between a game running and a game falling over.
+
+### VRR, and the judder that isn't the game
+
+There is a kind of stutter that no amount of frame rate fixes, because it is
+not the game producing frames badly — it is the display refusing to show them
+when they arrive.
+
+A fixed 180Hz panel puts a new image up every 5.6ms and at no other time. A
+frame that took 7ms to render therefore waits until 11.2ms, a frame that took
+4ms waits until 5.6, and a game whose frame times wander a little around the
+refresh interval — which is every game — is shown in a stuttering pattern of
+one interval, two intervals, one, two. The frame rate counter says 150 and it
+does not look like 150.
+
+Variable refresh rate inverts that: the panel waits for the frame instead of
+the frame waiting for the panel. `home/joshr/displays/gamestation.nix` turns it
+on for the 1440p display:
+
+```nix
+variableRefreshRate = "on-demand";
+```
+
+**`"on-demand"` is not a weaker `true`.** It leaves the output at its fixed
+rate for the desktop and switches to VRR only while a window carrying niri's
+`variable-refresh-rate` window rule is displayed on it. The only rule here that
+sets it matches games:
+
+```kdl
+window-rule {
+    match app-id=r#"^steam_app_"#
+    match app-id=r#"^gamescope$"#
+    variable-refresh-rate true
+}
+```
+
+Both halves are required and each does nothing alone — the output declaration
+without the window rule leaves VRR permanently off, and the window rule without
+an on-demand output has nothing to switch.
+
+Two reasons to want it that way round rather than holding VRR on. A desktop
+under VRR is a display whose refresh rate tracks how much the shell happens to
+be animating, and on some panels that shows up as brightness flicker in dark
+areas — a real complaint, and one you would notice while reading rather than
+while playing. And it means this setting cannot make anything worse when nobody
+is playing anything, which is the property that makes it safe to leave on by
+default.
+
+mpv is deliberately not in that rule even though upstream uses it as the
+example. Video at 24fps is a genuinely good case for VRR, and it is also the
+case where a panel that flickers would do it during a dark scene in a film.
+Adding `^mpv$` to the match list is the whole change if that turns out to be
+wanted.
+
+`niri msg outputs` says what actually happened — it reports whether the display
+supports adaptive sync and whether VRR is enabled on it. A panel that does not
+support it takes this setting and stays fixed; niri logs it and carries on,
+so there is no failure mode here worse than "no change". `false` takes it out
+entirely and `true` holds it on for the desktop as well.
+
+The second display (DP-2, 1080p at 100Hz) is left fixed. Nothing is played on
+it, and a second panel switching refresh rate underneath a bar and a browser is
+the flicker case with none of the benefit.
 
 ### The shader cache, and the sawtooth
 
@@ -4350,6 +4527,45 @@ game started. If that turns out to be the recurring case, the blunt answer is
 `local.ai.openclaw.linger = false`, and the bluntest is `local.ai.enable =
 false` for as long as the machine is being played on.
 
+### Split locks
+
+A split lock is an atomic instruction whose operand straddles two cache lines.
+The CPU cannot do that with a normal cache lock, so it locks the entire memory
+bus for the duration and every other core stalls behind it. Linux detects them,
+and by default it punishes the thread that did one: the thread is forced to
+sleep, and the check is serialised behind a global semaphore so only one such
+thread anywhere on the machine runs at a time. Upstream calls that the misery
+mode, which is not a nickname anyone here invented.
+
+That is the right default for a machine running other people's code and the
+wrong one for a desk. Plenty of Windows games do split locks in a hot path, and
+under Proton the penalty lands on the render thread — the game does not fail,
+it hitches, in bursts, in a way that looks exactly like a GPU problem and is
+not one. It was hit widely enough that Linux 6.2 added a sysctl specifically so
+it could be turned off ([Phoronix's
+write-up](https://www.phoronix.com/news/Linux-Splitlock-Hurts-Gaming)).
+`modules/nixos/gaming.nix` turns it off:
+
+```nix
+boot.kernel.sysctl."kernel.split_lock_mitigate" = 0;
+```
+
+The detector stays on and still logs to the kernel ring buffer; what is
+switched off is the sleeping. What is given up is protection against a local
+program deliberately degrading the machine for everything else by doing split
+locks on purpose, which is a real consideration on a shared server and not one
+here. `local.gaming.splitLockMitigate = true;` restores the kernel default.
+
+Checking it, and whether it was ever the problem:
+
+```
+sysctl kernel.split_lock_mitigate      # 0 = off, 1 = kernel default
+dmesg | grep -i 'split lock'           # which programs actually do them
+```
+
+On a CPU with neither split-lock nor bus-lock detection the sysctl does not
+exist, systemd-sysctl logs that it skipped it, and nothing else happens.
+
 ### Launch options
 
 Steam's per-game launch options are not in this repository — nothing here can
@@ -4372,6 +4588,16 @@ harmless, it is just not doing what it looks like it is doing.
 **`DXVK_HUD=compiler` is worth keeping while diagnosing.** It shows pipeline
 compilation as it happens, which is how to confirm or rule out the
 recompilation case in a few minutes of play rather than by inference.
+
+**`PROTON_ENABLE_WAYLAND=1` is worth trying per game and not worth setting for
+the session.** Proton 10 ships Wine's native Wayland driver, which takes
+Xwayland out of the path entirely — no `xwayland-satellite`, no X11 protocol
+between the game and the compositor, and none of the scaling and pointer
+oddities that come with it. It is also not feature complete, and the things
+that break when it is wrong are input and presentation, which are the two
+things you would least like to have break. Per-game launch options are the
+right granularity for that; a session-wide variable would silently apply it to
+a library.
 
 On the wrappers: `mangohud gamescope -- %command%` puts MangoHud on
 *gamescope*, so the numbers on screen are the compositor's rather than the
@@ -4582,6 +4808,58 @@ CachyOS build.
 `nix flake update nix-cachyos-kernel` is what moves the kernel; like every
 other input, commit the resulting `flake.lock` alongside whatever prompted it,
 so a kernel that works is a kernel you can get back to.
+
+### Would Hyprland be better?
+
+The honest answer for this machine is no, and it is worth writing down because
+the question comes back every time something goes wrong under niri.
+
+**For the controller, it changes nothing.** The second-cursor problem is Steam
+talking X11 in a session with no X server, and Hyprland is a Wayland compositor
+with the same Xwayland underneath. The bug is filed against Steam by people
+running Hyprland
+([steam-for-linux#13185](https://github.com/ValveSoftware/steam-for-linux/issues/13185)),
+the fix there is the same extest preload this configuration now carries, and
+Plasma Wayland — which is what `gamestation` runs — has it too. Migrating
+would move the problem, not solve it.
+
+**For stutter, the two are close enough that the difference is not the reason
+to move.** Both do direct scanout, so a fullscreen game's buffer goes to the
+display controller without the compositor blending it. Both do VRR, and niri's
+on-demand form — [above](#vrr-and-the-judder-that-isnt-the-game) — is the more
+precise of the two. Both leave the real work to gamemode, the driver and the
+kernel, which is where every section above this one lives.
+
+There is one genuine gap, and it is about latency rather than stutter: niri
+cannot tear yet. Hyprland's `allow_tearing` lets a game present a frame the
+instant it is ready instead of at the next refresh, which shaves part of a
+frame off input latency at the cost of a visible seam. niri's
+[issue #844](https://github.com/YaLTeR/niri/issues/844) tracks it, and the
+implementation is waiting on Smithay rather than on a decision; the plan is for
+it to become a window rule, the same shape as on-demand VRR. If sub-frame input
+latency in competitive games is the thing that matters most, that is a real
+argument, and it is the only one on the list. On a VRR panel it is also
+substantially the smaller half of the problem.
+
+**Against that, what a migration actually costs here.** `home/joshr/niri/` is
+around twelve thousand lines. Noctalia would survive — Hyprland is one of its
+first-class compositor integrations, alongside niri — and its palette templates
+render the same files either way, so the theming that reaches Dolphin, kitty,
+VS Code, the boot menu and the greeter would carry over mostly untouched. What
+would not survive is everything written against niri itself: `niri.nix` (900
+lines generating KDL — every keybind, every window rule, the scrolling layout
+the workspace model assumes), the display configuration, the screenshot path
+that uses niri's own actions, and the GameMode mechanism, which works by
+dropping a `gamemode.kdl` into place and relying on niri merging duplicate
+config sections property by property with the last one winning. Hyprland has
+`source =` and `hyprctl keyword`, so an equivalent is possible, but it is a
+different design and not a translation.
+
+So: fix Steam Input where the bug actually is, take the VRR win, and revisit
+this if tearing turns out to be the thing that is missing. Nothing in this
+repository makes that decision hard to change later — the niri hosts are
+separate `nixosConfigurations` precisely so that a second session can exist
+beside a working one rather than replacing it.
 
 ## Single GPU passthrough
 

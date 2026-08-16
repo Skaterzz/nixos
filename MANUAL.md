@@ -5513,8 +5513,9 @@ hosts and the stick are the outliers and are described below.
 uses the existing `xray` UID and mutable password, systemd-boot, the known-good
 Linux 7.1.8/NVIDIA pairing needed for the AOC panel's EDID, and greetd with
 ReGreet instead of the shared niri module's SDDM setup. ReGreet's Cage session
-and Niri both place `DP-1` at the left and `DP-2` at the right at
-`1920x1080@144.001`.
+uses one panel at `1920x1080@144.001`, rather than stretching the login window
+across the seam, and pins its Bibata pointer to 24 px. Niri enables both panels,
+placing `DP-1` at the left and `DP-2` at the right at the same mode.
 
 `home/xray/nixos.nix` inherits the upstream gamestation niri profile, changes
 the account name, clears the upstream Git identity, and owns that display

@@ -13,11 +13,12 @@ let
   };
 
   regreetSession = pkgs.writeShellScript "regreet-session" ''
-    # Cage starts at the displays' preferred 60 Hz modes. Raise both before
-    # ReGreet draws so the greeter and the desktop use the same layout.
+    # Cage's `last` mode disables one panel so ReGreet is not centred across
+    # the seam. Set the available mode on both heads without turning the
+    # disabled one back on; whichever head Cage kept uses 144 Hz.
     ${pkgs.wlr-randr}/bin/wlr-randr \
-      --output DP-1 --on --mode 1920x1080@144.001Hz --pos 0,0 \
-      --output DP-2 --on --mode 1920x1080@144.001Hz --pos 1920,0 \
+      --output DP-1 --mode 1920x1080@144.001Hz \
+      --output DP-2 --mode 1920x1080@144.001Hz \
       || true
 
     exec ${lib.getExe pkgs.regreet}
@@ -115,7 +116,7 @@ in
   systemd.paths.sddm-theme-sync.enable = lib.mkForce false;
   services.greetd = {
     enable = true;
-    settings.default_session.command = "${pkgs.dbus}/bin/dbus-run-session ${lib.getExe pkgs.cage} -s -d -m extend -- ${regreetSession}";
+    settings.default_session.command = "${pkgs.dbus}/bin/dbus-run-session ${lib.getExe pkgs.cage} -s -d -m last -- ${regreetSession}";
   };
   services.displayManager.regreet = {
     enable = true;
@@ -123,7 +124,7 @@ in
       "-s"
       "-d"
       "-m"
-      "extend"
+      "last"
     ];
     settings = {
       background = {
@@ -153,6 +154,12 @@ in
       name = "Poppins";
       size = 12;
     };
+  };
+  # ReGreet can name a cursor theme but has no cursor-size setting. Export both
+  # before Cage starts so the compositor and GTK agree on the 24 px pointer.
+  systemd.services.greetd.environment = {
+    XCURSOR_SIZE = "24";
+    XCURSOR_THEME = "Bibata-Modern-Ice";
   };
   security.pam.services.greetd.enableGnomeKeyring = true;
 

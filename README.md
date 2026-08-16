@@ -15,12 +15,13 @@ is the map.
 
 ## Hosts
 
-Seven configurations across five machines. The desk and the laptop each have a
+Eight configurations across six machines. The desk and the laptop each have a
 Plasma variant and a niri one — separate hosts rather than a switch, because
 the two use different display managers and NixOS won't enable both.
 
 | Host | Machine | Session |
 |---|---|---|
+| `nixos` | xray's Ryzen/RTX 3080 workstation, dual 144 Hz | niri + ReGreet |
 | `gamestation` | the desk: NVIDIA, multi-monitor | Plasma 6 |
 | `gamestation-niri` | same box | niri |
 | `laptop` | portable: no NVIDIA, single display | Plasma 6 |
@@ -30,6 +31,7 @@ the two use different display managers and NixOS won't enable both.
 | `server-nvidia` | headless, with a GPU: NVENC unlocked | none |
 
 ```bash
+sudo nixos-rebuild switch --flake .#nixos             # local xray workstation
 sudo nixos-rebuild switch --flake .#gamestation-niri   # use niri
 sudo nixos-rebuild switch --flake .#gamestation        # back to Plasma
 ```
@@ -45,6 +47,11 @@ generation stays in the boot menu.
 ## Accounts
 
 `joshr` (primary), `amandak`, `sabom` and `root`, on the four desktop hosts.
+
+The local `nixos` host instead keeps the existing mutable `xray` account and
+password. Its Home Manager entrypoint inherits the upstream niri profile,
+changes the username, clears the upstream Git identity, and owns the two-panel
+layout.
 
 `amandak` and `sabom` run joshr's profile unchanged — the entrypoints in
 `home/amandak/` and `home/sabom/` import the ones in `home/joshr/` and say
@@ -63,11 +70,12 @@ in — see [The stick](MANUAL.md#the-stick).
 ## Layout
 
 ```
-flake.nix          # inputs; the seven nixosConfigurations; dev-shell templates
+flake.nix          # inputs; the eight nixosConfigurations; dev-shell templates
 hosts/<host>/      # per machine: configuration.nix + hardware scan
 modules/nixos/     # the system side, imported per host
 home/common/       # home-manager bits shared by every account
 home/joshr/        # the user profile; one entrypoint file per host
+home/xray/         # local niri profile and dual-display layout
 home/joshr/niri/   # the niri desktop: compositor, bar, themes, scripts
 home/amandak/      # the other accounts, each wearing the same profile
 home/sabom/
@@ -84,6 +92,7 @@ opens with a comment explaining what it's for.
 ## Rebuilding
 
 ```bash
+sudo nixos-rebuild switch --flake .#nixos        # this workstation
 sudo nixos-rebuild switch --flake .#gamestation   # build, activate, add a boot entry
 sudo nixos-rebuild build  --flake .#gamestation   # check it evaluates, change nothing
 sudo nixos-rebuild test   --flake .#gamestation   # activate without a boot entry
@@ -103,15 +112,17 @@ an update breaks something: `git checkout flake.lock` and rebuild.
 
 This is one person's machine, not a distribution. On any other hardware:
 
-1. **Every `hardware-configuration.nix` here is a placeholder** with invented
-   disk UUIDs. It will not boot your machine —
+1. **The upstream `hardware-configuration.nix` files are placeholders** with
+   invented disk UUIDs. `hosts/nixos/hardware-configuration.nix` is the one
+   hardware-correct local exception. The others will not boot your machine —
    [regenerate it](MANUAL.md#regenerating-hardware-configurationnix).
 2. **`open = true`** in `modules/nixos/nvidia.nix` needs a Turing (RTX 20xx)
    card or newer — as does its default on `server-nvidia`, which is
    `local.nvidia.open` and is the thing to turn off on a Pascal card.
 3. **Panel layout** in `home/joshr/plasma.nix` assumes this monitor
    arrangement — the `screen = N` numbers are worth a look.
-4. **Git identity** in `home/joshr/home.nix` is joshr's.
+4. **Git identity** in `home/joshr/home.nix` is joshr's. The `xray` entrypoint
+   clears it rather than making commits under the upstream identity.
 5. **The desk hosts boot a third-party kernel** — CachyOS/BORE, from the
    `nix-cachyos-kernel` flake input and its binary cache. Both are opt-in
    (`local.kernel.cachyos.*`). The kernel is prebuilt, and stays that way as

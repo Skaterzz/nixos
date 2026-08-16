@@ -99,6 +99,7 @@ the machine.
 - [The XDG_DATA_DIRS workaround (nixpkgs#126590)](#the-xdg_data_dirs-workaround-nixpkgs126590)
 - [Rebuilding after changes](#rebuilding-after-changes)
 - [Hosts](#hosts)
+  - [The local nixos host](#the-local-nixos-host)
   - [What actually differs](#what-actually-differs)
   - [The server](#the-server)
   - [The NVIDIA server](#the-nvidia-server)
@@ -112,7 +113,10 @@ the machine.
 flake.nix                        # inputs: nixpkgs, home-manager, plasma-manager,
                                  #   spicetify-nix, nvidia-patch,
                                  #   nix-cachyos-kernel, dotfiles,
-                                 #   wallhaven-toplist
+                                  #   wallhaven-toplist
+hosts/nixos/                      # xray's local RTX 3080 workstation
+  configuration.nix               # ReGreet, account, kernel and machine settings
+  hardware-configuration.nix      # real Btrfs, EFI and swap UUIDs for this machine
 hosts/gamestation/                # the desk: NVIDIA, multi-monitor
   configuration.nix               # top-level system config, imports the modules below
   hardware-configuration.nix      # PLACEHOLDER — replace with your real hardware scan
@@ -178,6 +182,8 @@ home/joshr/
   usb.nix                          # host entrypoint: the portable subset of
                                    #   laptop-niri.nix
   home.nix                         # packages (Spotify, Discord, ProtonUp-Qt, ...)
+home/xray/
+  nixos.nix                        # inherits the niri profile as xray; dual 144 Hz layout
   browser.nix                      # the default browser: Vivaldi, $BROWSER
                                    #   (handlers: modules/nixos/default-apps.nix)
   firefox.nix                      # Firefox: profile, prefs, sync (installed, not default)
@@ -4483,9 +4489,11 @@ the kernel flake's own copy of those lines does nothing for us and `flake.nix`
 carries a duplicate), and the user running the build has to be in
 `nix.settings.trusted-users`, since the daemon discards substituters offered by
 anyone else. That is root, and `@wheel` via `modules/nixos/development.nix`.
-Setting `accept-flake-config = true` system-wide would retire the prompt for
-good; it is deliberately not set, because it would apply to every flake this
-machine ever builds and the prompt is the trust decision.
+Setting `accept-flake-config = true` system-wide retires the prompt for good,
+but it also accepts `nixConfig` from every flake the machine builds. Most hosts
+leave it unset so the prompt remains the trust decision. The local `nixos` host
+opts in because this checkout is its system configuration; installing that
+choice requires one final rebuild with `--accept-flake-config`.
 
 **The kernel has to be the exact derivation the cache holds.** Hence
 `overlays.pinned` and no `follows` on the input — see [What follows the
@@ -5437,9 +5445,11 @@ else depends on it.
 
 ## Rebuilding after changes
 
-Once installed, from the repo (`/etc/nixos` if you followed the above):
+Once installed, from the repo (`/etc/nixos` if you followed the above). On the
+local xray workstation the flake attribute is `nixos`:
 
 ```bash
+sudo nixos-rebuild switch --flake .#nixos
 sudo nixos-rebuild switch --flake .#gamestation
 ```
 
@@ -5473,10 +5483,11 @@ from the boot menu at startup — nothing is destroyed by a bad switch.
 
 ## Hosts
 
-Seven are defined. Pick one with the flake attribute:
+Eight are defined. Pick one with the flake attribute:
 
 | Host | For | Differences |
 |---|---|---|
+| `nixos` | xray's local desk, niri | real hardware scan; ReGreet; dual 144 Hz; preserved account |
 | `gamestation` | the desk, Plasma | NVIDIA; second-monitor panel; kernel params |
 | `laptop` | portable, Plasma | no NVIDIA; power management; single-display panels |
 | `gamestation-niri` | the desk, niri | as above, niri + SDDM instead of Plasma |
@@ -5486,6 +5497,7 @@ Seven are defined. Pick one with the flake attribute:
 | `server-nvidia` | headless, with a card | as `server`, plus the driver and the NVENC/NvFBC patch |
 
 ```bash
+sudo nixos-rebuild switch --flake .#nixos
 sudo nixos-rebuild switch --flake .#gamestation
 sudo nixos-rebuild switch --flake .#laptop
 sudo nixos-rebuild switch --flake .#server
@@ -5494,6 +5506,26 @@ sudo nixos-rebuild switch --flake .#server
 The two desk hosts and the two laptop hosts share everything else — the same
 modules, the same `home/joshr` profile, the same package set. The two headless
 hosts and the stick are the outliers and are described below.
+
+### The local nixos host
+
+`hosts/nixos/` is the hardware-correct configuration for xray's machine. It
+uses the existing `xray` UID and mutable password, systemd-boot, the known-good
+Linux 7.1.8/NVIDIA pairing needed for the AOC panel's EDID, and greetd with
+ReGreet instead of the shared niri module's SDDM setup. ReGreet's Cage session
+and Niri both place `DP-1` at the left and `DP-2` at the right at
+`1920x1080@144.001`.
+
+`home/xray/nixos.nix` inherits the upstream gamestation niri profile, changes
+the account name, clears the upstream Git identity, and owns that display
+layout. `/etc/nixos` is a symlink to `/home/xray/nixos`, so the checkout is the
+configuration rather than a second copied tree.
+
+This host sets `nix.settings.accept-flake-config = true`, so routine
+`sudo nixos-rebuild switch --upgrade` commands accept this flake's binary cache
+without an extra flag. That setting trusts `nixConfig` from every flake built
+on the machine, not only this repository. The first rebuild that installs it
+still needs `--accept-flake-config` once.
 
 ### What actually differs
 

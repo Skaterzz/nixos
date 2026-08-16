@@ -3,7 +3,10 @@
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
-    
+
+    # Kernel 7.1.3 fails to read the AOC display's EDID on this workstation.
+    nixpkgs-kernel.url = "github:NixOS/nixpkgs/9f78f44a87948854445dae0b6bf82b2e87e4efb5";
+
     #nur = {
     #  url = "github:nix-community/NUR";
     #  inputs.nixpkgs.follows = "nixpkgs";
@@ -179,11 +182,11 @@
   # substituters offered by anyone else: root, and @wheel through
   # modules/nixos/development.nix.
   #
-  # `accept-flake-config = true` in nix.settings would retire the prompt for
-  # good and is deliberately not set — it would apply to every flake this
-  # machine ever builds, and the point of the prompt is that adding a
-  # substituter is a trust decision. Answering it once per machine is the
-  # right amount of friction.
+  # `accept-flake-config = true` in nix.settings retires the prompt for good
+  # but applies to every flake the machine builds. Most hosts leave it unset so
+  # adding a substituter remains an explicit trust decision. The local `nixos`
+  # host opts in because this checkout is its system configuration; see its
+  # configuration.nix.
   #
   # These two lines and the ones in modules/nixos/kernel.nix have to stay in
   # step. Nothing checks that they do: a flake's `nixConfig` is read before
@@ -261,6 +264,11 @@
             };
         in
         {
+          nixos = mkHost {
+            hostModule = ./hosts/nixos/configuration.nix;
+            homeModules.xray = ./home/xray/nixos.nix;
+          };
+
           # --- Plasma sessions -------------------------------------------
           gamestation = mkHost {
             hostModule = ./hosts/gamestation/configuration.nix;

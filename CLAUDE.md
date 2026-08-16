@@ -4,9 +4,9 @@ Guidance for Claude Code working in this repository.
 
 ## What this is
 
-A NixOS flake for one person's machines: seven `nixosConfigurations` across
-five boxes, with home-manager (plus plasma-manager and spicetify-nix) for the
-user side. It is a personal system config, not a library — there is no test
+A NixOS flake with eight `nixosConfigurations` across six boxes, including the
+local `nixos` host for xray, with home-manager (plus plasma-manager and
+spicetify-nix) for the user side. It is a personal system config, not a library — there is no test
 suite, and "does it work" means "does it evaluate and switch".
 
 `README.md` is the map, **`MANUAL.md` is the reference** — every module, every

@@ -399,6 +399,7 @@ in
             // Flat profile: no pointer acceleration. Matches the setting
             // carried over from the Plasma config.
             accel-profile "flat"
+            accel-speed -0.5
         }
 
         // Focus follows the mouse only when it crosses into another window.

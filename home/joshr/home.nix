@@ -51,6 +51,7 @@ in
 
   home.packages = with pkgs; [
     sshfs
+    streamlink
     yt-dlp
   ] ++ archiveTools;
 

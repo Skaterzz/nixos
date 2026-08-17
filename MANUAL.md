@@ -115,16 +115,13 @@ flake.nix                        # inputs: nixpkgs, home-manager, plasma-manager
                                  #   nix-cachyos-kernel, dotfiles,
                                   #   wallhaven-toplist
 hosts/nixos/                      # xray's local RTX 3080 workstation
-  configuration.nix               # ReGreet, account, kernel and machine settings
+  configuration.nix               # Pixie SDDM, account, kernel and machine settings
   hardware-configuration.nix      # real Btrfs, EFI and swap UUIDs for this machine
 hosts/gamestation/                # the desk: NVIDIA, multi-monitor
   configuration.nix               # top-level system config, imports the modules below
   hardware-configuration.nix      # PLACEHOLDER — replace with your real hardware scan
   kernel-params.nix               # which kernel + boot.kernelParams, shared with
                                   #   gamestation-niri
-hosts/laptop/                     # portable: no NVIDIA, single display
-  configuration.nix
-  hardware-configuration.nix      # PLACEHOLDER — regenerate on the machine
 hosts/server/                     # headless: no desktop, cron jobs
   configuration.nix
   hardware-configuration.nix      # PLACEHOLDER — regenerate on the machine
@@ -157,9 +154,8 @@ modules/nixos/
   disk-managements.nix            # gparted, KDE Partition Manager, GNOME Disks
   filesystems-management.nix      # btrfs-progs, exfatprogs, dosfstools, e2fsprogs
   openrgb.nix                     # OpenRGB daemon + re-applying the profile on resume
-  desktop.nix                      # what the five graphical hosts share: bluetooth,
+  desktop.nix                      # what the graphical hosts share: bluetooth,
                                    #   firmware, power-profiles-daemon, LocalSend
-  laptop.nix                       # upower, thermald, fstrim, deep sleep, the lid
   power.nix                        # no idle suspend while on mains power
   boot.nix                         # bootloader: limine theming + other-OS detection
   kernel.nix                       # the CachyOS kernel on the desk hosts, and the
@@ -177,10 +173,8 @@ home/common/
   files/                           # starship.toml, smallfetch.jsonc
 home/joshr/
   gamestation.nix                  # host entrypoint: enables the 2nd-monitor panel
-  laptop.nix                       # host entrypoint: single-display panels
   server.nix                       # host entrypoint: shell only, no desktop base
-  usb.nix                          # host entrypoint: the portable subset of
-                                   #   laptop-niri.nix
+  usb.nix                          # host entrypoint: portable niri profile
   home.nix                         # packages (Spotify, Discord, ProtonUp-Qt, ...)
 home/xray/
   nixos.nix                        # inherits the niri profile as xray; dual 144 Hz layout
@@ -204,9 +198,8 @@ home/xray/
   files/                           # DarkObsidianII.colors
 home/amandak/ home/sabom/          # the other two accounts, same shape each
   home.nix                         # names the account, and nothing else
-  gamestation.nix laptop.nix       # host entrypoints, each importing joshr's
-  gamestation-niri.nix             #   counterpart verbatim — which is what
-  laptop-niri.nix server.nix       #   puts them on the same noctalia session
+  gamestation.nix                  # host entrypoints importing joshr's
+  gamestation-niri.nix server.nix  #   counterparts verbatim
 home/root/
   home.nix                         # fish + starship only, no desktop
 templates/                         # `nix flake init -t` dev environments
@@ -215,8 +208,8 @@ templates/                         # `nix flake init -t` dev environments
 
 ## niri (alternative to Plasma)
 
-There are niri variants of both machines. They're separate hosts rather than
-a switch inside the existing ones, because Plasma here uses
+The desk's niri variant is a separate host rather than a switch inside the
+existing one, because Plasma here uses
 plasma-login-manager and niri uses SDDM.
 
 ```bash
@@ -225,7 +218,7 @@ sudo nixos-rebuild switch --flake .#gamestation        # back to Plasma
 ```
 
 Nothing is destroyed either way, and the previous generation stays in the
-boot menu. `laptop-niri` is the same deal for the laptop.
+boot menu.
 
 The niri hosts deliberately **don't** import `plasma-xdg-data-dirs.nix`.
 That workaround exists because plasma-workspace's Qt wrapper builds an ~18 KB
@@ -240,7 +233,6 @@ modules/nixos/niri.nix        # session, SDDM + theme, polkit, PAM, portals,
 modules/nixos/ddcci.nix       # DDC/CI brightness for external monitors
 home/joshr/displays/
   gamestation.nix             # DP-3 + DP-2 layout — edit here for monitors
-  laptop.nix                  # empty: niri auto-detects
 home/joshr/niri/
   default.nix                 # entrypoint: packages, GTK/Qt/cursor
   themes.nix                  # the palettes — edit colours here
@@ -349,7 +341,7 @@ true and adds the animated lock/unlock transitions, content-sized text OSDs,
 the customized control-panel identity and colours, the lock-screen clock's
 `shadow_offset` setting, and relative MPRIS IPC actions retained for
 compatibility. Source changes create a different
-derivation, so that side compiles locally. `laptop-niri` sets the option false:
+derivation, so that side compiles locally. `usb` sets the option false:
 it uses cached `pkgs.noctalia`, while keeping exactly the same generated TOML,
 palettes, templates, plugins and theme-sync hooks. The desktop keeps the default
 and therefore keeps the C++ extras.
@@ -388,12 +380,12 @@ straight out of nixpkgs' own `pkgs/by-name/no/noctalia/package.nix` if the
 target is whatever nixpkgs has.
 
 **Only the patched side is pinned.** `noctaliaSourcePatches = false` exists to
-stay on the binary cache, and overriding `src` there would force the laptop to
+stay on the binary cache, and overriding `src` there would force the stick to
 compile a Qt/C++ project to get a version it has no patches to protect. The
 cost is that the two hosts can drift onto different releases. `noctalia config
 validate` is what catches it: it runs against whichever package the host
-selected, so a generated key that the laptop's newer stock package has renamed
-fails the laptop's build. Read that as the prompt to move the pin, not as a
+selected, so a generated key that the stick's newer stock package has renamed
+fails the USB build. Read that as the prompt to move the pin, not as a
 reason to remove it.
 
 Note also that this pins the *source* and not the recipe — `buildInputs`,
@@ -823,7 +815,7 @@ place one could go. They are separate knobs now — `cavaInBar` for the compact
 widget beside the clock, `local.niri.cavaInLockscreen` for the one covering the
 whole output — since eight bars in a status bar and a full-screen spectrum
 behind the login prompt are not one decision, and either can be wanted without
-the other. Both still default on, and `laptop-niri` sets both explicitly.
+the other. Both default on.
 `cavaInLockscreen` is read only under `local.niri.shell = "noctalia"`: hyprlock
 has no visualiser widget to turn on, making it the mirror image of the
 `local.niri.lock*` options, which only hyprlock reads.
@@ -847,8 +839,8 @@ that's the time at (1280, 374) on DP-3 and (960, 280) on DP-2, with the date
 stacked directly beneath.
 
 A host that leaves its layout to niri's auto-detection has no mode to read.
-`local.niri.lockClockOutputs` names the connectors instead — `[ "eDP-1" ]` on
-the laptop — and the position falls back to a 1080p centre. noctalia clamps
+`local.niri.lockClockOutputs` can name the connectors instead, and the position
+falls back to a 1080p centre. noctalia clamps
 widget coordinates to the output, so on a panel that isn't 1080p the clock
 lands off-centre rather than off-screen.
 
@@ -873,7 +865,7 @@ the time's. Derived from the boxes rather than written down as 4.3, so it
 follows if the type scale moves. It is emitted only where the patch is:
 `noctalia config validate` runs against whichever package the host chose, so on
 `noctaliaSourcePatches = false` the key would fail the build instead of being
-ignored, and `laptop-niri` keeps upstream's invisible shadow.
+ignored, and `usb` keeps upstream's invisible shadow.
 
 Two choices are about cost rather than looks. Neither clock has a background,
 which drops a rounded rect and an alpha layer per widget per output per frame
@@ -1040,8 +1032,8 @@ the `backlight` module makes for not going custom.
 
 None of it is conditional on the host. `battery` hides itself where there's no
 battery and `power-profiles-daemon` hides itself when nothing answers on the
-system bus, so the laptop draws both halves and the desk draws the profile
-alone, looking like any other pill. The daemon is enabled for every graphical
+system bus, so a battery-powered machine draws both halves and the desk draws
+the profile alone, looking like any other pill. The daemon is enabled for every graphical
 host in `modules/nixos/desktop.nix`; without it the module isn't on the bar at
 all. `powerprofilesctl` comes with it, which is how to read or set the profile
 from a shell.
@@ -1996,7 +1988,7 @@ rather than ours: docked first, then external power, then the plain case. A
 dock supplies power, so the other order would never reach the docked rule and
 a docked laptop would lock.
 
-`modules/nixos/laptop.nix` owns the logind half — the three
+`hosts/usb/configuration.nix` owns the logind half — the three
 `services.logind.settings.Login` keys. `HandleLidSwitchExternalPower` is
 ignored entirely unless it's set, for backwards compatibility, so leaving it
 out doesn't mean "do nothing on mains", it means mains falls through to
@@ -2027,24 +2019,6 @@ desktop on the monitor. With no external monitor it leaves the panel on —
 disabling the only output would leave the session with nowhere to draw — so
 the lock screen sits behind a closed lid until swayidle blanks it on its own
 timer.
-
-**Under Plasma, none of those keys fire.** powerdevil takes a block inhibitor
-on `handle-lid-switch` at session start ("KDE handles power events") and
-handles the lid itself, so the same three cases are restated for it in
-`home/joshr/laptop.nix`: `lockScreen` on AC, `sleep` on battery, and
-`inhibitLidActionWhenExternalMonitorConnected` for the docked case — powerdevil
-has no docked profile, it has a per-profile "don't act when an external
-monitor is connected", which is the same rule written from the other side.
-The logind half still covers the greeter and a bare TTY there, which is why
-both are set. Sleeping locks on the way back either way: that's
-`kscreenlocker.lockOnResume` in `home/joshr/plasma.nix`.
-
-It didn't always live in one place per session. `modules/nixos/niri.nix` set
-the same three logind keys and disagreed with `laptop.nix`, and two modules
-setting one option to different values is a conflict NixOS refuses to merge —
-`laptop-niri` imports both, so that host could not evaluate at all. A lid is
-hardware rather than a desktop session, which is why `laptop.nix` is where it
-lives; `niri.nix` also runs on `gamestation-niri`, which has no lid.
 
 ### Coming back from suspend
 
@@ -3157,8 +3131,8 @@ person, with the first one still locked behind them.
 
 ### RGB lighting
 
-`modules/nixos/openrgb.nix`, imported by `gaming.nix`, so it lands on the two
-`gamestation` hosts and not the laptop. It runs the OpenRGB daemon, the niri
+`modules/nixos/openrgb.nix`, imported by `gaming.nix`, so it lands on the desk
+hosts and not the stick. It runs the OpenRGB daemon, the niri
 session starts the tray applet at login, and both apply one profile:
 
 ```nix
@@ -3187,9 +3161,9 @@ quietly, into niri's log — which is exactly what it did for a while, and why
 the lighting was only ever whatever the last thing to touch it had left.
 
 `local.openrgb.autostart` decides whether the applet starts at all, and
-defaults to whether the daemon is enabled: on at the desk, off on the laptop,
+defaults to whether the daemon is enabled: on at the desk, off on the stick,
 where it would cost a tray icon, a Qt process and a failed profile load every
-session for nothing to talk to. The laptop has no `openrgb` on PATH either —
+session for nothing to talk to. The stick has no `openrgb` on PATH either —
 the package comes with the daemon's module — so on that host it's
 `nix run nixpkgs#openrgb` for a one-off, or importing `gaming.nix` to have it
 properly.
@@ -3355,9 +3329,7 @@ of one API page).
 are 16:9 — 2560x1440 and 1920x1080 — so 16:10 is the widest miss worth
 taking, losing a sliver off the top and bottom when it scales. Anything
 squarer arrives pillarboxed or cropped hard by whichever of awww or Plasma is
-drawing it. The laptop panel isn't pinned in this repo at all
-(`home/joshr/displays/laptop.nix` is deliberately empty), so it isn't what
-the filter is measured against — `16x10` covers it if it happens to be one.
+drawing it.
 
 Two things about that parameter are easy to get wrong. It takes a
 comma-separated list, but wallhaven's `landscape` supergroup is *not* the
@@ -3790,12 +3762,12 @@ scrolling messages. `modules/nixos/plymouth.nix`, imported by `boot.nix` so the
 option exists wherever the bootloader module does.
 
 ```nix
-local.boot.plymouth.enable = true;    # on for the four fixed graphical hosts
+local.boot.plymouth.enable = true;    # enabled by the fixed graphical hosts
 local.boot.plymouth.quiet = true;     # the default: turn the messages down too
 ```
 
-**Off unless a host asks for it**, and the four that ask are the desk and the
-laptop in both their Plasma and niri configurations. The two servers don't: a
+**Off unless a host asks for it**, and the fixed graphical hosts ask for it.
+The two servers do not: a
 splash needs an audience, and the console output it replaces is the only thing
 to look at when a headless machine doesn't come back. Neither does the stick,
 which is the one machine that boots on hardware it has never seen — the boot
@@ -4431,7 +4403,7 @@ guess.
 ### The kernel
 
 The two desk hosts boot the **CachyOS kernel, BORE variant**, instead of the
-one nixpkgs would pick. Everything else here — the laptop, both servers, the
+one nixpkgs would pick. Everything else here — both servers and the
 stick — stays on the nixpkgs default. `modules/nixos/kernel.nix` is the module,
 `hosts/gamestation/kernel-params.nix` is where it is switched on (that file is
 imported by both desk hosts, so the two sessions cannot drift onto different
@@ -4763,8 +4735,8 @@ the one that runs.
 ## Local AI
 
 Models that run on this machine's own card. `modules/nixos/ai.nix`, imported
-by `gamestation-niri` and nowhere else — the laptop has no discrete GPU and
-the server has neither a GPU nor anyone sitting at it.
+by `gamestation-niri` and nowhere else. The portable host cannot assume a GPU,
+and the server has neither a GPU nor anyone sitting at it.
 
 Three programs, three jobs:
 
@@ -5071,7 +5043,7 @@ yourself: `... 2>&1 | systemd-cat -t backup`.
 
 ## The accounts
 
-Three interactive ones and `root`, on the four desktop hosts. The three are
+Three interactive ones and `root`, on the two shared desk configurations. The three are
 declared in `modules/nixos/users.nix` and each is given a home-manager profile
 in `flake.nix`:
 
@@ -5087,7 +5059,7 @@ both the `users.users.<name>` block in `users.nix` and the `<name> = …` lines
 in `flake.nix` are commented out. Uncommenting both is the whole of bringing
 one back.
 
-The headless and portable hosts have their own, shorter account lists —
+The headless and portable configurations have their own, shorter account lists —
 `modules/nixos/server-users.nix` and `modules/nixos/usb-users.nix`, both
 `joshr` and nobody else. Those are separate files rather than an option
 because a list of accounts merges by union: a host that imported `users.nix`
@@ -5100,8 +5072,8 @@ missing from the second evaluates cleanly, builds cleanly, and appears at the
 greeter — and the session it opens has no home-manager profile behind it at
 all: under niri that is a bare compositor with no bar, no keybinds and no
 shell, because nothing ever wrote that account a `~/.config`. `sabom` was in
-exactly that state on `gamestation`, `gamestation-niri` and `laptop` until the
-three missing lines were added.
+exactly that state on the two gamestation configurations until the missing
+lines were added.
 
 All three get fish, `networkmanager`, `video` and `input`, plus
 `docker` and `libvirtd` on the hosts whose imports enable those daemons. Only
@@ -5221,8 +5193,7 @@ sitting commented out.
 Step 3 is the one that is easy to half-do, and it fails quietly: the account
 exists and can log in without it, to a session with nothing in it. Add the
 line for **every** host whose configuration imports the users module that
-declares the account — which for `users.nix` is all four desktop hosts, both
-the Plasma pair and the niri pair.
+declares the account — currently the Plasma and niri gamestation profiles.
 
 Nothing else. In particular, don't change `local.desktop.primaryUser` unless
 you mean to hand the login screen and boot menu to the new account.
@@ -5483,15 +5454,13 @@ from the boot menu at startup — nothing is destroyed by a bad switch.
 
 ## Hosts
 
-Eight are defined. Pick one with the flake attribute:
+Six are defined. Pick one with the flake attribute:
 
 | Host | For | Differences |
 |---|---|---|
-| `nixos` | xray's local desk, niri | real hardware scan; ReGreet; dual 144 Hz; preserved account |
+| `nixos` | xray's local desk, niri | real hardware scan; Pixie SDDM; dual 144 Hz; preserved account |
 | `gamestation` | the desk, Plasma | NVIDIA; second-monitor panel; kernel params |
-| `laptop` | portable, Plasma | no NVIDIA; power management; single-display panels |
 | `gamestation-niri` | the desk, niri | as above, niri + SDDM instead of Plasma |
-| `laptop-niri` | portable, niri | as above; no OpenRGB applet at login |
 | `usb` | a stick, niri | boots anywhere; auto-login; one account; the disk tools |
 | `server` | headless | no desktop at all; systemd-boot; cron jobs |
 | `server-nvidia` | headless, with a card | as `server`, plus the driver and the NVENC/NvFBC patch |
@@ -5499,23 +5468,21 @@ Eight are defined. Pick one with the flake attribute:
 ```bash
 sudo nixos-rebuild switch --flake .#nixos
 sudo nixos-rebuild switch --flake .#gamestation
-sudo nixos-rebuild switch --flake .#laptop
 sudo nixos-rebuild switch --flake .#server
 ```
 
-The two desk hosts and the two laptop hosts share everything else — the same
-modules, the same `home/joshr` profile, the same package set. The two headless
-hosts and the stick are the outliers and are described below.
+The two desk hosts share the same core profile and package set. The two
+headless hosts and the stick are the outliers described below.
 
 ### The local nixos host
 
 `hosts/nixos/` is the hardware-correct configuration for xray's machine. It
 uses the existing `xray` UID and mutable password, systemd-boot, the known-good
-Linux 7.1.8/NVIDIA pairing needed for the AOC panel's EDID, and greetd with
-ReGreet instead of the shared niri module's SDDM setup. ReGreet's Cage session
-uses one panel at `1920x1080@144.001`, rather than stretching the login window
-across the seam, and pins its Bibata pointer to 24 px. Niri enables both panels,
-placing `DP-1` at the left and `DP-2` at the right at the same mode.
+Linux 7.1.8/NVIDIA pairing needed for the AOC panel's EDID, and the Pixie theme
+on the shared niri module's Qt 6 SDDM setup. The theme and its QML dependencies
+are installed declaratively from the pinned `pixie-sddm` flake input. Niri
+enables both panels, placing `DP-1` at the left and `DP-2` at the right at the
+same mode.
 
 `home/xray/nixos.nix` inherits the upstream gamestation niri profile, changes
 the account name, clears the upstream Git identity, and owns that display
@@ -5530,39 +5497,21 @@ still needs `--accept-flake-config` once.
 
 ### What actually differs
 
-**Panels.** `home/joshr/plasma.nix` is shared. The second-monitor status bar
-is gated behind `local.plasma.secondaryMonitorPanel`, which
-`home/joshr/gamestation.nix` turns on and `home/joshr/laptop.nix` leaves off.
-The dock and the primary status bar are on `screen = 0` and appear on both.
-If the laptop gets docked to external displays and you want that bar back,
-set the option to `true` in `home/joshr/laptop.nix`.
-
-**Graphics.** `laptop` deliberately does *not* import `modules/nixos/nvidia.nix`
-— that module hard-sets `services.xserver.videoDrivers = [ "nvidia" ]` for a
-single always-on discrete GPU, which is wrong for integrated-only machines and
-wrong for Optimus hybrids. If the laptop does have an NVIDIA chip, read the
-comment at the bottom of `hosts/laptop/configuration.nix`: hybrids want PRIME
-offload, not that module as written.
-
-**Power.** `modules/nixos/laptop.nix` adds upower, thermald, fstrim, deep
-sleep and the lid handling.
-
-power-profiles-daemon used to be there too and is now in
-`modules/nixos/desktop.nix`, which all five graphical hosts import. The
-profile switcher is drawn on the desk as much as on the laptop — under Plasma
+power-profiles-daemon lives in `modules/nixos/desktop.nix`, which every
+graphical configuration imports. The profile switcher is drawn on the desk:
+under Plasma
 it is the selector inside the battery applet, which is also what the `Meta+B`
 shortcut from the dotfiles talks to, and under niri it's the bar module
-described above — so pinning the daemon to the laptop meant the desk had a
-widget with nothing to put in it. The desk earns it in its own right anyway:
+described above. The desk earns it in its own right anyway:
 `amd_pstate` offers a desktop CPU the same three profiles, and "performance"
-before a game is the same switch the laptop uses to mean the opposite of
-"quiet". Where the CPU driver can't offer them the daemon still answers with a
+before a game is the opposite of "quiet". Where the CPU driver cannot offer
+them the daemon still answers with a
 placeholder, so the widget reads `balanced` and switching it changes nothing.
 
 Under Plasma there is nothing to add to the panel for it. KDE ships no
 standalone power-profile applet — the selector is part of
 `org.kde.plasma.battery` ("Power and Battery"), which `home/joshr/plasma.nix`
-already keeps in the system tray's `shown` list on both Plasma hosts, so it's
+already keeps in the system tray's `shown` list on the Plasma host, so it is
 visible whether or not the machine has a battery. It swaps its tray icon per
 profile — a leaf for power-saver, a dial for balanced, the performance glyph
 for performance — and badges the battery icon with the profile where there is
@@ -5593,9 +5542,9 @@ separate file because `hardware-configuration.nix` is regenerated by
 | `amd_iommu=on` + `iommu=pt` | AMD IOMMU on, in passthrough mode — identity-map the host's own devices so remapping is only paid for devices handed to a guest. Prerequisite for VFIO passthrough; does nothing on its own. |
 
 **RGB.** The OpenRGB tray applet autostarts on the desk and **not** on the
-laptop. Nothing sets that per host: `local.openrgb.autostart` defaults to
+stick. Nothing sets that per host: `local.openrgb.autostart` defaults to
 whether the daemon is enabled, and the daemon comes with
-`modules/nixos/gaming.nix`, which the laptop hosts don't import. The laptop has
+`modules/nixos/gaming.nix`, which the stick does not import. The stick has
 nothing for it to drive, so all it would buy is a tray icon, a Qt process and a
 failed profile load every session — and with no daemon there's no `openrgb` on
 PATH there either, since the package arrives with that module.
@@ -5618,9 +5567,8 @@ Get in over SSH. `base.nix` already enables sshd with password auth **off**,
 so put a key in place before the first boot or the only way in is a physical
 console. Tailscale is enabled there too and still needs `tailscale up` once.
 
-Each host still needs its own hardware scan —
-`hosts/laptop/hardware-configuration.nix` is the same placeholder as
-gamestation's and must be regenerated on the machine.
+Each host still needs its own hardware scan. The server and gamestation files
+are placeholders and must be regenerated on their machines.
 
 ### The NVIDIA server
 
@@ -5758,8 +5706,8 @@ repo like any other host.
 sudo nixos-rebuild switch --flake .#usb
 ```
 
-It is `laptop-niri` with three changes, and everything else about it — the
-session, the palette, the keybinds, the shell — is the same.
+It uses the same niri session, palette, keybinds and shell as the desk, trimmed
+for portable storage and unknown hardware.
 
 **It boots on hardware it has never seen.** No `nvidia.nix`, no
 `kernel-params.nix`, and no display layout: `local.niri.outputs` is left at

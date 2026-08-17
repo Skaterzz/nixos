@@ -15,17 +15,15 @@ is the map.
 
 ## Hosts
 
-Eight configurations across six machines. The desk and the laptop each have a
-Plasma variant and a niri one — separate hosts rather than a switch, because
-the two use different display managers and NixOS won't enable both.
+Six configurations across five machines. The desk has Plasma and niri variants
+as separate hosts because the two use different display managers and NixOS
+won't enable both.
 
 | Host | Machine | Session |
 |---|---|---|
-| `nixos` | xray's Ryzen/RTX 3080 workstation, dual 144 Hz | niri + ReGreet |
+| `nixos` | xray's Ryzen/RTX 3080 workstation, dual 144 Hz | niri + SDDM (Pixie) |
 | `gamestation` | the desk: NVIDIA, multi-monitor | Plasma 6 |
 | `gamestation-niri` | same box | niri |
-| `laptop` | portable: no NVIDIA, single display | Plasma 6 |
-| `laptop-niri` | same box | niri |
 | `usb` | a stick: boots anywhere, auto-login, disk tools | niri |
 | `server` | headless | none |
 | `server-nvidia` | headless, with a GPU: NVENC unlocked | none |
@@ -46,7 +44,7 @@ generation stays in the boot menu.
 
 ## Accounts
 
-`joshr` (primary), `amandak`, `sabom` and `root`, on the four desktop hosts.
+`joshr` (primary), `amandak`, `sabom` and `root`, on the two shared desk hosts.
 
 The local `nixos` host instead keeps the existing mutable `xray` account and
 password. Its Home Manager entrypoint inherits the upstream niri profile,
@@ -70,7 +68,7 @@ in — see [The stick](MANUAL.md#the-stick).
 ## Layout
 
 ```
-flake.nix          # inputs; the eight nixosConfigurations; dev-shell templates
+flake.nix          # inputs; the six nixosConfigurations; dev-shell templates
 hosts/<host>/      # per machine: configuration.nix + hardware scan
 modules/nixos/     # the system side, imported per host
 home/common/       # home-manager bits shared by every account

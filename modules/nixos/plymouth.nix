@@ -83,7 +83,7 @@ in
     #                         progress messages.
     #
     # `boot.kernelParams` is a list option, so this merges with whatever a host
-    # already sets — hosts/gamestation/kernel-params.nix and the laptop's
+    # already sets — hosts/gamestation/kernel-params.nix and the USB host's
     # `mem_sleep_default=deep` are untouched by it.
     boot.kernelParams = lib.mkIf cfg.quiet [
       "quiet"

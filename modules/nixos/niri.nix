@@ -604,22 +604,7 @@ in
   # Unlock the keyring at login (the niri module enables gnome-keyring).
   security.pam.services.sddm.enableGnomeKeyring = true;
 
-  # Lid switch behaviour is deliberately NOT set here — see
-  # modules/nixos/laptop.nix, which owns it.
-  #
-  # It used to be, and that was an evaluation error rather than a stylistic
-  # problem: laptop-niri imports this module *and* laptop.nix, both defined
-  # the same three `services.logind.settings.Login` keys, and the two files
-  # gave them different values. Two modules setting one option to different
-  # values is a conflict NixOS refuses to merge, so that host could not build
-  # at all.
-  #
-  # main worked around it by commenting the whole block out, which fixed the
-  # build and left the values stranded. This deletes it instead and says
-  # where the setting lives, so there is one place to look rather than a
-  # commented-out block that reads like it might still do something.
-  #
-  # A lid is hardware, not a desktop session, so laptop.nix is where it
-  # belongs: gamestation-niri runs this module on a machine with no lid, and
-  # anything set here would be meaningless there.
+  # Lid behavior is hardware policy, not session policy. The USB host sets it
+  # because that system may boot on a laptop; fixed desktops importing this
+  # module have no lid to configure.
 }

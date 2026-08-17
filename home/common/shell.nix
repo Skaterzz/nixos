@@ -160,7 +160,7 @@ in
           echo
           echo "Deleted generations are still listed in the boot menu."
           echo "Prune it with: sudo nixos-rebuild boot --flake /etc/nixos#<host>"
-          echo "<host> is the flake attribute (gamestation, laptop-niri, server…),"
+          echo "<host> is the flake attribute (gamestation, usb, server…),"
           echo "which is not this machine's hostname."
         '';
       };
@@ -268,7 +268,7 @@ in
           echo
           echo "Deleted generations are still listed in the boot menu."
           echo "Prune it with: sudo nixos-rebuild boot --flake /etc/nixos#<host>"
-          echo "<host> is the flake attribute (gamestation, laptop-niri, server…),"
+          echo "<host> is the flake attribute (gamestation, usb, server…),"
           echo "which is not this machine's hostname."
         '';
       };

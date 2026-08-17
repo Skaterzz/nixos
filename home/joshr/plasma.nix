@@ -1,4 +1,9 @@
-{ inputs, lib, config, ... }:
+{
+  inputs,
+  lib,
+  config,
+  ...
+}:
 
 # KDE Plasma 6 configuration ported from joshrandall8478/dotfiles
 # (kdeglobals, plasmarc, kwinrc, kglobalshortcutsrc, plasma-org.kde.plasma.desktop-appletsrc).
@@ -165,10 +170,7 @@ in
           # Default browser/terminal, used by "open link" and
           # "open terminal here" actions across KDE.
           #
-          # `vivaldi-stable.desktop`, not `vivaldi.desktop`: nixpkgs copies
-          # the upstream .deb's desktop entry across without renaming it, so
-          # that is the entry ID KDE looks up. See home/joshr/browser.nix.
-          BrowserApplication = "vivaldi-stable.desktop";
+          BrowserApplication = "firefox.desktop";
           TerminalApplication = "kitty";
           TerminalService = "kitty.desktop";
 
@@ -228,8 +230,7 @@ in
               # config, so those three will show as dead entries until you
               # add the packages (or drop the lines).
               launchers = [
-                # See BrowserApplication above for the -stable suffix.
-                "applications:vivaldi-stable.desktop"
+                "applications:firefox.desktop"
                 "applications:kitty.desktop"
                 "applications:org.kde.dolphin.desktop"
                 "applications:spotify.desktop"

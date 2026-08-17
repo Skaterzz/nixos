@@ -39,9 +39,8 @@
     # Power profiles — power-saver, balanced, performance — and the daemon
     # that owns them.
     #
-    # Here rather than in laptop.nix, where this used to live, because it
-    # isn't a laptop thing. This file is what the five graphical hosts have in
-    # common and every one of them draws the profile somewhere: under Plasma
+    # This is shared desktop policy rather than portable-hardware policy. Every
+    # graphical configuration draws the profile somewhere: under Plasma
     # it is the switcher inside the battery applet (which is also where the
     # `Meta+B` shortcut from the dotfiles lands), and under niri it is the
     # `power-profiles-daemon` module in home/joshr/niri/waybar.nix. That
@@ -50,8 +49,8 @@
     #
     # The desk gets it for its own sake and not just to have something to
     # draw: `amd_pstate` exposes the same three profiles to a desktop CPU, and
-    # "performance" before a game is the same switch the laptop uses to mean
-    # the opposite of "quiet". Where the CPU driver can't offer them, the
+    # "performance" before a game is the opposite of "quiet". Where the CPU
+    # driver cannot offer them, the
     # daemon still answers with a placeholder and the widget still reads
     # `balanced` — it just doesn't change anything.
     #

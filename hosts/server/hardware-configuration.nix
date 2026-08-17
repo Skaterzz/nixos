@@ -7,7 +7,7 @@
 # The UUIDs below belong to no disk that exists. Building against them
 # produces a system that cannot find its root filesystem.
 #
-# Same situation as hosts/gamestation/ and hosts/laptop/ — see "Regenerating
+# Same situation as hosts/gamestation/ — see "Regenerating
 # hardware-configuration.nix" in MANUAL.md.
 { config, lib, pkgs, modulesPath, ... }:
 

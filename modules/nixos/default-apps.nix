@@ -51,10 +51,7 @@ let
   # error — cheap insurance, and the reason home/joshr/browser.nix has always
   # named two for Vivaldi.
 
-  # nixpkgs keeps the name from Vivaldi's upstream .deb and never renames it
-  # to match the binary, so the entry ID is `vivaldi-stable.desktop`. See
-  # home/joshr/browser.nix, which installs it and sets $BROWSER.
-  browser = "vivaldi-stable.desktop;vivaldi.desktop";
+  browser = "firefox.desktop";
 
   # Checked against KDE's own app/CMakeLists.txt and the shipped file list
   # rather than from memory — KDE moved its desktop entries to reverse-DNS

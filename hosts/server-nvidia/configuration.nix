@@ -78,10 +78,10 @@
   # that complains. The rest — `local.nvidia.patch.*`, `containerToolkit`,
   # `persistenced` — are in modules/nixos/options.nix.
   local.nvidia = {
-    # NVIDIA's longest-supported branch, and old enough that nvidia-patch has
-    # certainly published offsets for it. "latest" is the desktop's choice
-    # and regularly outruns the patch.
-    driver = "legacy_580"; # This is for GTX 1060
+    # NVIDIA's production branch supports this GTX 1060 and is old enough
+    # that nvidia-patch is more likely to have published offsets for it.
+    # "latest" regularly outruns the patch.
+    driver = "production";
 
     # Turing (RTX 20xx, GTX 16xx) or newer. **Set this to false on Pascal** —
     # P4, P40, GTX 10xx, which is most of what ends up in a box like this —

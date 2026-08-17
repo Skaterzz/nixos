@@ -28,6 +28,11 @@
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
+    pixie-sddm = {
+      url = "github:xCaptaiN09/pixie-sddm";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+
     # keylase/nvidia-patch as a nixpkgs overlay: takes the concurrent-NVENC
     # session cap and the Quadro-only NvFBC check off a GeForce driver.
     #
@@ -114,7 +119,7 @@
     #
     # Locking the response is the point of doing it this way. The twenty
     # become a property of flake.lock like every other input — the same
-    # twenty on the desk and on the laptop, changing when `nix flake update`
+    # twenty on every desktop, changing when `nix flake update`
     # says so and not whenever wallhaven's front page moves. Nix caches
     # fetched files for an hour, so re-locking twice in one sitting wants
     # --refresh:
@@ -132,10 +137,7 @@
     # (2560x1440 and 1920x1080, see home/joshr/displays/gamestation.nix), so
     # 16:10 is the widest miss worth accepting — it scales to 16:9 losing a
     # sliver off the top and bottom. Anything squarer arrives pillarboxed or
-    # cropped hard by whichever of awww or Plasma is drawing it. The laptop
-    # panel isn't pinned anywhere in here (displays/laptop.nix is empty on
-    # purpose), so it isn't what this is measured against; 16:10 covers it
-    # if it turns out to be one.
+    # cropped hard by whichever of awww or Plasma is drawing it.
     #
     # The parameter takes a comma-separated list, written `%2C` here so the
     # separator survives whatever Nix does to the query on its way to the
@@ -228,8 +230,7 @@
           # there but not here is not an error at any point: it evaluates, it
           # builds, SDDM lists it, and the session it opens is a bare
           # compositor with no bar, no keybinds and no shell, because nothing
-          # ever wrote that account a ~/.config. That is the state `sabom` was
-          # in on every desktop host except laptop-niri.
+          # ever wrote that account a ~/.config.
           mkHost =
             { hostModule, homeModules }:
             nixpkgs.lib.nixosSystem {
@@ -280,18 +281,8 @@
             };
           };
 
-          laptop = mkHost {
-            hostModule = ./hosts/laptop/configuration.nix;
-            homeModules = {
-              joshr = ./home/joshr/laptop.nix;
-              # raiden = ./home/raiden/laptop.nix;
-              amandak = ./home/amandak/laptop.nix;
-              sabom = ./home/sabom/laptop.nix;
-            };
-          };
-
           # --- niri sessions ---------------------------------------------
-          # Same two machines, niri instead of Plasma. Separate hosts because
+          # The desk with niri instead of Plasma. Separate hosts because
           # the two use different display managers (plasma-login-manager vs
           # SDDM) and NixOS won't enable both. Switching is just a rebuild:
           #
@@ -316,20 +307,9 @@
             };
           };
 
-          laptop-niri = mkHost {
-            hostModule = ./hosts/laptop-niri/configuration.nix;
-            homeModules = {
-              joshr = ./home/joshr/laptop-niri.nix;
-              # delta = ./home/delta/laptop-niri.nix;
-              # raiden = ./home/raiden/laptop-niri.nix;
-              amandak = ./home/amandak/laptop-niri.nix;
-              sabom = ./home/sabom/laptop-niri.nix;
-            };
-          };
-
           # --- removable -------------------------------------------------
           # A full install on a USB stick, carried between machines. Same
-          # niri session as the two hosts above; the differences are that it
+          # niri session as the desk; the differences are that it
           # boots on hardware it has never seen, installs its bootloader at
           # the removable-media path so it changes nothing on the machine it
           # is plugged into, and logs straight in.

@@ -2,11 +2,9 @@
 
 # joshr's home profile on the stick, niri session.
 #
-# The portable subset of ./laptop-niri.nix. Everything dropped was dropped for
-# one of two reasons — it costs disk space the stick doesn't have, or it
-# assumes hardware the stick can't count on — and each is named below rather
-# than simply missing, so putting one back is a line rather than an
-# archaeology exercise.
+# The portable profile. Everything omitted costs disk space the stick does not
+# have or assumes hardware it cannot count on; each omission is named below so
+# putting one back is a line rather than an archaeology exercise.
 {
   imports = [
     ./home.nix

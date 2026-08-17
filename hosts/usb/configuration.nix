@@ -8,12 +8,10 @@
 #   sudo nixos-rebuild switch --flake .#usb
 #
 # It is not an installer ISO. There is no `nixos-install` here and nothing is
-# read-only: it is `laptop-niri` on removable media, with the same session and
-# the same profile, so it keeps state, updates like any other host, and is
-# rebuilt from this repo rather than regenerated.
+# read-only: it is a persistent niri system, so it keeps state, updates like
+# any other host, and is rebuilt from this repo rather than regenerated.
 #
-# Three things follow from living on a stick, and they are the whole of what
-# makes this file different from hosts/laptop-niri:
+# Three things follow from living on a stick:
 #
 #   1. **It boots on hardware it has never seen.** No NVIDIA module, no kernel
 #      command line tuned to one board, no display layout — the initrd carries
@@ -54,12 +52,6 @@
     # shared machines and carries two more accounts.
     ../../modules/nixos/usb-users.nix
 
-    # Power management, and the lid on whichever laptop this is plugged into.
-    # A stick has no idea what it is running on, and this is the half of that
-    # question worth guessing at: a lid that suspends is right on a laptop and
-    # meaningless on a desktop, where there is no lid to close.
-    ../../modules/nixos/laptop.nix
-
     # NOT imported: nvidia.nix, gaming.nix, ai.nix, virtualization.nix,
     # ddcci.nix. Each is either tied to one machine's hardware or is tens of
     # gigabytes that a stick does not have to spare.
@@ -73,6 +65,20 @@
   ];
 
   networking.hostName = "porygon";
+
+  # A stick has no idea what hardware it will run on. These settings save
+  # power and handle a lid when it is booted on a laptop, while remaining
+  # harmless on a desktop where no battery or lid exists.
+  boot.kernelParams = [ "mem_sleep_default=deep" ];
+  powerManagement.enable = true;
+  services.upower.enable = true;
+  services.thermald.enable = lib.mkDefault true;
+  services.fstrim.enable = true;
+  services.logind.settings.Login = {
+    HandleLidSwitch = "suspend";
+    HandleLidSwitchExternalPower = "lock";
+    HandleLidSwitchDocked = "ignore";
+  };
 
   # --- boot: removable media ---------------------------------------------
   #

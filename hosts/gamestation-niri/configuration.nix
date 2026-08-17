@@ -57,7 +57,7 @@
     # agent. Its `local.ai` section is below; see modules/nixos/ai.nix and
     # "Local AI" in MANUAL.md.
     #
-    # This is the only host that imports it. The laptop has no discrete GPU
+    # This is the only host that imports it. The portable host cannot assume a GPU
     # and `server` has neither a GPU nor anyone sitting at it — a CPU-only
     # ollama would run there, slowly, if that is ever wanted. `server-nvidia`
     # is the one that could take this as-is, and deliberately doesn't; its

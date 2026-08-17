@@ -3,7 +3,7 @@
 # Which kernel the machine boots.
 #
 # Most hosts here have no opinion: NixOS picks nixpkgs' current stable Linux
-# and that is what the laptop, the two servers and the stick run. This module
+# and that is what the two servers and the stick run. This module
 # exists for the desk, and all it does is swap that for the CachyOS kernel —
 # mainline plus CachyOS's patch set, built with their kconfig, taken prebuilt
 # from the `nix-cachyos-kernel` flake input.

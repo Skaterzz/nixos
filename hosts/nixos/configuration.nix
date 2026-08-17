@@ -12,17 +12,7 @@ let
     config.allowUnfree = true;
   };
 
-  regreetSession = pkgs.writeShellScript "regreet-session" ''
-    # Cage's `last` mode disables one panel so ReGreet is not centred across
-    # the seam. Set the available mode on both heads without turning the
-    # disabled one back on; whichever head Cage kept uses 144 Hz.
-    ${pkgs.wlr-randr}/bin/wlr-randr \
-      --output DP-1 --mode 1920x1080@144.001Hz \
-      --output DP-2 --mode 1920x1080@144.001Hz \
-      || true
-
-    exec ${lib.getExe pkgs.regreet}
-  '';
+  pixieTheme = inputs.pixie-sddm.packages.${pkgs.stdenv.hostPlatform.system}.pixie-sddm;
 in
 {
   imports = [
@@ -36,6 +26,7 @@ in
     ../../modules/nixos/nvidia.nix
     ../../modules/nixos/ddcci.nix
     ../../modules/nixos/gaming.nix
+    ../../modules/nixos/kernel.nix
     ../../modules/nixos/development.nix
     ../../modules/nixos/virtualization.nix
     ../../modules/nixos/ai.nix
@@ -57,13 +48,13 @@ in
     };
     sddm.theme = "stock";
     ai.enable = false;
+    kernel.cachyos.enable = false;
     virtualisation.singleGpuPassthrough.enable = false;
   };
 
-  # Preserve the kernel/NVIDIA pairing that reliably exposes both DisplayPort
-  # EDIDs. Newer kernels can be tried once both panels survive a cold boot and
-  # a complete DPMS cycle.
   boot = {
+    # Newer kernels leave the AOC connector present but expose no EDID or
+    # modes. Keep the kernel/NVIDIA pairing that survives cold boot and DPMS.
     kernelPackages = lib.mkForce kernelPkgs.linuxPackages_zen;
     blacklistedKernelModules = [ "nouveau" ];
     kernelParams = [
@@ -109,59 +100,18 @@ in
     };
   };
 
-  # The upstream Niri module uses SDDM. This host uses greetd and ReGreet,
-  # while leaving the other upstream hosts unchanged.
-  services.displayManager.sddm.enable = lib.mkForce false;
-  systemd.services.sddm-theme-sync.enable = lib.mkForce false;
-  systemd.paths.sddm-theme-sync.enable = lib.mkForce false;
-  services.greetd = {
-    enable = true;
-    settings.default_session.command = "${pkgs.dbus}/bin/dbus-run-session ${lib.getExe pkgs.cage} -s -d -m last -- ${regreetSession}";
-  };
-  services.displayManager.regreet = {
-    enable = true;
-    cageArgs = [
-      "-s"
-      "-d"
-      "-m"
-      "last"
+  # Pixie runs on the Qt 6 SDDM supplied by the shared niri module. Keep the
+  # theme in both SDDM's QML environment and the system theme search path.
+  services.displayManager.sddm = {
+    theme = "pixie";
+    extraPackages = [
+      pixieTheme
+      pkgs.kdePackages.qt5compat
+      pkgs.kdePackages.qtdeclarative
+      pkgs.kdePackages.qtsvg
     ];
-    settings = {
-      background = {
-        path = inputs.dotfiles + "/dot_local/share/wallpapers/nixos.png";
-        fit = "Cover";
-      };
-      appearance.greeting_msg = "Welcome back, xray";
-      widget.clock = {
-        format = "%A %d %B - %H:%M";
-        resolution = "500ms";
-      };
-    };
-    theme = {
-      package = pkgs.gnome-themes-extra;
-      name = "Adwaita-dark";
-    };
-    iconTheme = {
-      package = pkgs.papirus-icon-theme;
-      name = "Papirus-Dark";
-    };
-    cursorTheme = {
-      package = pkgs.bibata-cursors;
-      name = "Bibata-Modern-Ice";
-    };
-    font = {
-      package = pkgs.google-fonts.override { fonts = [ "Poppins" ]; };
-      name = "Poppins";
-      size = 12;
-    };
   };
-  # ReGreet can name a cursor theme but has no cursor-size setting. Export both
-  # before Cage starts so the compositor and GTK agree on the 24 px pointer.
-  systemd.services.greetd.environment = {
-    XCURSOR_SIZE = "24";
-    XCURSOR_THEME = "Bibata-Modern-Ice";
-  };
-  security.pam.services.greetd.enableGnomeKeyring = true;
+  environment.systemPackages = [ pixieTheme ];
 
   environment.sessionVariables = {
     NIXOS_OZONE_WL = "1";

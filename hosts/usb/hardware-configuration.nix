@@ -25,8 +25,8 @@
 #         sudo fatlabel /dev/sdX1 USB-BOOT
 #
 #     Both names are deliberately not "nixos" and "boot", which is what
-#     hosts/laptop and hosts/gamestation use: plug this stick into one of
-#     those machines while it is running and two filesystems answering to one
+#     fixed installs such as hosts/gamestation use: plug this stick into one
+#     while it is running and two filesystems answering to one
 #     label is a coin toss over which gets mounted.
 #
 #   * **Carry every controller the root disk might be behind.** On a fixed

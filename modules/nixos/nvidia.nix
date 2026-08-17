@@ -2,9 +2,8 @@
 
 # The NVIDIA driver, and what it takes to come back from suspend.
 #
-# Only the two `gamestation` hosts import this — the laptop has no discrete
-# NVIDIA card (hosts/laptop/configuration.nix says so at length), so nothing
-# here has to consider Optimus, PRIME or a battery.
+# Only fixed workstations import this, so nothing here has to consider
+# Optimus, PRIME or a battery.
 #
 # This is the *desktop* driver: a card driving monitors, 32-bit libraries for
 # Proton, and the suspend dance below. A card in a headless box wants

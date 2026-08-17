@@ -4,7 +4,7 @@ Guidance for Claude Code working in this repository.
 
 ## What this is
 
-A NixOS flake with eight `nixosConfigurations` across six boxes, including the
+A NixOS flake with six `nixosConfigurations` across five boxes, including the
 local `nixos` host for xray, with home-manager (plus plasma-manager and
 spicetify-nix) for the user side. It is a personal system config, not a library — there is no test
 suite, and "does it work" means "does it evaluate and switch".
@@ -44,7 +44,7 @@ the escaping note below.
 ## Layout
 
 ```
-flake.nix          # inputs; the seven nixosConfigurations via mkHost; dev-shell templates
+flake.nix          # inputs; the six nixosConfigurations via mkHost; dev-shell templates
 hosts/<host>/      # per machine: configuration.nix + hardware scan
 modules/nixos/     # the system side, imported per host
 home/common/       # home-manager bits shared by every account (shell, git, btop, tmux)
